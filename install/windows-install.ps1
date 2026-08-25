@@ -4,7 +4,10 @@ $RepoDir = Split-Path -Parent $ScriptDir
 $ManifestPath = Join-Path $RepoDir 'config\kit.json'
 $Manifest = Get-Content $ManifestPath -Raw | ConvertFrom-Json
 
-$InstallRoot = if ($env:GILDRA_DSH_INSTALL_ROOT) { $env:GILDRA_DSH_INSTALL_ROOT } else { Join-Path $env:LOCALAPPDATA 'GildraDSH' }
+$InstallRoot = [IO.Path]::GetFullPath($(if ($env:GILDRA_DSH_INSTALL_ROOT) { $env:GILDRA_DSH_INSTALL_ROOT } else { Join-Path $env:LOCALAPPDATA 'GildraDSH' }))
+if ($InstallRoot -eq [IO.Path]::GetPathRoot($InstallRoot) -or $InstallRoot -eq [Environment]::GetFolderPath('UserProfile')) {
+  throw "Unsafe GILDRA_DSH_INSTALL_ROOT: $InstallRoot"
+}
 $RuntimeDir = Join-Path $InstallRoot 'runtime'
 $DownloadDir = Join-Path $InstallRoot 'downloads'
 New-Item -ItemType Directory -Force $RuntimeDir, $DownloadDir, (Join-Path $InstallRoot 'bin'), (Join-Path $InstallRoot 'vendor'), (Join-Path $InstallRoot 'config') | Out-Null

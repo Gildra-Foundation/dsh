@@ -16,6 +16,10 @@ PNPM_VERSION="$(kit_value runtime.pnpmVersion)"
 CODEGRAPH_COMMIT="$(kit_value runtime.codegraphCommit)"
 
 INSTALL_ROOT="${GILDRA_DSH_INSTALL_ROOT:-$HOME/.gildra-dsh}"
+INSTALL_ROOT="${INSTALL_ROOT:A}"
+case "$INSTALL_ROOT" in
+  ""|/|"$HOME") echo "Unsafe GILDRA_DSH_INSTALL_ROOT: $INSTALL_ROOT" >&2; exit 1 ;;
+esac
 RUNTIME_DIR="$INSTALL_ROOT/runtime"
 DOWNLOAD_DIR="$INSTALL_ROOT/downloads"
 
@@ -86,13 +90,22 @@ cp "$REPO_DIR/install/dsh-gildra" "$INSTALL_ROOT/bin/dsh-gildra"
 cp "$REPO_DIR/install/Start-GildraDSH.command" "$INSTALL_ROOT/bin/Start-GildraDSH.command"
 cp "$REPO_DIR/install/Update-GildraDSH.command" "$INSTALL_ROOT/bin/Update-GildraDSH.command"
 cp "$REPO_DIR/scripts/gildra-update.mjs" "$INSTALL_ROOT/bin/gildra-update.mjs"
+cp "$REPO_DIR/scripts/sync-server-fleet.mjs" "$INSTALL_ROOT/bin/sync-server-fleet.mjs"
 cp "$MANIFEST" "$INSTALL_ROOT/config/kit.json"
 chmod +x "$INSTALL_ROOT/bin/dsh-gildra" "$INSTALL_ROOT/bin/Start-GildraDSH.command" \
-  "$INSTALL_ROOT/bin/Update-GildraDSH.command" "$INSTALL_ROOT/bin/gildra-update.mjs"
+  "$INSTALL_ROOT/bin/Update-GildraDSH.command" "$INSTALL_ROOT/bin/gildra-update.mjs" \
+  "$INSTALL_ROOT/bin/sync-server-fleet.mjs"
 
 "$RUNTIME_DIR/node/bin/node" "$REPO_DIR/scripts/configure-profile.mjs" \
   --repo-dir "$REPO_DIR" \
   --install-root "$INSTALL_ROOT"
+
+if [[ "${GILDRA_DSH_SKIP_REMOTE_SYNC:-0}" != "1" && -f "$INSTALL_ROOT/home/remotes.json" ]]; then
+  "$RUNTIME_DIR/node/bin/node" "$REPO_DIR/scripts/sync-server-fleet.mjs" \
+    --repo-dir "$REPO_DIR" \
+    --install-root "$INSTALL_ROOT" \
+    --best-effort
+fi
 
 app_source=""
 if [[ -d "$REPO_DIR/dist/Gildra DSH.app" ]]; then

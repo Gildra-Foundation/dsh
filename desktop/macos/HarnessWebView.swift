@@ -44,7 +44,7 @@ struct HarnessWebView: NSViewRepresentable {
     }
 
     func updateNSView(_ webView: WKWebView, context: Context) {
-        guard webView.url != url else { return }
+        guard context.coordinator.shouldLoad(serviceURL: url, currentURL: webView.url) else { return }
         webView.load(URLRequest(url: url))
     }
 
@@ -98,9 +98,25 @@ struct HarnessWebView: NSViewRepresentable {
         private var userCancelledDownloads: Set<ObjectIdentifier> = []
         private var sessionLogDownloads: Set<ObjectIdentifier> = []
         private weak var webView: WKWebView?
+        private var lastServiceURL: URL?
 
         func attach(to webView: WKWebView) {
             self.webView = webView
+        }
+
+        /// SwiftUI may update this representable while the user is working
+        /// through an SSH tunnel. Keep that remote navigation in the existing
+        /// WebView instead of snapping back to the local Harness URL. A changed
+        /// service URL is followed only while the WebView is still showing the
+        /// previous local service (for example after a local Harness restart).
+        func shouldLoad(serviceURL: URL, currentURL: URL?) -> Bool {
+            defer { lastServiceURL = serviceURL }
+            guard currentURL != serviceURL else { return false }
+            guard let currentURL else { return true }
+            guard let previousServiceURL = lastServiceURL else {
+                return currentURL.scheme == "about"
+            }
+            return previousServiceURL != serviceURL && currentURL == previousServiceURL
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {

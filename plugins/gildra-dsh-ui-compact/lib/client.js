@@ -5,6 +5,10 @@ window.__ModuleLoader__.load({
     const exports = module.exports
 
     const CSS = `
+      body:has(.dsh-auto-workspace) .sysmon,
+      body:has([data-context-doctor] [role="dialog"]) .sysmon {
+        display: none !important;
+      }
       .gildra-language-backdrop {
         position: fixed;
         z-index: 8000;
@@ -122,6 +126,204 @@ window.__ModuleLoader__.load({
         height: 6px !important;
         margin-left: -2px !important;
         align-self: flex-end !important;
+      }
+
+      .gildra-environments {
+        position: fixed;
+        z-index: 90;
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0 12px 12px;
+        border-bottom: 1px solid var(--dsw-alias-border-l2);
+        background: var(--dsw-alias-bg-layer-1);
+        font-family: var(--dsw-font-family, system-ui);
+      }
+      .gildra-workspaces-with-environments {
+        box-sizing: border-box;
+        padding-top: var(--gildra-environment-space, 0px) !important;
+      }
+      .gildra-brand-environment {
+        display: inline-flex;
+        align-items: center;
+        min-height: 18px;
+        box-sizing: border-box;
+        gap: 5px;
+        margin-left: 5px;
+        padding: 2px 6px;
+        border: 1px solid var(--dsw-alias-border-l2);
+        border-radius: 6px;
+        background: color-mix(in srgb, var(--dsw-alias-bg-base) 78%, transparent);
+        color: var(--dsw-alias-label-secondary);
+        font-size: 8px;
+        font-weight: 720;
+        line-height: 11px;
+        letter-spacing: .05em;
+        text-transform: uppercase;
+        white-space: nowrap;
+      }
+      [data-slot="sidebar.brand.name"] > span:nth-child(2):not(.gildra-brand-environment) {
+        display: none;
+      }
+      .gildra-brand-environment::before {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--dsw-alias-state-success-primary, #43c778);
+        content: '';
+      }
+      .gildra-brand-environment[data-kind="remote"] {
+        border-color: color-mix(in srgb, var(--dsw-alias-state-business-primary) 42%, var(--dsw-alias-border-l2));
+        background: color-mix(in srgb, var(--dsw-alias-state-business-tertiary) 48%, transparent);
+        color: var(--dsw-alias-state-business-primary);
+      }
+      .gildra-environment-group + .gildra-environment-group {
+        margin-top: 10px;
+      }
+      .gildra-environment-heading {
+        display: flex;
+        align-items: center;
+        min-height: 20px;
+        padding: 0 8px 4px;
+        color: var(--dsw-alias-label-tertiary, var(--dsw-alias-label-secondary));
+        font-size: 10px;
+        font-weight: 650;
+        line-height: 14px;
+        letter-spacing: .055em;
+        text-transform: uppercase;
+      }
+      .gildra-environment-list {
+        display: grid;
+        gap: 2px;
+      }
+      .gildra-environment-row {
+        display: grid;
+        grid-template-columns: 9px minmax(0, 1fr) auto;
+        align-items: center;
+        width: 100%;
+        min-height: 36px;
+        box-sizing: border-box;
+        gap: 9px;
+        padding: 6px 8px;
+        border: 0;
+        border-radius: 8px;
+        background: transparent;
+        color: var(--dsw-alias-label-primary);
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+      }
+      .gildra-environment-row:hover,
+      .gildra-environment-row:focus-visible {
+        background: var(--dsw-alias-interactive-bg-hover, rgba(128, 128, 128, .12));
+        outline: none;
+      }
+      .gildra-environment-row[aria-current="true"] {
+        background: color-mix(in srgb, var(--dsw-alias-state-business-tertiary) 46%, transparent);
+      }
+      .gildra-environment-row:disabled {
+        cursor: wait;
+        opacity: .7;
+      }
+      .gildra-environment-dot {
+        width: 7px;
+        height: 7px;
+        box-sizing: border-box;
+        border-radius: 50%;
+        background: var(--dsw-alias-label-tertiary, #7b8493);
+      }
+      .gildra-environment-row[data-state="connected"] .gildra-environment-dot,
+      .gildra-environment-row[aria-current="true"] .gildra-environment-dot {
+        background: var(--dsw-alias-state-success-primary, #43c778);
+        box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-state-success-primary, #43c778) 16%, transparent);
+      }
+      .gildra-environment-row[data-state="connecting"] .gildra-environment-dot {
+        background: var(--dsw-alias-state-warning-primary, #e8ab3b);
+      }
+      .gildra-environment-copy {
+        min-width: 0;
+      }
+      .gildra-environment-name,
+      .gildra-environment-detail {
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .gildra-environment-name {
+        font-size: 12px;
+        font-weight: 560;
+        line-height: 16px;
+      }
+      .gildra-environment-detail {
+        color: var(--dsw-alias-label-secondary);
+        font-size: 10px;
+        line-height: 14px;
+      }
+      .gildra-environment-state {
+        color: var(--dsw-alias-label-secondary);
+        font-size: 10px;
+        line-height: 14px;
+        white-space: nowrap;
+      }
+      .gildra-environment-row[data-state="error"] .gildra-environment-state {
+        color: var(--dsw-alias-state-error-primary, #ff6b6b);
+      }
+      .gildra-environment-empty {
+        margin: 0;
+        padding: 4px 8px 2px 26px;
+        color: var(--dsw-alias-label-secondary);
+        font-size: 10px;
+        line-height: 15px;
+      }
+      .gildra-environment-refresh {
+        margin-left: auto;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        cursor: pointer;
+      }
+      .gildra-environment-refresh:hover,
+      .gildra-environment-refresh:focus-visible {
+        color: var(--dsw-alias-label-primary);
+        outline: none;
+      }
+      .gildra-legacy-ssh-trigger {
+        display: none !important;
+      }
+      .gildra-collapsed-environment {
+        position: fixed;
+        z-index: 91;
+        top: 14px;
+        left: 54px;
+        display: inline-flex;
+        align-items: center;
+        min-height: 26px;
+        box-sizing: border-box;
+        gap: 6px;
+        padding: 4px 9px;
+        border: 1px solid color-mix(in srgb, var(--dsw-alias-state-business-primary) 42%, var(--dsw-alias-border-l2));
+        border-radius: 7px;
+        background: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 92%, transparent);
+        color: var(--dsw-alias-state-business-primary);
+        font-family: var(--dsw-font-family, system-ui);
+        font-size: 10px;
+        font-weight: 680;
+        line-height: 14px;
+        letter-spacing: .015em;
+        box-shadow: 0 3px 12px rgba(0, 0, 0, .12);
+        cursor: pointer;
+      }
+      .gildra-collapsed-environment::before {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--dsw-alias-state-success-primary, #43c778);
+        content: '';
+      }
+      .gildra-collapsed-environment[hidden] {
+        display: none !important;
       }
       [data-context-doctor] > section[role="dialog"] {
         width: 320px !important;
@@ -770,6 +972,7 @@ window.__ModuleLoader__.load({
     const AUTOMATION_TEXT = new Map([
       ['Automations', 'Автоматизации'],
       ['Open Automations', 'Открыть автоматизации'],
+      ['Exit Automations', 'Закрыть автоматизации'],
       ['Start a conversation before opening Automations.', 'Сначала отправьте одно сообщение в новой сессии.'],
       ['Autonomous coding work', 'Автоматизация разработки'],
       ['New automation', 'Новая автоматизация'],
@@ -955,7 +1158,30 @@ window.__ModuleLoader__.load({
       ['离线', 'не в сети'],
       ['错误', 'ошибка'],
       ['加载中…', 'Загрузка…'],
+      ['Configured remotes — the local machine is a thin client; agents, files, and sessions run on the remote harness.', 'Настроенные серверы: приложение работает как тонкий клиент, а агенты, файлы и сессии находятся на сервере.'],
+      ['Connect', 'Подключить'],
+      ['Open', 'Открыть'],
+      ['Disconnect', 'Отключить'],
+      ['Start', 'Запустить'],
+      ['Stop', 'Остановить'],
+      ['Logs', 'Журнал'],
     ])
+
+    const CONTEXT_DOCTOR_TEXT = new Map([
+      ['tokens resident', 'токенов в контексте'],
+      ['files', 'файла'],
+      ['skills', 'навыков'],
+      ['built-in tools', 'встроенных инструментов'],
+      ['nothing injected', 'ничего не добавлено'],
+      ['可见工具共 80 个（schema 约 5.2k token），每个请求都会携带，建议检查是否全部需要。', 'Доступно 80 инструментов (схемы занимают около 5,2 тыс. токенов). Проверьте, действительно ли все они нужны в каждом запросе.'],
+    ])
+
+    const CONTEXT_DOCTOR_PATTERNS = [
+      [/^(\d+) files$/, '$1 файла'],
+      [/^(\d+) skills$/, '$1 навыков'],
+      [/^(\d+) built-in tools$/, '$1 встроенных инструментов'],
+      [/^可见工具共 (\d+) 个（schema 约 (.+) token），每个请求都会携带，建议检查是否全部需要。$/, 'Доступно инструментов: $1 (схемы занимают около $2 токенов). Проверьте, нужны ли они в каждом запросе.'],
+    ]
 
     const CODE_MAP_TEXT = new Map([
       ['画布', 'Карта кода'],
@@ -2101,7 +2327,7 @@ window.__ModuleLoader__.load({
     }
 
     function applyAutomationTranslations() {
-      const roots = document.querySelectorAll('.dsh-automation-shell, .dsh-automation-sidebar-action, [data-dsh-automation-entry], [data-dsh-automations-trigger], [role="tab"], [role="dialog"]')
+      const roots = document.querySelectorAll('.dsh-automation-shell, .dsh-auto-workspace, .dsh-automation-sidebar-action, [data-dsh-automation-entry], [data-dsh-automations-trigger], [role="tab"], [role="dialog"]')
       for (const root of roots) {
         const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
         let node
@@ -2217,6 +2443,17 @@ window.__ModuleLoader__.load({
           const translated = SSH_REMOTE_STATUS_TEXT.get(node.nodeValue?.trim())
           if (translated) node.nodeValue = node.nodeValue.replace(node.nodeValue.trim(), translated)
         }
+      }
+    }
+
+    function applyContextDoctorTranslations() {
+      const root = document.querySelector('[role="dialog"][aria-label="Аудит контекста"], [role="dialog"][aria-label="Context Doctor"]')
+      if (!root) return
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+      let node
+      while ((node = walker.nextNode())) {
+        const translated = translateWithPatterns(node.nodeValue, CONTEXT_DOCTOR_TEXT, CONTEXT_DOCTOR_PATTERNS)
+        if (translated) node.nodeValue = node.nodeValue.replace(node.nodeValue.trim(), translated)
       }
     }
 
@@ -2380,10 +2617,507 @@ window.__ModuleLoader__.load({
     const REPOSITORY_ENDPOINT = '/gildra/workspaces/clone'
     const UPDATE_ENDPOINT = '/gildra/update'
     const AGENT_CONTROL_ENDPOINT = '/gildra/agent-control'
+    const SSH_REMOTES_ENDPOINT = '/ssh-remotes'
+    const ENVIRONMENT_SESSION_KEY = 'gildra.environment.v1'
+    const ENVIRONMENT_PREFERENCES_KEY = 'gildra.environment.preferences.v1'
     const presetModelsApplied = new Map()
     let presetMappingsPromise
     let agentControlPromise
     const agentModelCatalogPromises = new Map()
+    let environmentRefreshPromise
+    let environmentWarmPromise
+    let environmentLastRefresh = 0
+    let environmentState = {
+      loading: true,
+      localURL: null,
+      currentRemote: null,
+      remotes: [],
+      busy: null,
+      error: null,
+    }
+
+    function safeHarnessURL(value) {
+      try {
+        if (typeof value !== 'string' || value.trim() === '') return null
+        const url = new URL(value, window.location.href)
+        const host = url.hostname.toLowerCase()
+        if (url.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(host)) return null
+        if (url.username || url.password) return null
+        return `${url.origin}/`
+      } catch {
+        return null
+      }
+    }
+
+    function environmentOrigin(value) {
+      const safe = safeHarnessURL(value)
+      return safe ? new URL(safe).origin : null
+    }
+
+    function safeFleet(value) {
+      if (!Array.isArray(value)) return []
+      const seen = new Set()
+      const fleet = []
+      for (const entry of value.slice(0, 20)) {
+        const name = typeof entry?.name === 'string' ? entry.name.trim() : ''
+        const host = typeof entry?.host === 'string' ? entry.host.trim() : ''
+        const localPort = Number(entry?.localPort)
+        if (!name || name.length > 80 || /[\0\r\n]/.test(name)) continue
+        if (host.length > 255 || /[\0\r\n]/.test(host)) continue
+        if (!Number.isInteger(localPort) || localPort < 1024 || localPort > 65535 || seen.has(name)) continue
+        seen.add(name)
+        fleet.push({ name, host, localPort, connected: true, tunnel: { up: true } })
+      }
+      return fleet
+    }
+
+    function readEnvironmentSession() {
+      try {
+        const value = JSON.parse(window.sessionStorage.getItem(ENVIRONMENT_SESSION_KEY) ?? 'null')
+        return value && typeof value === 'object' ? value : null
+      } catch {
+        return null
+      }
+    }
+
+    function queryRemoteContext() {
+      const query = new URLSearchParams(window.location.search)
+      const name = query.get('gildraRemote')
+      if (!name) return null
+      let fleet = []
+      try {
+        fleet = safeFleet(JSON.parse(query.get('gildraFleet') ?? '[]'))
+      } catch {
+        // Older links do not carry the local fleet.
+      }
+      return {
+        name,
+        host: query.get('gildraRemoteHost') ?? '',
+        localURL: safeHarnessURL(query.get('gildraLocal')) ?? '',
+        fleet,
+      }
+    }
+
+    function persistEnvironmentSession(value) {
+      try {
+        window.sessionStorage.setItem(ENVIRONMENT_SESSION_KEY, JSON.stringify(value))
+      } catch {
+        // Private browsing and hardened WebViews may disable sessionStorage.
+      }
+    }
+
+    function environmentPreferences() {
+      try {
+        const value = JSON.parse(window.localStorage.getItem(ENVIRONMENT_PREFERENCES_KEY) ?? 'null')
+        return value && typeof value === 'object' ? value : { localPorts: {} }
+      } catch {
+        return { localPorts: {} }
+      }
+    }
+
+    function rememberRemotePort(name, localPort) {
+      if (!Number.isInteger(localPort) || localPort < 1024 || localPort > 65535) return
+      try {
+        const preferences = environmentPreferences()
+        preferences.localPorts = { ...preferences.localPorts, [name]: localPort }
+        window.localStorage.setItem(ENVIRONMENT_PREFERENCES_KEY, JSON.stringify(preferences))
+      } catch {
+        // A stable port is an optimization; connecting still works without it.
+      }
+    }
+
+    function preferredRemotePort(name) {
+      const value = environmentPreferences().localPorts?.[name]
+      return Number.isInteger(value) && value >= 1024 && value <= 65535 ? value : undefined
+    }
+
+    async function resolveLocalHarnessURL() {
+      const query = queryRemoteContext()
+      const saved = readEnvironmentSession()
+      const host = window.gildraHost
+      if (host && typeof host.call === 'function') {
+        try {
+          const status = await host.call('processes.status')
+          const serverURL = typeof status?.serverURL === 'string' ? safeHarnessURL(status.serverURL) : null
+          if (serverURL) {
+            return serverURL
+          }
+        } catch {
+          // The browser-only build intentionally has no native host status.
+        }
+      }
+      if (query?.localURL && environmentOrigin(query.localURL)) return query.localURL
+      if (saved?.localURL && environmentOrigin(saved.localURL)) return saved.localURL
+      if (query || saved?.name) return 'http://127.0.0.1:3080/'
+      return window.location.origin + '/'
+    }
+
+    function currentRemoteContext(localURL) {
+      const query = queryRemoteContext()
+      const saved = readEnvironmentSession()
+      const isRemoteOrigin = environmentOrigin(localURL) !== window.location.origin
+      if (!isRemoteOrigin) return null
+      const context = query ?? saved ?? {}
+      return {
+        name: typeof context.name === 'string' && context.name ? context.name : 'Удалённый сервер',
+        host: typeof context.host === 'string' ? context.host : '',
+        localURL,
+        fleet: safeFleet(context.fleet),
+      }
+    }
+
+    function environmentStateText(remote, active) {
+      if (environmentState.busy === remote.name) return 'Подключение…'
+      if (active || remote.connected) return 'Подключён'
+      if (remote.tunnel?.up) return 'Туннель готов'
+      return 'Не подключён'
+    }
+
+    function makeEnvironmentRow({ name, detail, state, kind, active, disabled, onClick }) {
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.className = 'gildra-environment-row'
+      button.dataset.state = kind
+      button.setAttribute('aria-current', active ? 'true' : 'false')
+      button.setAttribute('aria-label', `${name}. ${detail}. ${state}`)
+      button.disabled = disabled
+      const dot = document.createElement('span')
+      dot.className = 'gildra-environment-dot'
+      dot.setAttribute('aria-hidden', 'true')
+      const copy = document.createElement('span')
+      copy.className = 'gildra-environment-copy'
+      const title = document.createElement('span')
+      title.className = 'gildra-environment-name'
+      title.textContent = name
+      const subtitle = document.createElement('span')
+      subtitle.className = 'gildra-environment-detail'
+      subtitle.textContent = detail
+      copy.append(title, subtitle)
+      const status = document.createElement('span')
+      status.className = 'gildra-environment-state'
+      status.textContent = state
+      button.append(dot, copy, status)
+      button.addEventListener('click', onClick)
+      return button
+    }
+
+    function environmentGroup(title, refreshable = false) {
+      const group = document.createElement('section')
+      group.className = 'gildra-environment-group'
+      const heading = document.createElement('div')
+      heading.className = 'gildra-environment-heading'
+      heading.textContent = title
+      if (refreshable) {
+        const refresh = document.createElement('button')
+        refresh.type = 'button'
+        refresh.className = 'gildra-environment-refresh'
+        refresh.textContent = 'Обновить'
+        refresh.setAttribute('aria-label', 'Обновить список серверов')
+        refresh.addEventListener('click', () => void refreshEnvironmentState(true))
+        heading.appendChild(refresh)
+      }
+      const list = document.createElement('div')
+      list.className = 'gildra-environment-list'
+      group.append(heading, list)
+      return { group, list }
+    }
+
+    function navigateToLocalEnvironment() {
+      if (!environmentState.localURL) return
+      window.location.assign(environmentState.localURL)
+    }
+
+    function openRemoteEnvironment(remote, value) {
+      const safe = safeHarnessURL(value)
+      if (!safe) throw new Error('Удалённая среда вернула небезопасный локальный адрес.')
+      const target = new URL(safe)
+      target.searchParams.set('gildraRemote', remote.name)
+      target.searchParams.set('gildraRemoteHost', remote.host ?? '')
+      target.searchParams.set('gildraLocal', environmentState.localURL)
+      const fleet = safeFleet(environmentState.remotes.map((entry) => ({
+        name: entry.name,
+        host: entry.host,
+        localPort: entry.localPort,
+      })))
+      target.searchParams.set('gildraFleet', JSON.stringify(fleet.map(({ name, host, localPort }) => ({ name, host, localPort }))))
+      window.location.assign(target.href)
+    }
+
+    async function requestRemoteConnection(remote) {
+      if (remote.tunnel?.up && !remote.connected) {
+        await fetch(SSH_REMOTES_ENDPOINT, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ action: 'disconnect', args: { name: remote.name } }),
+        }).catch(() => undefined)
+      }
+      const connect = async (localPort) => {
+        const response = await fetch(SSH_REMOTES_ENDPOINT, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            action: 'connect',
+            args: { name: remote.name, ...(localPort ? { localPort } : {}) },
+          }),
+        })
+        const body = await response.json().catch(() => ({}))
+        return { response, body }
+      }
+      const preferredPort = preferredRemotePort(remote.name) ?? remote.localPort
+      let result = await connect(preferredPort)
+      if ((!result.response.ok || result.body.ok !== true) && preferredPort) {
+        result = await connect(undefined)
+      }
+      const { response, body } = result
+      if (!response.ok || body.ok !== true || typeof body.url !== 'string') {
+        throw new Error(body.error ?? `HTTP ${String(response.status)}`)
+      }
+      const connectedPort = Number(body.localPort ?? new URL(body.url).port)
+      rememberRemotePort(remote.name, connectedPort)
+      return { ...body, localPort: connectedPort }
+    }
+
+    async function warmEnvironmentConnections(remotes) {
+      if (environmentWarmPromise || environmentState.currentRemote) return environmentWarmPromise
+      const pending = remotes.filter(remote => !remote.connected)
+      if (pending.length === 0) return undefined
+      environmentWarmPromise = Promise.allSettled(pending.map(async (remote) => {
+        const connected = await requestRemoteConnection(remote)
+        return { name: remote.name, connected }
+      })).then((results) => {
+        const warmed = new Map()
+        for (const result of results) {
+          if (result.status === 'fulfilled') warmed.set(result.value.name, result.value.connected)
+        }
+        if (warmed.size > 0) {
+          environmentState = {
+            ...environmentState,
+            remotes: environmentState.remotes.map(remote => {
+              const connected = warmed.get(remote.name)
+              return connected
+                ? { ...remote, connected: true, localPort: connected.localPort, tunnel: { up: true } }
+                : remote
+            }),
+          }
+          renderEnvironmentSwitcher()
+        }
+      }).finally(() => {
+        environmentWarmPromise = undefined
+      })
+      return environmentWarmPromise
+    }
+
+    async function navigateToRemoteEnvironment(remote) {
+      if (!environmentState.localURL || environmentState.busy) return
+      if (remote.connected && Number.isInteger(remote.localPort)) {
+        openRemoteEnvironment(remote, `http://127.0.0.1:${String(remote.localPort)}`)
+        return
+      }
+      environmentState = { ...environmentState, busy: remote.name, error: null }
+      renderEnvironmentSwitcher()
+      try {
+        const connected = await requestRemoteConnection(remote)
+        openRemoteEnvironment(remote, connected.url)
+      } catch (error) {
+        environmentState = {
+          ...environmentState,
+          busy: null,
+          error: error instanceof Error ? error.message : String(error),
+        }
+        renderEnvironmentSwitcher()
+      }
+    }
+
+    function renderEnvironmentSwitcher() {
+      const root = document.querySelector('.gildra-environments')
+      renderEnvironmentBadge()
+      if (!root) return
+      root.replaceChildren()
+      const localActive = !environmentState.currentRemote
+      const local = environmentGroup('Локально')
+      local.list.appendChild(makeEnvironmentRow({
+        name: 'Этот компьютер',
+        detail: environmentState.localURL ? new URL(environmentState.localURL).host : 'Локальный Harness',
+        state: localActive ? 'Активно' : 'Готово',
+        kind: 'connected',
+        active: localActive,
+        disabled: localActive || !environmentState.localURL,
+        onClick: navigateToLocalEnvironment,
+      }))
+      root.appendChild(local.group)
+
+      const servers = environmentGroup('Серверы', !environmentState.currentRemote)
+      const remoteList = environmentState.remotes
+      for (const remote of remoteList) {
+        const active = environmentState.currentRemote?.name === remote.name
+        const status = environmentStateText(remote, active)
+        servers.list.appendChild(makeEnvironmentRow({
+          name: remote.name,
+          detail: remote.host || 'Удалённая среда',
+          state: status,
+          kind: environmentState.busy === remote.name
+            ? 'connecting'
+            : active || remote.connected || remote.tunnel?.up
+              ? 'connected'
+              : 'disconnected',
+          active,
+          disabled: active || environmentState.busy === remote.name,
+          onClick: () => void navigateToRemoteEnvironment(remote),
+        }))
+      }
+      if (remoteList.length === 0) {
+        const empty = document.createElement('p')
+        empty.className = 'gildra-environment-empty'
+        empty.textContent = environmentState.loading
+          ? 'Проверяю подключения…'
+          : 'Серверы пока не настроены.'
+        servers.list.appendChild(empty)
+      }
+      if (environmentState.error) {
+        const error = document.createElement('p')
+        error.className = 'gildra-environment-empty'
+        error.textContent = `SSH: ${environmentState.error}`
+        servers.list.appendChild(error)
+      }
+      root.appendChild(servers.group)
+      window.requestAnimationFrame(syncEnvironmentPlacement)
+    }
+
+    function renderEnvironmentBadge() {
+      const remote = environmentState.currentRemote
+      document.title = remote
+        ? `Gildra DSH — Сервер ${remote.name}`
+        : 'Gildra DSH — Локально'
+      const brand = document.querySelector('[data-slot="sidebar.brand.name"]')
+      if (!brand) return
+      let badge = brand.querySelector('.gildra-brand-environment')
+      if (!badge) {
+        badge = document.createElement('span')
+        badge.className = 'gildra-brand-environment'
+        brand.appendChild(badge)
+      }
+      badge.dataset.kind = remote ? 'remote' : 'local'
+      badge.textContent = remote ? 'Сервер' : 'Локально'
+      badge.setAttribute('title', remote
+        ? `Активная среда: сервер ${remote.name}${remote.host ? ` (${remote.host})` : ''}`
+        : 'Активная среда: этот компьютер')
+    }
+
+    function ensureCollapsedEnvironmentIndicator() {
+      let indicator = document.querySelector('.gildra-collapsed-environment')
+      if (!indicator) {
+        indicator = document.createElement('button')
+        indicator.type = 'button'
+        indicator.className = 'gildra-collapsed-environment'
+        indicator.addEventListener('click', () => {
+          const trigger = [...document.querySelectorAll('button')].find((button) => {
+            const label = button.getAttribute('aria-label') ?? button.textContent?.trim()
+            return ['Открыть панель', 'Open sidebar', '打开侧边栏'].includes(label)
+          })
+          trigger?.click()
+        })
+        document.body.appendChild(indicator)
+      }
+      const remote = environmentState.currentRemote
+      indicator.textContent = remote ? `Сервер · ${remote.name}` : ''
+      indicator.setAttribute('aria-label', remote
+        ? `Сервер ${remote.name}. Открыть список сред`
+        : 'Открыть список сред')
+      return indicator
+    }
+
+    async function refreshEnvironmentState(force = false) {
+      const now = Date.now()
+      if (!force && environmentRefreshPromise) return environmentRefreshPromise
+      if (!force && now - environmentLastRefresh < 4000) return undefined
+      environmentLastRefresh = now
+      environmentRefreshPromise = (async () => {
+        const localURL = await resolveLocalHarnessURL()
+        const currentRemote = currentRemoteContext(localURL)
+        if (currentRemote) persistEnvironmentSession(currentRemote)
+        let remotes = currentRemote?.fleet ?? []
+        let error = null
+        if (!currentRemote) {
+          try {
+            const response = await fetch(SSH_REMOTES_ENDPOINT, { cache: 'no-store' })
+            const body = await response.json().catch(() => ({}))
+            if (!response.ok || body.ok !== true || !Array.isArray(body.remotes)) {
+              throw new Error(body.error ?? `HTTP ${String(response.status)}`)
+            }
+            remotes = body.remotes
+            for (const remote of remotes) rememberRemotePort(remote.name, remote.localPort)
+            void warmEnvironmentConnections(remotes)
+          } catch (cause) {
+            error = cause instanceof Error ? cause.message : String(cause)
+          }
+        }
+        environmentState = {
+          ...environmentState,
+          loading: false,
+          localURL,
+          currentRemote,
+          remotes: currentRemote && !remotes.some(remote => remote.name === currentRemote.name)
+            ? [...remotes, {
+                name: currentRemote.name,
+                host: currentRemote.host,
+                localPort: Number(window.location.port),
+                connected: true,
+                tunnel: { up: true },
+              }]
+            : remotes,
+          error,
+        }
+        renderEnvironmentSwitcher()
+      })().finally(() => {
+        environmentRefreshPromise = undefined
+      })
+      return environmentRefreshPromise
+    }
+
+    function syncEnvironmentPlacement() {
+      const root = document.querySelector('.gildra-environments')
+      const workspaces = document.querySelector('[data-slot="sidebar.workspaces"]')
+      const content = workspaces?.firstElementChild
+      if (!root || !workspaces || !(content instanceof HTMLElement)) return
+      const rect = content.getBoundingClientRect()
+      const collapsed = rect.width < 140
+      const indicator = ensureCollapsedEnvironmentIndicator()
+      root.hidden = collapsed
+      indicator.hidden = !collapsed || !environmentState.currentRemote
+      content.classList.toggle('gildra-workspaces-with-environments', !collapsed)
+      if (collapsed) {
+        content.style.removeProperty('--gildra-environment-space')
+        return
+      }
+      root.style.left = `${String(Math.round(rect.left))}px`
+      root.style.top = `${String(Math.round(rect.top))}px`
+      root.style.width = `${String(Math.round(rect.width))}px`
+      content.style.setProperty('--gildra-environment-space', `${String(Math.ceil(root.getBoundingClientRect().height + 8))}px`)
+    }
+
+    function ensureEnvironmentSwitcher() {
+      renderEnvironmentBadge()
+      ensureCollapsedEnvironmentIndicator()
+      for (const button of document.querySelectorAll('button')) {
+        const label = button.getAttribute('aria-label') ?? button.textContent?.trim()
+        if (['Сервер SSH', 'SSH Remote', 'SSH 远端'].includes(label)) {
+          button.classList.add('gildra-legacy-ssh-trigger')
+        }
+      }
+      if (document.querySelector('.gildra-environments')) {
+        syncEnvironmentPlacement()
+        return
+      }
+      const workspaces = document.querySelector('[data-slot="sidebar.workspaces"]')
+      if (!workspaces) return
+      const root = document.createElement('div')
+      root.className = 'gildra-environments'
+      root.setAttribute('aria-label', 'Среды выполнения')
+      document.body.appendChild(root)
+      renderEnvironmentSwitcher()
+      syncEnvironmentPlacement()
+      void refreshEnvironmentState(true)
+    }
 
     async function agentControl(force = false) {
       if (force) agentControlPromise = undefined
@@ -3503,14 +4237,15 @@ window.__ModuleLoader__.load({
       },
       {
         id: 'context-doctor',
-        // Context Doctor uses the overlay stylesheet and its native plugin
-        // lifecycle; no DOM ownership is duplicated here.
-        enhance() {},
+        enhance() {
+          applyContextDoctorTranslations()
+        },
       },
       {
         id: 'developer-tools',
         enhance(ctx) {
           applyBrandHeadline()
+          ensureEnvironmentSwitcher()
           applyCodeMapTranslations()
           applyGitHubTranslations()
           applyWorkspaceFilesTranslations()
@@ -3640,13 +4375,21 @@ window.__ModuleLoader__.load({
           applyTerminalTranslations()
           applySystemMonitorTranslations()
           applySshRemoteTranslations()
+          applyContextDoctorTranslations()
         }, 500)
         return () => window.clearInterval(timer)
       }, 'gildra-ui-compact: plugin interface translation')
 
       ctx.effect(() => {
+        const timer = window.setInterval(() => void refreshEnvironmentState(), 8000)
+        return () => window.clearInterval(timer)
+      }, 'gildra-ui-compact: environment status refresh')
+
+      ctx.effect(() => {
         document.addEventListener('click', handleAutomationEntry, true)
-        return () => document.removeEventListener('click', handleAutomationEntry, true)
+        return () => {
+          document.removeEventListener('click', handleAutomationEntry, true)
+        }
       }, 'gildra-ui-compact: automation navigation')
     }
 

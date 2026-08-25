@@ -35,6 +35,45 @@ RUNTIME_DIR="$INSTALL_ROOT/runtime"
 DOWNLOAD_DIR="$INSTALL_ROOT/downloads"
 mkdir -p "$RUNTIME_DIR" "$DOWNLOAD_DIR" "$INSTALL_ROOT/bin" "$INSTALL_ROOT/vendor" "$INSTALL_ROOT/config"
 
+ensure_native_build_tools() {
+  local missing=()
+  command -v make >/dev/null 2>&1 || missing+=(make)
+  command -v g++ >/dev/null 2>&1 || missing+=(g++)
+  command -v python3 >/dev/null 2>&1 || missing+=(python3)
+  if (( ${#missing[@]} == 0 )); then return; fi
+
+  if command -v apt-get >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1 \
+      && sudo -n true >/dev/null 2>&1; then
+    echo "Installing native build tools required by the terminal plugin: ${missing[*]}"
+    sudo -n apt-get update
+    sudo -n apt-get install -y build-essential python3
+    return
+  fi
+
+  echo "Missing native build tools required by the terminal plugin: ${missing[*]}" >&2
+  echo "Install make, g++ and python3, then run this installer again." >&2
+  exit 1
+}
+
+ensure_native_build_tools
+
+server_port="${GILDRA_DSH_PORT:-}"
+if [[ -z "$server_port" && -f "$INSTALL_ROOT/config/server.env" ]]; then
+  server_port="$(sed -n 's/^CONFIGURED_PORT=//p' "$INSTALL_ROOT/config/server.env" | tail -n 1)"
+fi
+server_port="${server_port:-3080}"
+if [[ ! "$server_port" =~ ^[0-9]+$ ]]; then
+  echo "GILDRA_DSH_PORT must be a number from 1024 to 65535." >&2
+  exit 1
+fi
+server_port_number=$((10#$server_port))
+if (( server_port_number < 1024 || server_port_number > 65535 )); then
+  echo "GILDRA_DSH_PORT must be a number from 1024 to 65535." >&2
+  exit 1
+fi
+server_port="$server_port_number"
+printf 'CONFIGURED_PORT=%s\n' "$server_port" > "$INSTALL_ROOT/config/server.env"
+
 case "$(uname -m)" in
   x86_64|amd64)
     node_arch=x64
@@ -111,7 +150,14 @@ chmod +x "$INSTALL_ROOT/bin/dsh-gildra" "$INSTALL_ROOT/bin/Start-GildraDSH.serve
   --repo-dir "$REPO_DIR" \
   --install-root "$INSTALL_ROOT"
 
-if [[ "${GILDRA_DSH_SKIP_OLLAMA:-0}" != "1" ]]; then
+shared_ollama=0
+if [[ "${GILDRA_DSH_FORCE_PRIVATE_OLLAMA:-0}" != "1" ]] \
+  && curl -fsS http://127.0.0.1:11434/api/version >/dev/null 2>&1; then
+  shared_ollama=1
+  echo "Reusing the shared Ollama service at 127.0.0.1:11434."
+fi
+
+if [[ "${GILDRA_DSH_SKIP_OLLAMA:-0}" != "1" && "$shared_ollama" != "1" ]]; then
   command -v zstd >/dev/null 2>&1 || {
     echo "zstd is required to install the pinned Ollama runtime." >&2
     exit 1
@@ -159,6 +205,13 @@ PY
   fi
 fi
 
+if [[ "${GILDRA_DSH_SKIP_OLLAMA:-0}" != "1" && "$shared_ollama" == "1" ]]; then
+  curl -fsS http://127.0.0.1:11434/api/pull \
+    -H 'content-type: application/json' \
+    --data "{\"name\":\"$OLLAMA_MODEL\",\"stream\":false}" >/dev/null
+fi
+
 printf '%s\n' "$KIT_VERSION" > "$INSTALL_ROOT/.gildra-kit-version"
 echo "Installed Gildra DSH server kit $KIT_VERSION at $INSTALL_ROOT"
+echo "Harness port for this Unix user: $server_port"
 echo "Start with: $INSTALL_ROOT/bin/Start-GildraDSH.server.sh"
