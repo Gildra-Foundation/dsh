@@ -18,7 +18,7 @@ jobs:
       - name: Assemble archive
         run: |
           mkdir -p dist/mac/dist
-          cp -R config plugins templates desktop install dist/mac/
+          cp -R config plugins templates patches desktop install dist/mac/
           cp README.md LICENSE dist/mac/
           cp -R 'desktop/macos/build/Gildra DSH.app' 'dist/mac/dist/Gildra DSH.app'
           cp 'Install Gildra DSH.command' 'dist/mac/Install Gildra DSH.command'
@@ -36,7 +36,7 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist\windows | Out-Null
-          Copy-Item config,plugins,templates,install -Destination dist\windows -Recurse
+          Copy-Item config,plugins,templates,patches,install -Destination dist\windows -Recurse
           Copy-Item README.md,LICENSE -Destination dist\windows
           Copy-Item 'Install Gildra DSH.cmd' 'dist\windows\Install Gildra DSH.cmd'
           Compress-Archive -Path dist\windows\* -DestinationPath dist\Gildra-DSH-Windows.zip

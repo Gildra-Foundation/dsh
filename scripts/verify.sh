@@ -10,6 +10,8 @@ node --check "$ROOT/plugins/gildra-dsh-ui-compact/lib/client.js"
 node "$ROOT/plugins/gildra-dsh-ui-compact/test.mjs"
 node --check "$ROOT/plugins/gildra-skill-installer/lib/index.js"
 node "$ROOT/plugins/gildra-skill-installer/test.mjs"
+node --check "$ROOT/patches/workspace-files-explorer-index.js"
+node "$ROOT/patches/workspace-files-explorer-index.test.mjs"
 zsh -n "$ROOT/install/macos-install.command"
 zsh -n "$ROOT/install/dsh-gildra"
 zsh -n "$ROOT/install/Start-GildraDSH.command"
@@ -47,6 +49,26 @@ grep -F 'dsh-team@$DSH_TEAM_VERSION' \
   "$ROOT/install/macos-install.command" >/dev/null
 grep -F 'dsh-team@$($Versions.DSH_TEAM_VERSION)' \
   "$ROOT/install/windows-install.ps1" >/dev/null
+grep -F '@perrylink/dsh-github@$DSH_GITHUB_VERSION' \
+  "$ROOT/install/macos-install.command" >/dev/null
+grep -F '@perrylink/dsh-github@$($Versions.DSH_GITHUB_VERSION)' \
+  "$ROOT/install/windows-install.ps1" >/dev/null
+grep -F 'github:YZz-S/dsh-workspace-files-explorer#$WORKSPACE_FILES_EXPLORER_COMMIT' \
+  "$ROOT/install/macos-install.command" >/dev/null
+grep -F 'github:YZz-S/dsh-workspace-files-explorer#$($Versions.WORKSPACE_FILES_EXPLORER_COMMIT)' \
+  "$ROOT/install/windows-install.ps1" >/dev/null
+grep -F 'patches/workspace-files-explorer-index.js' \
+  "$ROOT/install/macos-install.command" >/dev/null
+grep -F 'patches\workspace-files-explorer-index.js' \
+  "$ROOT/install/windows-install.ps1" >/dev/null
+grep -F 'config plugins templates patches desktop install' \
+  "$ROOT/.github/workflows/release.yml" >/dev/null
+grep -F 'config,plugins,templates,patches,install' \
+  "$ROOT/.github/workflows/release.yml" >/dev/null
+grep -F "['工作区文件', 'Файлы проекта']" \
+  "$ROOT/plugins/gildra-dsh-ui-compact/lib/client.js" >/dev/null
+grep -F "['GitHub pull requests, issues, and CI through the agent.', 'Pull request, задачи и CI GitHub через ИИ.']" \
+  "$ROOT/plugins/gildra-dsh-ui-compact/lib/client.js" >/dev/null
 grep -F 'gildra/agent-presets' \
   "$ROOT/plugins/gildra-dsh-ui-compact/lib/index.js" >/dev/null
 grep -F 'Конструктор агентов' \

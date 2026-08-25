@@ -424,6 +424,42 @@ window.__ModuleLoader__.load({
       ['等待渲染', 'Ожидание карты'],
     ])
 
+    const GITHUB_TEXT = new Map([
+      ['GitHub pull requests, issues, and CI through the agent.', 'Pull request, задачи и CI GitHub через ИИ.'],
+      ['GitHub token', 'Токен GitHub'],
+      ['Stored in the credentials file, not here. Applied immediately; leave blank to keep the current token.', 'Хранится отдельно в защищённых учётных данных. Оставьте поле пустым, чтобы сохранить текущий токен.'],
+      ['A token is configured.', 'Токен настроен.'],
+      ['No token is configured; GitHub tools are unavailable until one is.', 'Токен не сохранён в DSH. При выполненном gh auth login инструменты подключатся автоматически.'],
+      ['Unsaved', 'Не сохранено'],
+      ['This deployment stores settings read-only.', 'В этой сборке настройки доступны только для чтения.'],
+      ['Save', 'Сохранить'],
+      ['Saving…', 'Сохранение…'],
+      ['Discard', 'Отменить изменения'],
+      ['The deployment did not accept this value; it was left for you to correct.', 'Не удалось сохранить значение. Исправьте его и повторите попытку.'],
+      ['Expand: GitHub', 'Развернуть: GitHub'],
+      ['Collapse: GitHub', 'Свернуть: GitHub'],
+    ])
+
+    const WORKSPACE_FILES_TEXT = new Map([
+      ['工作区文件', 'Файлы проекта'],
+      ['显示/隐藏工作区文件面板', 'Показать или скрыть файлы проекта'],
+      ['刷新', 'Обновить'],
+      ['关闭', 'Закрыть'],
+      ['正在读取工作区…', 'Читаем рабочую папку…'],
+      ['正在加载…', 'Загрузка…'],
+      ['加载中…', 'Загрузка…'],
+      ['读取失败', 'Не удалось прочитать файл'],
+      ['读取目录失败', 'Не удалось прочитать папку'],
+      ['无法确定工作区根目录', 'Не удалось определить рабочую папку'],
+      ['（点击重试）', '(нажмите, чтобы повторить)'],
+      ['（空文件）', '(пустой файл)'],
+      ['（空目录）', '(пустая папка)'],
+      ['图片', 'Изображение'],
+      ['文本', 'Текст'],
+      ['← 在左侧文件树中选择一个文件进行预览', '← Выберите файл в дереве слева для предпросмотра'],
+      ['… 目录过大，仅显示前 500 项', '… Папка слишком большая: показаны первые 500 элементов'],
+    ])
+
     const PLUGIN_RU_DICTIONARIES = {
       'settings.pluginBridge': {
         tab: 'Плагины агентов',
@@ -1159,6 +1195,42 @@ window.__ModuleLoader__.load({
       }
     }
 
+    function translateWorkspaceFilesValue(value) {
+      const trimmed = value?.trim()
+      if (!trimmed) return null
+      const exact = WORKSPACE_FILES_TEXT.get(trimmed)
+      if (exact) return exact
+      const codeLimit = trimmed.match(/^⚠ 文件过长，仅预览前 (\d+) 行$/)
+      if (codeLimit) return `⚠ Файл слишком большой: показаны первые ${codeLimit[1]} строк`
+      return null
+    }
+
+    function applyMappedTranslations(selector, dictionary, translateValue = (value) => dictionary.get(value?.trim())) {
+      for (const root of document.querySelectorAll(selector)) {
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+        let node
+        while ((node = walker.nextNode())) {
+          const translated = translateValue(node.nodeValue)
+          if (translated) node.nodeValue = node.nodeValue.replace(node.nodeValue.trim(), translated)
+        }
+        for (const element of root.querySelectorAll('[placeholder], [aria-label], [title]')) {
+          for (const attribute of ['placeholder', 'aria-label', 'title']) {
+            const current = element.getAttribute(attribute)
+            const translated = translateValue(current)
+            if (translated) element.setAttribute(attribute, translated)
+          }
+        }
+      }
+    }
+
+    function applyGitHubTranslations() {
+      applyMappedTranslations('.ghc-card', GITHUB_TEXT)
+    }
+
+    function applyWorkspaceFilesTranslations() {
+      applyMappedTranslations('.wsf-root, .wsf-hbtn', WORKSPACE_FILES_TEXT, translateWorkspaceFilesValue)
+    }
+
     const PRESET_STUDIO_ENDPOINT = '/gildra/agent-presets'
     const presetModelsApplied = new Map()
     let presetMappingsPromise
@@ -1459,6 +1531,8 @@ window.__ModuleLoader__.load({
       applyAgentSyncTranslations()
       applyTeamTranslations()
       applyCodeMapTranslations()
+      applyGitHubTranslations()
+      applyWorkspaceFilesTranslations()
       ensureAutomationQuickstart()
       ensurePresetStudioEntry(ctx)
     }
@@ -1532,6 +1606,8 @@ window.__ModuleLoader__.load({
           applyAgentSyncTranslations()
           applyTeamTranslations()
           applyCodeMapTranslations()
+          applyGitHubTranslations()
+          applyWorkspaceFilesTranslations()
         }, 500)
         return () => window.clearInterval(timer)
       }, 'gildra-ui-compact: plugin interface translation')

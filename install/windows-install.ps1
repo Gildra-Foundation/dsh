@@ -71,6 +71,8 @@ if ((Test-Path $ProfilePackage) -and ((Get-Content $ProfilePackage -Raw) -match 
   "github:GooDAnDReaDY/dsh-russian-lang#$($Versions.RUSSIAN_LANG_COMMIT)",
   "@michengai/dsh-skills-manager@$($Versions.SKILLS_MANAGER_VERSION)",
   "dsh-team@$($Versions.DSH_TEAM_VERSION)",
+  "@perrylink/dsh-github@$($Versions.DSH_GITHUB_VERSION)",
+  "github:YZz-S/dsh-workspace-files-explorer#$($Versions.WORKSPACE_FILES_EXPLORER_COMMIT)",
   "link:$SkillInstallerDir",
   "@syncended/dsh-automations@$($Versions.AUTOMATIONS_VERSION)",
   'github:omdsh-dev/dsh-genui#d99c978d4b0b29ba2a6993f8544a24930fc7d25a',
@@ -83,6 +85,9 @@ if ((Test-Path $ProfilePackage) -and ((Get-Content $ProfilePackage -Raw) -match 
   'dsh-context@0.31.0',
   "link:$CompactDir"
 ) | ForEach-Object { Add-Plugin $_ }
+
+Copy-Item (Join-Path $RepoDir 'patches\workspace-files-explorer-index.js') `
+  (Join-Path $ProfileDir 'node_modules\workspace-files-explorer\index.js') -Force
 
 if (Get-Command python -ErrorAction SilentlyContinue) { Add-Plugin "link:$CodeGraphDir" }
 else { Write-Warning 'Python is not installed: CodeGraph is downloaded but disabled. Archify remains available.' }

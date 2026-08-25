@@ -76,6 +76,8 @@ plugins=(
   "github:GooDAnDReaDY/dsh-russian-lang#$RUSSIAN_LANG_COMMIT"
   "@michengai/dsh-skills-manager@$SKILLS_MANAGER_VERSION"
   "dsh-team@$DSH_TEAM_VERSION"
+  "@perrylink/dsh-github@$DSH_GITHUB_VERSION"
+  "github:YZz-S/dsh-workspace-files-explorer#$WORKSPACE_FILES_EXPLORER_COMMIT"
   "link:$INSTALL_ROOT/vendor/gildra-skill-installer"
   "@syncended/dsh-automations@$AUTOMATIONS_VERSION"
   "github:omdsh-dev/dsh-genui#d99c978d4b0b29ba2a6993f8544a24930fc7d25a"
@@ -91,6 +93,9 @@ plugins=(
 for plugin in "${plugins[@]}"; do
   "$DSH" plugin --profile web add "$plugin"
 done
+
+cp "$REPO_DIR/patches/workspace-files-explorer-index.js" \
+  "$PROFILE_DIR/node_modules/workspace-files-explorer/index.js"
 
 if command -v python3 >/dev/null 2>&1; then
   "$DSH" plugin --profile web add "link:$INSTALL_ROOT/vendor/codegraph"
