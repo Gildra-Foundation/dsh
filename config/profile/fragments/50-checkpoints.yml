@@ -1,0 +1,23 @@
+# Safe checkpoint policy: bounded storage, hash verification for copied
+# snapshots, and a mandatory guard checkpoint before every rewind.
+- id: checkpoint-rewind
+  config:
+    enabled: true
+    provider: auto
+    gitBin: git
+    snapshotDir: ""
+    maxSnapshots: 30
+    maxSnapshotBytes: 536870912
+    pruneOnTurnEnd: true
+    mutationTools: [bash, write, edit, str_replace_editor, pwsh, terminal_send]
+    excludeGlobs: [node_modules, .git, .dsh, dist, build]
+    confirmVia: auto
+    listLimit: 10
+    preRewindCheckpoint: require
+    verifyByHash: true
+    autoCheckpoint:
+      enabled: true
+      intervalMinutes: 0
+    workspaceRestore: restore
+    promptSection: true
+    checkpointTool: true

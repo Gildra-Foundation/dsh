@@ -5,9 +5,10 @@ import WebKit
 
 struct HarnessWebView: NSViewRepresentable {
     let url: URL
+    let service: HarnessService
 
     func makeCoordinator() -> DownloadCoordinator {
-        DownloadCoordinator()
+        DownloadCoordinator(service: service)
     }
 
     func makeNSView(context: Context) -> WKWebView {
@@ -18,6 +19,18 @@ struct HarnessWebView: NSViewRepresentable {
                 injectionTime: .atDocumentEnd,
                 forMainFrameOnly: true
             )
+        )
+        configuration.userContentController.addUserScript(
+            WKUserScript(
+                source: HostRPCBridge.bootstrapScript,
+                injectionTime: .atDocumentStart,
+                forMainFrameOnly: true
+            )
+        )
+        configuration.userContentController.addScriptMessageHandler(
+            context.coordinator.hostRPC,
+            contentWorld: .page,
+            name: HostRPCBridge.handlerName
         )
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = context.coordinator
@@ -37,6 +50,14 @@ struct HarnessWebView: NSViewRepresentable {
 
     @MainActor
     final class DownloadCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
+        let hostRPC: HostRPCBridge
+        private unowned let service: HarnessService
+
+        init(service: HarnessService) {
+            self.service = service
+            hostRPC = HostRPCBridge(service: service)
+        }
+
         static let sessionDownloadDialogSuppressionScript = #"""
         (() => {
           const style = document.createElement("style");
@@ -80,6 +101,15 @@ struct HarnessWebView: NSViewRepresentable {
 
         func attach(to webView: WKWebView) {
             self.webView = webView
+        }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            service.markWebContentReady(webView.url)
+        }
+
+        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            service.markWebContentUnavailable()
+            webView.reload()
         }
 
         func webView(

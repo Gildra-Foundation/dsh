@@ -1,0 +1,58 @@
+name: Check DeepSeek Harness upstream
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 6 * * 1'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.19.0'
+      - name: Check official npm release
+        id: upstream
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          result="$(node scripts/check-upstream-dsh.mjs --write)"
+          echo "result=$result" >> "$GITHUB_OUTPUT"
+          node -e 'const value=JSON.parse(process.argv[1]); process.exit(value.changed ? 0 : 10)' "$result" || status=$?
+          if [[ "${status:-0}" == "10" ]]; then echo "changed=false" >> "$GITHUB_OUTPUT"; else echo "changed=true" >> "$GITHUB_OUTPUT"; fi
+      - name: Validate candidate against the Gildra profile
+        if: steps.upstream.outputs.changed == 'true'
+        run: |
+          corepack prepare pnpm@11.7.0 --activate
+          node scripts/update-profile-lock.mjs
+          chmod +x desktop/macos/build.sh install/*.command install/dsh-gildra scripts/*.sh scripts/*.mjs
+          ./scripts/verify.sh
+      - name: Open compatibility update PR
+        if: steps.upstream.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RESULT: ${{ steps.upstream.outputs.result }}
+        run: |
+          version="$(node -e 'process.stdout.write(JSON.parse(process.env.RESULT).version)')"
+          branch="automation/deepseek-harness-$version"
+          git config user.name 'gildra-update-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git checkout -B "$branch"
+          git add config/kit.json config/profile/pnpm-lock.yaml
+          git commit -m "chore: test DeepSeek Harness $version"
+          git push --force-with-lease origin "$branch"
+          if ! gh pr view "$branch" >/dev/null 2>&1; then
+            gh pr create \
+              --head "$branch" \
+              --base main \
+              --title "chore: update DeepSeek Harness to $version" \
+              --body "Automated compatibility candidate. The source commit and npm version are pinned, the Gildra profile lock was regenerated, and the full macOS verification passed. Review plugin compatibility and rendered UI before merging."
+          fi

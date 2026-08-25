@@ -1,0 +1,236 @@
+{
+  "schemaVersion": 1,
+  "distribution": {
+    "version": "0.1.11",
+    "repository": "Gildra-Foundation/dsh",
+    "channel": "stable"
+  },
+  "runtime": {
+    "dshCommit": "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
+    "dshVersion": "0.1.1-rc.2",
+    "nodeVersion": "22.19.0",
+    "nodeSha256": {
+      "darwinArm64": "c59006db713c770d6ec63ae16cb3edc11f49ee093b5c415d667bb4f436c6526d",
+      "darwinX64": "3cfed4795cd97277559763c5f56e711852d2cc2420bda1cea30c8aa9ac77ce0c",
+      "winX64": "ea3fad0e67a991d8477d8c01344b56e69c676ccb733f065b22436994b1253f86"
+    },
+    "pnpmVersion": "11.7.0",
+    "codegraphCommit": "c6c91179df6ff3d1804c3ae6481f58981688ca07"
+  },
+  "product": {
+    "presets": {
+      "root": "config/agent-presets",
+      "managedIds": [
+        "engineering",
+        "gildra-architecture",
+        "gildra-clean-code",
+        "gildra-code-review",
+        "gildra-performance-audit"
+      ]
+    },
+    "skills": {
+      "managerPackage": "@michengai/dsh-skills-manager",
+      "installerPackage": "@gildra/dsh-skill-installer",
+      "importPackage": "dsh-agent-sync",
+      "sources": [
+        "codex",
+        "claude-code",
+        "github"
+      ]
+    },
+    "mcp": {
+      "importPackage": "dsh-agent-sync",
+      "bridgePackage": "@openma/dsh-agents-plugins-bridge",
+      "sources": [
+        "codex",
+        "claude-code"
+      ]
+    },
+    "automations": {
+      "package": "@syncended/dsh-automations",
+      "templatesRoot": "templates/automations"
+    }
+  },
+  "desktopHost": {
+    "schemaVersion": 1,
+    "platforms": {
+      "darwin": "native-webkit",
+      "win32": "edge-webview"
+    },
+    "surfaces": {
+      "terminal": "harness-permission-layer",
+      "browser": "native-external-browser",
+      "files": "native-dialogs",
+      "processes": "managed-harness-lifecycle"
+    },
+    "rpc": {
+      "version": 1,
+      "allowedMethods": [
+        "host.capabilities",
+        "browser.openExternal",
+        "files.chooseDirectory",
+        "files.reveal",
+        "processes.status",
+        "processes.restartHarness"
+      ]
+    }
+  },
+  "overlay": {
+    "package": "@gildra/dsh-ui-compact",
+    "features": [
+      "locale",
+      "agents",
+      "context-doctor",
+      "developer-tools",
+      "plugins",
+      "automations"
+    ]
+  },
+  "languageServers": [
+    "typescript@5.9.3",
+    "typescript-language-server@5.3.0",
+    "pyright@1.1.413",
+    "vscode-langservers-extracted@4.10.0",
+    "yaml-language-server@1.24.0",
+    "bash-language-server@5.6.0"
+  ],
+  "plugins": [
+    {
+      "package": "dsh-plugin-subscriptions",
+      "spec": "dsh-plugin-subscriptions@0.5.2",
+      "minimumReleaseAgeExclude": true
+    },
+    {
+      "package": "@deepseek-ai/dsh-subagent-codex",
+      "spec": "@deepseek-ai/dsh-subagent-codex@${DSH_VERSION}"
+    },
+    {
+      "package": "@deepseek-ai/dsh-subagent-claude-code",
+      "spec": "@deepseek-ai/dsh-subagent-claude-code@${DSH_VERSION}"
+    },
+    {
+      "package": "dsh-agent-sync",
+      "spec": "github:kuaiyukuaikuai/dsh-agent-sync#d0dde63bdda9e50408a23b15fc79494f54b5fcb8"
+    },
+    {
+      "package": "@openma/dsh-agents-plugins-bridge",
+      "spec": "@openma/dsh-agents-plugins-bridge@0.0.7",
+      "minimumReleaseAgeExclude": true
+    },
+    {
+      "package": "@goodandready/dsh-russian-lang",
+      "spec": "github:GooDAnDReaDY/dsh-russian-lang#364542711eeb646dde185863263c67c5c785b02f"
+    },
+    {
+      "package": "@michengai/dsh-skills-manager",
+      "spec": "@michengai/dsh-skills-manager@0.1.24"
+    },
+    {
+      "package": "dsh-team",
+      "spec": "dsh-team@0.2.7",
+      "minimumReleaseAgeExclude": true
+    },
+    {
+      "package": "@perrylink/dsh-github",
+      "spec": "@perrylink/dsh-github@0.6.5"
+    },
+    {
+      "package": "workspace-files-explorer",
+      "spec": "github:YZz-S/dsh-workspace-files-explorer#5e2fb92f3226fab47f7cb87d66ddb440ae215706"
+    },
+    {
+      "package": "dsh-doublecheck",
+      "spec": "dsh-doublecheck@0.8.0",
+      "minimumReleaseAgeExclude": true
+    },
+    {
+      "package": "dsh-lsp-actions",
+      "spec": "dsh-lsp-actions@0.3.4",
+      "minimumReleaseAgeExclude": true
+    },
+    {
+      "package": "dsh-checkpoint-rewind",
+      "spec": "dsh-checkpoint-rewind@0.5.5",
+      "minimumReleaseAgeExclude": true
+    },
+    {
+      "package": "dsh-auto-review",
+      "spec": "dsh-auto-review@0.6.0",
+      "minimumReleaseAgeExclude": true
+    },
+    {
+      "package": "@gildra/dsh-skill-installer",
+      "spec": "link:../../../vendor/gildra-skill-installer",
+      "localSource": "plugins/gildra-skill-installer",
+      "localTarget": "gildra-skill-installer"
+    },
+    {
+      "package": "@syncended/dsh-automations",
+      "spec": "@syncended/dsh-automations@0.8.7",
+      "minimumReleaseAgeExclude": true
+    },
+    {
+      "package": "@changfenhuang/dsh-genui",
+      "spec": "github:omdsh-dev/dsh-genui#d99c978d4b0b29ba2a6993f8544a24930fc7d25a"
+    },
+    {
+      "package": "@deepseek-ai/dsh-security-audit",
+      "spec": "github:omdsh-dev/dsh-security-audit#ae927be8c92e483a8c8739b32831c0a237c0ed01"
+    },
+    {
+      "package": "dsh-context-doctor",
+      "spec": "github:Zhenyu98/dsh-context-doctor#f45096dc7a7ad52cfa7cf32cdaccae717faa662d"
+    },
+    {
+      "package": "dsh-free-web-search",
+      "spec": "github:delef/dsh-free-web-search#94bd12880a8f4000374cd25629f5e97c9d5364fd"
+    },
+    {
+      "package": "@tt-a1i/archify-dsh",
+      "spec": "@tt-a1i/archify-dsh@0.1.0"
+    },
+    {
+      "package": "@deepseek-ai/dsh-plugin-canvas",
+      "spec": "github:GHJIVHIDD/dsh-plugin-canvas#f6a7ae496dbe602fddb26bdfb161720f3cfea85a"
+    },
+    {
+      "package": "dsh-at-file",
+      "spec": "dsh-at-file@0.6.3"
+    },
+    {
+      "package": "dsh-context",
+      "spec": "dsh-context@0.31.0",
+      "minimumReleaseAgeExclude": true
+    },
+    {
+      "package": "@gildra/dsh-ui-compact",
+      "spec": "link:../../../vendor/gildra-dsh-ui-compact",
+      "localSource": "plugins/gildra-dsh-ui-compact",
+      "localTarget": "gildra-dsh-ui-compact"
+    },
+    {
+      "package": "dsh-codegraph",
+      "spec": "link:../../../vendor/codegraph",
+      "localVersion": "0.1.0",
+      "activateRequiresCommand": {
+        "darwin": "python3",
+        "win32": "python"
+      }
+    }
+  ],
+  "legacyManagedPackages": [
+    "@dsh-external/dsh-automation"
+  ],
+  "profilePnpm": {
+    "nodeLinker": "hoisted",
+    "autoInstallPeers": false,
+    "allowBuilds": {
+      "@deepseek-ai/dsh-subprocess-local": true,
+      "@google/genai": false,
+      "dsh-free-web-search@https://codeload.github.com/delef/dsh-free-web-search/tar.gz/94bd12880a8f4000374cd25629f5e97c9d5364fd": true,
+      "koffi": true,
+      "node-pty": true,
+      "protobufjs": false
+    }
+  }
+}

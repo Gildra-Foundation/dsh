@@ -6,7 +6,7 @@ struct ContentView: View {
     var body: some View {
         Group {
             if let url = service.serverURL {
-                HarnessWebView(url: url)
+                HarnessWebView(url: url, service: service)
             } else {
                 VStack(spacing: 16) {
                     if service.state == .starting || service.state == .installing {

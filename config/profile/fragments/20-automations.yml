@@ -1,0 +1,5 @@
+- id: automations
+  config:
+    maxConcurrentRuns: 2
+    allowedProjectRoots:
+      - "~"

@@ -1,5 +1,4 @@
 import Combine
-import Darwin
 import Foundation
 
 private struct LaunchCommand {
@@ -18,7 +17,6 @@ final class HarnessService: ObservableObject {
         case stopped
     }
 
-    private static let defaultDSHVersion = "0.1.1-rc.2"
     private static let latestDSHVersion = "latest"
     private static let defaultPreferredPort = 3080
     private static let dshOverrideDefaultsKey = "DSHBinOverride"
@@ -27,6 +25,7 @@ final class HarnessService: ObservableObject {
 
     @Published private(set) var state: State = .idle
     @Published private(set) var serverURL: URL?
+    @Published private(set) var webContentReady = false
 
     private var process: Process?
     private var outputPipe: Pipe?
@@ -49,12 +48,42 @@ final class HarnessService: ObservableObject {
         process?.isRunning ?? false
     }
 
+    var hostStatusPayload: [String: Any] {
+        let name: String
+        switch state {
+        case .idle: name = "idle"
+        case .starting: name = "starting"
+        case .installing: name = "installing"
+        case .running: name = "running"
+        case .failed: name = "failed"
+        case .stopped: name = "stopped"
+        }
+        return [
+            "state": name,
+            "running": isProcessRunning,
+            "webContentReady": webContentReady,
+            "serverURL": serverURL?.absoluteString ?? NSNull()
+        ]
+    }
+
+    func markWebContentReady(_ url: URL?) {
+        guard let url, ["127.0.0.1", "localhost", "::1"].contains(url.host?.lowercased() ?? "") else { return }
+        webContentReady = true
+        UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: "DSHLastWebContentReadyAt")
+        UserDefaults.standard.set(url.absoluteString, forKey: "DSHLastWebContentURL")
+    }
+
+    func markWebContentUnavailable() {
+        webContentReady = false
+    }
+
     func start() {
         guard process == nil, !installing else { return }
 
         requestedStop = false
         outputBuffer = ""
         serverURL = nil
+        webContentReady = false
         state = .starting
 
         if preferredPort == 0 {
@@ -202,7 +231,7 @@ final class HarnessService: ObservableObject {
             return
         }
 
-        stopProcessTree(rootPID: task.processIdentifier, completion: completion)
+        ProcessTreeController.stop(rootPID: task.processIdentifier, completion: completion)
     }
 
     func restart() {
@@ -280,6 +309,7 @@ final class HarnessService: ObservableObject {
             state = .failed(lastLine)
         } else {
             serverURL = nil
+            webContentReady = false
             state = .failed("Локальная служба неожиданно завершилась (\(status)).")
         }
     }
@@ -344,15 +374,26 @@ final class HarnessService: ObservableObject {
 
     /// The dsh version the app should resolve, install, and pin to.
     /// Read from the `DSHPinnedVersion` preference; defaults to
-    /// `defaultDSHVersion`, and `latest` means "follow the newest release".
+    /// the version bundled in `config/kit.json`; `latest` means "follow the newest release".
     private var pinnedDSHVersion: String {
         let defaults = UserDefaults.standard
         guard defaults.object(forKey: Self.pinnedVersionDefaultsKey) != nil,
               let value = defaults.string(forKey: Self.pinnedVersionDefaultsKey)?
                   .trimmingCharacters(in: .whitespacesAndNewlines),
               !value.isEmpty
-        else { return Self.defaultDSHVersion }
+        else { return Self.bundledDSHVersion }
         return value
+    }
+
+    private static var bundledDSHVersion: String {
+        guard let url = Bundle.main.url(forResource: "kit", withExtension: "json"),
+              let data = try? Data(contentsOf: url),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let runtime = object["runtime"] as? [String: Any],
+              let version = runtime["dshVersion"] as? String,
+              !version.isEmpty
+        else { return latestDSHVersion }
+        return version
     }
 
     private var usesLatestVersion: Bool {
@@ -507,73 +548,4 @@ final class HarnessService: ObservableObject {
             : fileManager.homeDirectoryForCurrentUser
     }
 
-    private func stopProcessTree(rootPID: pid_t, completion: (() -> Void)?) {
-        let pids = descendantPIDs(of: rootPID) + [rootPID]
-        let signals: [Int32] = [SIGINT, SIGTERM, SIGKILL]
-        var signalIndex = 0
-
-        func escalateOrFinish() {
-            guard signalIndex < signals.count else {
-                completion?()
-                return
-            }
-
-            let signal = signals[signalIndex]
-            signalIndex += 1
-            for pid in pids.reversed() where kill(pid, 0) == 0 {
-                kill(pid, signal)
-            }
-
-            // Give the tree 0.5s to exit on the current signal; escalate to the
-            // next (SIGINT → SIGTERM → SIGKILL) if it is still alive.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                if pids.contains(where: { kill($0, 0) == 0 }) {
-                    escalateOrFinish()
-                } else {
-                    completion?()
-                }
-            }
-        }
-
-        escalateOrFinish()
-    }
-
-    private func descendantPIDs(of rootPID: pid_t) -> [pid_t] {
-        let task = Process()
-        let pipe = Pipe()
-        task.executableURL = URL(fileURLWithPath: "/bin/ps")
-        task.arguments = ["-axo", "pid=,ppid="]
-        task.standardOutput = pipe
-        task.standardError = FileHandle.nullDevice
-
-        do {
-            try task.run()
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            task.waitUntilExit()
-            guard let output = String(data: data, encoding: .utf8) else { return [] }
-
-            let pairs: [(pid_t, pid_t)] = output.split(whereSeparator: \.isNewline).compactMap { line in
-                let fields = line.split(whereSeparator: \.isWhitespace)
-                guard fields.count == 2,
-                      let pid = pid_t(fields[0]),
-                      let parentPID = pid_t(fields[1])
-                else { return nil }
-                return (pid, parentPID)
-            }
-
-            var descendants: [pid_t] = []
-            var parents: Set<pid_t> = [rootPID]
-            while true {
-                let children = pairs
-                    .filter { parents.contains($0.1) && !descendants.contains($0.0) }
-                    .map(\.0)
-                guard !children.isEmpty else { break }
-                descendants.append(contentsOf: children)
-                parents = Set(children)
-            }
-            return descendants
-        } catch {
-            return []
-        }
-    }
 }
