@@ -3,7 +3,7 @@ $KitRoot = Split-Path -Parent $PSScriptRoot
 $Node = Join-Path $KitRoot 'runtime\node\node.exe'
 $Cli = Join-Path $KitRoot 'source\apps\cli\lib\bin.js'
 $env:DSH_HOME = Join-Path $KitRoot 'home'
-$env:Path = "$(Join-Path $KitRoot 'runtime\node');$(Join-Path $KitRoot 'runtime\python');$env:Path"
+$env:Path = "$(Join-Path $KitRoot 'lsp\node_modules\.bin');$(Join-Path $KitRoot 'runtime\node');$(Join-Path $KitRoot 'runtime\python');$env:Path"
 
 $Existing = Get-NetTCPConnection -LocalPort 3080 -State Listen -ErrorAction SilentlyContinue
 if (-not $Existing) {

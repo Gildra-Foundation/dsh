@@ -105,7 +105,11 @@ final class HarnessService: ObservableObject {
         task.currentDirectoryURL = defaultWorkingDirectory()
 
         var environment = ProcessInfo.processInfo.environment
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let dshHome = environment["DSH_HOME"] ?? "\(home)/.dsh"
         let requiredPaths = [
+            "\(dshHome)/lsp/node_modules/.bin",
+            "\(home)/.gildra-dsh/lsp/node_modules/.bin",
             executableURL.deletingLastPathComponent().path,
             "/opt/homebrew/bin",
             "/usr/local/bin",

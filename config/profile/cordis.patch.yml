@@ -7,3 +7,95 @@
     maxConcurrentRuns: 2
     allowedProjectRoots:
       - "~"
+
+# Real language-server diagnostics and refactors. The editor protocol remains
+# disabled because the Web/Desktop profile owns stdio; agent tools use these
+# local servers directly.
+- id: lsp-actions
+  config:
+    servers:
+      typescript:
+        command: typescript-language-server
+        args: [--stdio]
+        extensionToLanguage:
+          .ts: typescript
+          .tsx: typescriptreact
+          .js: javascript
+          .jsx: javascriptreact
+          .mjs: javascript
+          .cjs: javascript
+      python:
+        command: pyright-langserver
+        args: [--stdio]
+        extensionToLanguage:
+          .py: python
+          .pyi: python
+      json:
+        command: vscode-json-language-server
+        args: [--stdio]
+        extensionToLanguage:
+          .json: json
+          .jsonc: jsonc
+      html:
+        command: vscode-html-language-server
+        args: [--stdio]
+        extensionToLanguage:
+          .html: html
+          .htm: html
+      css:
+        command: vscode-css-language-server
+        args: [--stdio]
+        extensionToLanguage:
+          .css: css
+          .scss: scss
+          .less: less
+      yaml:
+        command: yaml-language-server
+        args: [--stdio]
+        extensionToLanguage:
+          .yaml: yaml
+          .yml: yaml
+      shell:
+        command: bash-language-server
+        args: [start]
+        extensionToLanguage:
+          .sh: shellscript
+          .bash: shellscript
+          .zsh: shellscript
+    editor:
+      enabled: false
+      requestTimeoutMs: 60000
+      diagnosticsCacheMaxFiles: 64
+    maxDiagnostics: 200
+    maxCompletionItems: 20
+    maxCodeActions: 50
+    maxSymbols: 100
+    maxSignatures: 10
+    maxInlayHints: 200
+    maxResultChars: 16000
+    maxDocumentBytes: 4000000
+    timeoutMs: 60000
+
+# Safe checkpoint policy: bounded storage, hash verification for copied
+# snapshots, and a mandatory guard checkpoint before every rewind.
+- id: checkpoint-rewind
+  config:
+    enabled: true
+    provider: auto
+    gitBin: git
+    snapshotDir: ""
+    maxSnapshots: 30
+    maxSnapshotBytes: 536870912
+    pruneOnTurnEnd: true
+    mutationTools: [bash, write, edit, str_replace_editor, pwsh, terminal_send]
+    excludeGlobs: [node_modules, .git, .dsh, dist, build]
+    confirmVia: auto
+    listLimit: 10
+    preRewindCheckpoint: require
+    verifyByHash: true
+    autoCheckpoint:
+      enabled: true
+      intervalMinutes: 0
+    workspaceRestore: restore
+    promptSection: true
+    checkpointTool: true

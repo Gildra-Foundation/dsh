@@ -57,6 +57,30 @@ grep -F 'github:YZz-S/dsh-workspace-files-explorer#$WORKSPACE_FILES_EXPLORER_COM
   "$ROOT/install/macos-install.command" >/dev/null
 grep -F 'github:YZz-S/dsh-workspace-files-explorer#$($Versions.WORKSPACE_FILES_EXPLORER_COMMIT)' \
   "$ROOT/install/windows-install.ps1" >/dev/null
+grep -F 'dsh-doublecheck@$DOUBLECHECK_VERSION' \
+  "$ROOT/install/macos-install.command" >/dev/null
+grep -F 'dsh-doublecheck@$($Versions.DOUBLECHECK_VERSION)' \
+  "$ROOT/install/windows-install.ps1" >/dev/null
+grep -F 'dsh-lsp-actions@$LSP_ACTIONS_VERSION' \
+  "$ROOT/install/macos-install.command" >/dev/null
+grep -F 'dsh-lsp-actions@$($Versions.LSP_ACTIONS_VERSION)' \
+  "$ROOT/install/windows-install.ps1" >/dev/null
+grep -F 'dsh-checkpoint-rewind@$CHECKPOINT_REWIND_VERSION' \
+  "$ROOT/install/macos-install.command" >/dev/null
+grep -F 'dsh-checkpoint-rewind@$($Versions.CHECKPOINT_REWIND_VERSION)' \
+  "$ROOT/install/windows-install.ps1" >/dev/null
+grep -F 'dsh-auto-review@$AUTO_REVIEW_VERSION' \
+  "$ROOT/install/macos-install.command" >/dev/null
+grep -F 'dsh-auto-review@$($Versions.AUTO_REVIEW_VERSION)' \
+  "$ROOT/install/windows-install.ps1" >/dev/null
+grep -F 'typescript-language-server@$TYPESCRIPT_LANGUAGE_SERVER_VERSION' \
+  "$ROOT/install/macos-install.command" >/dev/null
+grep -F 'typescript-language-server@$($Versions.TYPESCRIPT_LANGUAGE_SERVER_VERSION)' \
+  "$ROOT/install/windows-install.ps1" >/dev/null
+grep -F "'settings.checkpointRewind': {" \
+  "$ROOT/plugins/gildra-dsh-ui-compact/lib/client.js" >/dev/null
+grep -F "autoReviewPanel: {" \
+  "$ROOT/plugins/gildra-dsh-ui-compact/lib/client.js" >/dev/null
 grep -F 'patches/workspace-files-explorer-index.js' \
   "$ROOT/install/macos-install.command" >/dev/null
 grep -F 'patches\workspace-files-explorer-index.js' \

@@ -38,6 +38,15 @@ Expand-GitHubArchive "https://github.com/deepseek-ai/deepseek-harness/archive/$(
 $env:DSH_CLIENT_COMMIT_HASH = $Versions.DSH_COMMIT
 & (Join-Path $NodeDir 'corepack.cmd') pnpm --dir $SourceDir run build
 
+$LspDir = Join-Path $InstallRoot 'lsp'
+& (Join-Path $NodeDir 'npm.cmd') install --prefix $LspDir --no-audit --no-fund `
+  "typescript@$($Versions.TYPESCRIPT_VERSION)" `
+  "typescript-language-server@$($Versions.TYPESCRIPT_LANGUAGE_SERVER_VERSION)" `
+  "pyright@$($Versions.PYRIGHT_VERSION)" `
+  "vscode-langservers-extracted@$($Versions.VSCODE_LANGSERVERS_VERSION)" `
+  "yaml-language-server@$($Versions.YAML_LANGUAGE_SERVER_VERSION)" `
+  "bash-language-server@$($Versions.BASH_LANGUAGE_SERVER_VERSION)"
+
 $CodeGraphDir = Join-Path $InstallRoot 'vendor\codegraph'
 Expand-GitHubArchive "https://github.com/JohnXu22786/codegraph/archive/$($Versions.CODEGRAPH_COMMIT).zip" (Join-Path $DownloadDir 'codegraph.zip') "codegraph-$($Versions.CODEGRAPH_COMMIT)" $CodeGraphDir
 
@@ -73,6 +82,10 @@ if ((Test-Path $ProfilePackage) -and ((Get-Content $ProfilePackage -Raw) -match 
   "dsh-team@$($Versions.DSH_TEAM_VERSION)",
   "@perrylink/dsh-github@$($Versions.DSH_GITHUB_VERSION)",
   "github:YZz-S/dsh-workspace-files-explorer#$($Versions.WORKSPACE_FILES_EXPLORER_COMMIT)",
+  "dsh-doublecheck@$($Versions.DOUBLECHECK_VERSION)",
+  "dsh-lsp-actions@$($Versions.LSP_ACTIONS_VERSION)",
+  "dsh-checkpoint-rewind@$($Versions.CHECKPOINT_REWIND_VERSION)",
+  "dsh-auto-review@$($Versions.AUTO_REVIEW_VERSION)",
   "link:$SkillInstallerDir",
   "@syncended/dsh-automations@$($Versions.AUTOMATIONS_VERSION)",
   'github:omdsh-dev/dsh-genui#d99c978d4b0b29ba2a6993f8544a24930fc7d25a',

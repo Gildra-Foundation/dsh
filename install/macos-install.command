@@ -41,6 +41,16 @@ fi
 pnpm --dir "$INSTALL_ROOT/source" install --frozen-lockfile
 DSH_CLIENT_COMMIT_HASH="$DSH_COMMIT" pnpm --dir "$INSTALL_ROOT/source" run build
 
+# Language servers live in an isolated tool directory. They do not modify a
+# user's projects and are pinned for compatibility with the bundled Node.js.
+npm install --prefix "$INSTALL_ROOT/lsp" --no-audit --no-fund \
+  "typescript@$TYPESCRIPT_VERSION" \
+  "typescript-language-server@$TYPESCRIPT_LANGUAGE_SERVER_VERSION" \
+  "pyright@$PYRIGHT_VERSION" \
+  "vscode-langservers-extracted@$VSCODE_LANGSERVERS_VERSION" \
+  "yaml-language-server@$YAML_LANGUAGE_SERVER_VERSION" \
+  "bash-language-server@$BASH_LANGUAGE_SERVER_VERSION"
+
 codegraph_archive="$DOWNLOAD_DIR/codegraph-$CODEGRAPH_COMMIT.tar.gz"
 if [[ ! -f "$INSTALL_ROOT/vendor/codegraph/index.js" ]]; then
   curl -LfsS "https://github.com/JohnXu22786/codegraph/archive/$CODEGRAPH_COMMIT.tar.gz" -o "$codegraph_archive"
@@ -78,6 +88,10 @@ plugins=(
   "dsh-team@$DSH_TEAM_VERSION"
   "@perrylink/dsh-github@$DSH_GITHUB_VERSION"
   "github:YZz-S/dsh-workspace-files-explorer#$WORKSPACE_FILES_EXPLORER_COMMIT"
+  "dsh-doublecheck@$DOUBLECHECK_VERSION"
+  "dsh-lsp-actions@$LSP_ACTIONS_VERSION"
+  "dsh-checkpoint-rewind@$CHECKPOINT_REWIND_VERSION"
+  "dsh-auto-review@$AUTO_REVIEW_VERSION"
   "link:$INSTALL_ROOT/vendor/gildra-skill-installer"
   "@syncended/dsh-automations@$AUTOMATIONS_VERSION"
   "github:omdsh-dev/dsh-genui#d99c978d4b0b29ba2a6993f8544a24930fc7d25a"
