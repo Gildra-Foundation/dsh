@@ -82,6 +82,7 @@ plugins=(
   "github:Zhenyu98/dsh-context-doctor#f45096dc7a7ad52cfa7cf32cdaccae717faa662d"
   "github:delef/dsh-free-web-search#94bd12880a8f4000374cd25629f5e97c9d5364fd"
   "@tt-a1i/archify-dsh@0.1.0"
+  "github:GHJIVHIDD/dsh-plugin-canvas#$CANVAS_COMMIT"
   "dsh-at-file@0.6.3"
   "dsh-context@0.31.0"
   "link:$INSTALL_ROOT/vendor/gildra-dsh-ui-compact"

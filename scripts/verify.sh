@@ -7,6 +7,7 @@ source "$ROOT/config/versions.env"
 
 node --check "$ROOT/plugins/gildra-dsh-ui-compact/lib/index.js"
 node --check "$ROOT/plugins/gildra-dsh-ui-compact/lib/client.js"
+node "$ROOT/plugins/gildra-dsh-ui-compact/test.mjs"
 node --check "$ROOT/plugins/gildra-skill-installer/lib/index.js"
 node "$ROOT/plugins/gildra-skill-installer/test.mjs"
 zsh -n "$ROOT/install/macos-install.command"
@@ -42,6 +43,16 @@ grep -F '@michengai/dsh-skills-manager@$SKILLS_MANAGER_VERSION' \
   "$ROOT/install/macos-install.command" >/dev/null
 grep -F '@michengai/dsh-skills-manager@$($Versions.SKILLS_MANAGER_VERSION)' \
   "$ROOT/install/windows-install.ps1" >/dev/null
+grep -F 'github:GHJIVHIDD/dsh-plugin-canvas#$CANVAS_COMMIT' \
+  "$ROOT/install/macos-install.command" >/dev/null
+grep -F 'github:GHJIVHIDD/dsh-plugin-canvas#$($Versions.CANVAS_COMMIT)' \
+  "$ROOT/install/windows-install.ps1" >/dev/null
+grep -F "['画布', 'Карта кода']" \
+  "$ROOT/plugins/gildra-dsh-ui-compact/lib/client.js" >/dev/null
+grep -F "exec.name !== 'canvas_preview'" \
+  "$ROOT/plugins/gildra-dsh-ui-compact/lib/index.js" >/dev/null
+grep -F "do not send sandbox_permissions when the requested mode equals" \
+  "$ROOT/plugins/gildra-dsh-ui-compact/lib/index.js" >/dev/null
 grep -F 'install_skill_from_github' \
   "$ROOT/plugins/gildra-skill-installer/lib/index.js" >/dev/null
 grep -F '"--no-open"' \

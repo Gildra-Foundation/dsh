@@ -224,6 +224,22 @@ window.__ModuleLoader__.load({
       ['Review new test failures, identify the regression, and propose the smallest verified fix…', 'Опишите, что проверить, когда исправлять автоматически и какие действия запрещены…'],
     ])
 
+    const CODE_MAP_TEXT = new Map([
+      ['画布', 'Карта кода'],
+      ['Canvas', 'Карта кода'],
+      ['Canvas preview', 'Просмотр карты кода'],
+      ['画布为空', 'Карта пока не создана'],
+      ['会话智能体可通过 canvas_preview 工具渲染 HTML 设计稿到此处', 'Попросите ИИ построить карту проекта — результат появится здесь.'],
+      ['隐私脱敏', 'Защита данных'],
+      ['已渲染', 'Готово'],
+      ['未渲染', 'Не создано'],
+      ['刷新', 'Обновить'],
+      ['清空', 'Очистить'],
+      ['备注', 'Примечания'],
+      ['仅当前会话 · 不落盘', 'Только эта сессия · без сохранения'],
+      ['等待渲染', 'Ожидание карты'],
+    ])
+
     const PLUGIN_RU_DICTIONARIES = {
       'settings.pluginBridge': {
         tab: 'Плагины агентов',
@@ -860,6 +876,34 @@ window.__ModuleLoader__.load({
       }
     }
 
+    function translateCodeMapValue(value) {
+      const trimmed = value?.trim()
+      if (!trimmed) return null
+      const exact = CODE_MAP_TEXT.get(trimmed)
+      if (exact) return exact
+      if (trimmed.startsWith('来源 ')) return `Источник: ${trimmed.slice(3)}`
+      if (trimmed.startsWith('更新于 ')) return `Обновлено: ${trimmed.slice(4)}`
+      return null
+    }
+
+    function applyCodeMapTranslations() {
+      const roots = document.querySelectorAll('.cv-panel, [role="tab"]')
+      for (const root of roots) {
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+        let node
+        while ((node = walker.nextNode())) {
+          const translated = translateCodeMapValue(node.nodeValue)
+          if (translated) node.nodeValue = node.nodeValue.replace(node.nodeValue.trim(), translated)
+        }
+        for (const element of root.querySelectorAll('[aria-label], [title]')) {
+          for (const attribute of ['aria-label', 'title']) {
+            const translated = translateCodeMapValue(element.getAttribute(attribute))
+            if (translated) element.setAttribute(attribute, translated)
+          }
+        }
+      }
+    }
+
     function registerRussianPluginDictionaries(ctx) {
       for (const [namespace, dictionary] of Object.entries(PLUGIN_RU_DICTIONARIES)) {
         ctx.effect(() => {
@@ -876,6 +920,7 @@ window.__ModuleLoader__.load({
       applyBrandHeadline()
       applyAutomationTranslations()
       applyAgentSyncTranslations()
+      applyCodeMapTranslations()
       ensureAutomationQuickstart()
     }
 
@@ -930,6 +975,7 @@ window.__ModuleLoader__.load({
         const timer = window.setInterval(() => {
           applyAutomationTranslations()
           applyAgentSyncTranslations()
+          applyCodeMapTranslations()
         }, 500)
         return () => window.clearInterval(timer)
       }, 'gildra-ui-compact: plugin interface translation')
