@@ -12,8 +12,19 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22.19.0'
-      - run: chmod +x scripts/verify.sh desktop/macos/build.sh install/*.command install/dsh-gildra 'Install Gildra DSH.command'
+      - run: chmod +x scripts/verify.sh desktop/macos/build.sh install/*.command install/dsh-gildra install/*.sh install/dsh-gildra-server 'Install Gildra DSH.command'
       - run: ./scripts/verify.sh
+
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.19.0'
+      - run: chmod +x install/*.sh install/dsh-gildra-server scripts/*.mjs
+      - run: bash -n install/linux-server-install.sh install/dsh-gildra-server install/Start-GildraDSH.server.sh
+      - run: node scripts/kit-config.test.mjs
 
   windows:
     runs-on: windows-2025

@@ -12,12 +12,14 @@ import {
   freshProfilePackage,
   managedAgentPresets,
   managedState,
+  patchDshTopClient,
   packageIsBundle,
   patchWorkspaceFilesExplorerClient,
   pathExists,
   readManagedPackages,
   readManifest,
   reconcileBundleOrder,
+  repairNodePtySpawnHelpers,
   renderProfilePatch,
   renderWorkspace,
   run,
@@ -84,6 +86,7 @@ async function main() {
     cwd: profileDir,
     env: environment,
   })
+  await repairNodePtySpawnHelpers(profileDir)
   // pnpm may append a temporary release-age exception while resolving.
   // Restore the deployment-owned workspace policy after package reconciliation.
   await atomicWrite(join(profileDir, 'pnpm-workspace.yaml'), renderWorkspace(manifest, plugins))
@@ -102,6 +105,8 @@ async function main() {
     explorerClientTarget,
     patchWorkspaceFilesExplorerClient(await readFile(explorerClientTarget, 'utf8')),
   )
+  const topClientTarget = join(profileDir, 'node_modules', 'dsh-top', 'lib', 'client.js')
+  await atomicWrite(topClientTarget, patchDshTopClient(await readFile(topClientTarget, 'utf8')))
 
   for (const preset of await managedAgentPresets(repoDir, manifest)) {
     const presetDir = join(dshHome, '.agent-presets', preset.id)

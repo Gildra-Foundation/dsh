@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -8,9 +8,12 @@ import {
   dependencyValue,
   freshProfilePackage,
   managedAgentPresets,
+  patchDshTopClient,
   patchWorkspaceFilesExplorerClient,
+  pluginsMissingFromLock,
   readManagedPackages,
   reconcileBundleOrder,
+  repairNodePtySpawnHelpers,
   renderProfilePatch,
   renderWorkspace,
   validateManifest,
@@ -20,7 +23,9 @@ import {
 const repoDir = fileURLToPath(new URL('..', import.meta.url))
 const manifest = JSON.parse(await readFile(join(repoDir, 'config', 'kit.json'), 'utf8'))
 validateManifest(manifest)
-assert.equal(manifest.distribution.version, '0.1.11')
+assert.equal(manifest.distribution.version, '0.1.14')
+assert.equal(manifest.runtime.ollamaVersion, '0.32.14')
+assert.equal(manifest.runtime.ollamaModel, 'nomic-embed-text')
 assert.equal(manifest.distribution.repository, 'Gildra-Foundation/dsh')
 const plugins = desiredPlugins(manifest, '/opt/gildra', 'darwin', (command) => command !== 'python3')
 assert.equal(plugins.find((plugin) => plugin.package === 'dsh-codegraph').active, false)
@@ -37,8 +42,38 @@ const patchedExplorerClient = patchWorkspaceFilesExplorerClient([
 assert.match(patchedExplorerClient, /open: false/)
 assert.doesNotMatch(patchedExplorerClient, /open: true/)
 assert.equal(patchWorkspaceFilesExplorerClient(patchedExplorerClient), patchedExplorerClient)
+const patchedTopClient = patchDshTopClient('const [open, setOpen] = useState(true);')
+assert.equal(patchedTopClient, 'const [open, setOpen] = useState(false);')
+assert.equal(patchDshTopClient(patchedTopClient), patchedTopClient)
+assert.deepEqual(pluginsMissingFromLock(plugins, await readFile(join(repoDir, 'config', 'profile', 'pnpm-lock.yaml'), 'utf8')), [])
+assert.deepEqual(
+  pluginsMissingFromLock([{ package: 'new-plugin', expandedSpec: 'new-plugin@1.2.3' }], 'specifier: 1.2.2\n')
+    .map((plugin) => plugin.package),
+  ['new-plugin'],
+)
 assert.match(renderWorkspace(manifest, plugins), /dsh-doublecheck@0\.8\.0/)
-assert.match(await renderProfilePatch(repoDir), /id: checkpoint-rewind/)
+for (const packageName of [
+  'dsh-context7',
+  'dsh-mcp-panel',
+  'dsh-plugin-terminal',
+  '@anweat/dsh-browser',
+  'dsh-notification',
+  '@dsh-so/dsh-plugins-finder',
+  'dsh-plugin-ssh',
+  'deepseek-harness-sentinel',
+  'dsh-plugin-rag',
+  'dsh-docker',
+  'dsh-top',
+]) {
+  assert.ok(plugins.some((plugin) => plugin.package === packageName), `Missing managed plugin: ${packageName}`)
+}
+const renderedProfilePatch = await renderProfilePatch(repoDir)
+assert.match(renderedProfilePatch, /id: checkpoint-rewind/)
+assert.match(renderedProfilePatch, /automationMode: standard/)
+assert.match(renderedProfilePatch, /opencliEnabled: false/)
+assert.match(renderedProfilePatch, /passiveProbeEnabled: false/)
+assert.match(renderedProfilePatch, /webhookUrl: ""/)
+assert.match(renderedProfilePatch, /title: Gildra Coding/)
 const presets = await managedAgentPresets(repoDir, manifest)
 assert.deepEqual(
   presets.map((preset) => preset.id),
@@ -103,6 +138,17 @@ try {
   )
 } finally {
   await rm(temporary, { recursive: true, force: true })
+}
+
+const terminalProfile = await mkdtemp(join(tmpdir(), 'gildra-terminal-helper-'))
+try {
+  const helper = join(terminalProfile, 'node_modules', 'dsh-plugin-terminal', 'node_modules', 'node-pty', 'prebuilds', 'darwin-arm64', 'spawn-helper')
+  await mkdir(join(helper, '..'), { recursive: true })
+  await writeFile(helper, 'helper', { mode: 0o644 })
+  assert.deepEqual(await repairNodePtySpawnHelpers(terminalProfile, 'darwin'), [helper])
+  assert.equal((await stat(helper)).mode & 0o111, 0o111)
+} finally {
+  await rm(terminalProfile, { recursive: true, force: true })
 }
 
 console.log('Unified kit configuration tests passed.')

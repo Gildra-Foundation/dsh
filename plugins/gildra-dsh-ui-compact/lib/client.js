@@ -918,6 +918,45 @@ window.__ModuleLoader__.load({
       [/^(.+): (\d+) diagnostic; details are available in Host logs$/, '$1: диагностических сообщений — $2; подробности доступны в журнале хоста'],
     ]
 
+    const MANAGED_PLUGIN_NAMES_RU = new Map([
+      ['context7', 'Context7 — документация'],
+      ['mcp-panel', 'Панель MCP'],
+      ['plugin-terminal', 'Терминал'],
+      ['browser', 'Автоматизация браузера'],
+      ['notification', 'Уведомления'],
+      ['plugins-finder', 'Поиск плагинов'],
+    ])
+
+    const TERMINAL_TEXT = new Map([
+      ['启动中…', 'Запуск…'],
+      ['无会话', 'Нет сессий'],
+      ['空闲', 'Готов'],
+      ['拖动调整高度', 'Перетащите, чтобы изменить высоту'],
+      ['新建终端', 'Новый терминал'],
+      ['重启进程（保留标签位）', 'Перезапустить процесс'],
+      ['重启当前会话', 'Перезапустить текущую сессию'],
+      ['收起面板', 'Свернуть панель'],
+      ['没有终端会话', 'Терминал ещё не открыт'],
+      ['终端', 'Терминал'],
+    ])
+
+    const TERMINAL_PATTERNS = [
+      [/^终端(.*)$/, 'Терминал$1'],
+      [/^(.+) 已退出，点 ⟳ 重启$/, '$1 завершён — нажмите ⟳ для перезапуска'],
+      [/^(.+) \(已退出\)$/, '$1 (завершён)'],
+      [/^关闭 (.+)$/, 'Закрыть $1'],
+      [/^收起面板（(.+)）$/, 'Свернуть панель ($1)'],
+      [/^终端面板（(.+) 切换）$/, 'Панель терминала ($1 — открыть/скрыть)'],
+    ]
+
+    const SSH_REMOTE_STATUS_TEXT = new Map([
+      ['已连接', 'подключён'],
+      ['隧道已通', 'туннель активен'],
+      ['离线', 'не в сети'],
+      ['错误', 'ошибка'],
+      ['加载中…', 'Загрузка…'],
+    ])
+
     const CODE_MAP_TEXT = new Map([
       ['画布', 'Карта кода'],
       ['Canvas', 'Карта кода'],
@@ -971,6 +1010,68 @@ window.__ModuleLoader__.load({
     ])
 
     const PLUGIN_RU_DICTIONARIES = {
+      'settings.sshRemotes': {
+        nav: 'Удалённые серверы SSH',
+        none: 'Удалённые серверы пока не настроены.',
+        hint: 'Добавьте сервер командой: dsh-ssh add <name> --host <host>',
+        refresh: 'Обновить',
+        connect: 'Подключить',
+        open: 'Открыть',
+        disconnect: 'Отключить',
+        start: 'Запустить',
+        stop: 'Остановить',
+        logs: 'Журнал',
+        connected: 'подключён',
+        tunnelUp: 'туннель активен',
+        offline: 'не в сети',
+        unknown: 'неизвестно',
+        loading: 'Загрузка…',
+        error: 'Ошибка',
+        unreachable: 'недоступен',
+        url: 'Адрес',
+      },
+      'sshRemotes.hero': {
+        sshChip: 'Сервер SSH',
+        sshNone: 'Удалённые серверы не настроены',
+        sshLoading: 'Загрузка…',
+        menuAddWorkspace: 'Добавить рабочую папку…',
+        noWorkspaces: 'Рабочих папок пока нет',
+        connected: 'подключён',
+        tunnelUp: 'туннель активен',
+        offline: 'не в сети',
+        error: 'Ошибка',
+        cancel: 'Отмена',
+        close: 'Закрыть',
+      },
+      'ui-rag': {
+        'card.name': 'Память RAG',
+        'card.desc': 'Семантический поиск по истории всех сессий',
+        'card.unsaved': 'Семантический поиск между сессиями · есть несохранённые изменения',
+        'card.enabled': 'Включить индексацию',
+        'card.provider': 'Модель эмбеддингов',
+        'card.providerCustom': 'Своя модель…',
+        'card.endpoint': 'Адрес сервера',
+        'card.credential': 'Учётные данные',
+        'card.apiKeySet': 'настроены',
+        'card.apiKeyMissing': 'не настроены (укажите на странице моделей или в файле учётных данных DSH)',
+        'card.model': 'Название модели',
+        'card.topK': 'Количество результатов',
+        'card.includeToolResults': 'Индексировать результаты инструментов',
+        'card.includeReasoning': 'Индексировать рассуждения',
+        'card.maxChunkChars': 'Максимум символов в фрагменте',
+        'card.stats': 'Состояние индекса',
+        'card.entries': 'фрагментов',
+        'card.sessions': 'сессий',
+        'card.dim': 'размерность',
+        'card.indexModel': 'модель',
+        'card.dataDir': 'папка данных',
+        'card.reindex': 'Перестроить индекс',
+        'card.reindexing': 'Перестроение…',
+        'card.save': 'Сохранить',
+        'card.reset': 'Сбросить',
+        'card.saveFailed': 'Не удалось сохранить',
+        'card.modelChangeHint': 'Смена модели или адреса автоматически перестроит индекс.',
+      },
       'settings.subscriptions': {
         nav: 'Подписки',
         intro: 'Вход и выход из провайдеров по подписке. Вход откроет страницу авторизации в новой вкладке; без браузера можно вставить адрес обратного вызова или код.',
@@ -1335,6 +1436,189 @@ window.__ModuleLoader__.load({
         'settings.caseSensitive': 'Учитывать регистр',
         'settings.caseInsensitive': 'Не учитывать регистр',
         'settings.caseSensitiveOption': 'Учитывать регистр',
+      },
+      'dsh-browser.card': {
+        title: 'Автоматизация браузера',
+        description: 'Среда браузера, уровень самостоятельности, OpenCLI и ограничения частоты действий.',
+        expand: 'Развернуть настройки',
+        collapse: 'Свернуть настройки',
+        unsaved: 'Не сохранено',
+        readOnly: 'Конфигурация доступна только для чтения.',
+        freedom: 'Самостоятельность автоматизации',
+        freedomHint: 'Режим без подтверждений отключает только ручные запросы; лимиты и проверка параметров продолжают действовать.',
+        runtime: 'Среда браузера',
+        runtimeHint: 'По умолчанию используется Playwright; Patchright выбирайте только для сайтов с особыми проверками совместимости.',
+        usage: 'Ограничения использования',
+        usageHint: 'Ограничивает параллельность, всплески и объём обхода, а также делает паузы после ответов 429/503.',
+        advanced: 'Авторизация и дополнительные настройки',
+        advancedHint: 'Не добавляйте файлы состояния в Git; для каждого AuthProfile задайте allowedDomains.',
+        enabled: 'Включить браузер',
+        enabledHint: 'Если выключить, браузерные инструменты будут недоступны.',
+        automationMode: 'Режим автоматизации',
+        automationModeHint: 'read-only / standard / autonomous / unrestricted.',
+        browserRuntime: 'Провайдер среды',
+        browserRuntimeHint: 'Patchright поддерживает только Chromium.',
+        channel: 'Канал браузера',
+        channelHint: 'chromium, chrome или msedge. Для Patchright рекомендуется chrome.',
+        headless: 'Фоновый режим',
+        headlessHint: 'Patchright обычно лучше совместим с сайтами при видимом окне браузера.',
+        opencliEnabled: 'Включить OpenCLI',
+        opencliEnabledHint: 'Общий переключатель адаптеров сайтов и Chrome Browser Bridge.',
+        usagePolicy: 'Ограничения использования (JSON)',
+        usagePolicyHint: 'minDelayMs, maxConcurrency, burst, maxPagesPerRun, maxDepth, retryLimit, backoffBaseMs, cooldownMs.',
+        autoInstall: 'Автоматически устанавливать Chromium',
+        autoInstallHint: 'Может загрузить большой файл; для обычной работы безопаснее отдельно подтвердить browser_install.',
+        storageStatePath: 'Общий путь storageState',
+        storageStatePathHint: 'Устаревший запасной вариант; предпочтительнее AuthProfile с ограничением по доменам.',
+        authProfiles: 'Профили авторизации (JSON)',
+        authProfilesHint: 'Именованные состояния с allowedDomains и persistState.',
+        defaultAuthProfile: 'Профиль авторизации по умолчанию',
+        defaultAuthProfileHint: 'Используется, если профиль не выбран явно; browser_crawl всегда работает анонимно.',
+        rulePacks: 'Наборы правил (JSON)',
+        rulePacksHint: 'Соответствие доменов, init-скрипты с закреплённым хешем и ограниченные последовательности действий.',
+        executablePath: 'Исполняемый файл браузера',
+        executablePathHint: 'Меняйте только для нестандартной установки.',
+        snapshotDir: 'Папка снимков',
+        snapshotDirHint: 'Оставьте пустой, чтобы использовать папку по умолчанию внутри DSH_HOME.',
+        verbose: 'Подробный журнал',
+        verboseHint: 'Выводить подробности запуска и диагностики.',
+        reset: 'Вернуть настройки сборки',
+        invalid: 'Некорректное значение. Проверьте формат и границы.',
+        invalidJson: 'Некорректный JSON или числовые границы.',
+        restart: 'После сохранения полностью перезапустите профиль, чтобы обновить среду и каталог инструментов.',
+        saved: 'Конфигурация синхронизирована.',
+        pending: 'Изменения готовы к сохранению.',
+        invalidSave: 'Некоторые поля заполнены некорректно.',
+        saveFailed: 'Не удалось сохранить; черновик оставлен.',
+        saving: 'Сохранение…',
+        save: 'Сохранить',
+        discard: 'Отменить изменения',
+      },
+      'settings.mcpPanel': {
+        tab: 'MCP',
+        loading: 'Читаем состояние MCP…',
+        error: 'Состояние MCP временно недоступно.',
+        retry: 'Повторить',
+        empty: 'В этом профиле не настроены официальные MCP-серверы (@deepseek-ai/dsh-mcp-client).',
+        servers: 'Серверы',
+        summary: 'Серверов: {total}; подключено: {connected}; с ошибками: {errored}',
+        filterServers: 'Поиск серверов',
+        noMatch: 'Подходящих серверов нет.',
+        expandAll: 'Развернуть всё',
+        collapseAll: 'Свернуть всё',
+        tools: 'Инструменты',
+        noTools: 'Инструменты не зарегистрированы',
+        status: 'Состояние',
+        statusUnknown: 'Неизвестно',
+        statusDisabled: 'Выключен',
+        statusFailed: 'Ошибка подключения',
+        statusConnecting: 'Подключение',
+        statusConnected: 'Подключён',
+        statusWaiting: 'Ожидание повтора',
+        statusExhausted: 'Повторные попытки исчерпаны',
+        statusDisposed: 'Отключён',
+        reconnects: 'Повторные подключения',
+        lastError: 'Последняя ошибка',
+        none: '—',
+        fiber: 'Процесс Cordis',
+        configured: 'Настроен',
+        retryIn: 'Повтор через',
+        attempt: 'Попытка',
+        lastEvent: 'Последнее событие',
+        filterTools: 'Поиск инструментов',
+        ms: 'мс',
+        derivedNote: 'Состояние соединения и число повторов поступают из событий mcp/status. Пока данных нет, соединение отмечается как неизвестное; остальные значения берутся из конфигурации и реестра инструментов.',
+        probes: 'Проверки подключения',
+        probeEmpty: 'Проверок пока нет. Запустите одну инструментом mcp_probe.',
+        probeRunning: 'Выполняется',
+        probeCompleted: 'Завершена',
+        probeFailed: 'Ошибка',
+        probeKilled: 'Отменена',
+        probeStopping: 'Отмена…',
+        probeUnknown: 'Неизвестно',
+        probeNow: 'Проверить',
+        probeReachable: 'Доступен',
+        probeUnreachable: 'Недоступен',
+        probeFailedAction: 'Проверка не выполнена',
+        patchHint: 'Панель добавляет операции в профиль, не переписывая существующий файл, и перед каждой записью создаёт резервную копию.',
+        health: 'Диагностика',
+        healthSuggestions: 'Рекомендации по исправлению',
+        healthNone: 'По доступным данным известных проблем не обнаружено.',
+        healthPending: 'Код выхода и последние строки stderr пока недоступны: официальный клиент не передаёт диагностику процесса.',
+        exitCode: 'Код выхода',
+        stderrTail: 'Последние строки stderr',
+        diag_commandNotFound: 'Команда не найдена — установите нужный пакет или исправьте путь к исполняемому файлу.',
+        diag_commandSpawnFailed: 'Не удалось запустить процесс сервера — проверьте команду, аргументы и журнал сервера.',
+        diag_connectionRefused: 'Сервер отклонил соединение — запустите его или проверьте адрес и порт.',
+        diag_connectionDropped: 'Соединение прервалось — возможно, сервер завершился или перезапустился.',
+        diag_timeout: 'Истекло время ожидания — проверьте нагрузку, адрес и toolCallTimeoutMs.',
+        diag_dns: 'Имя сервера не разрешается — проверьте домен и сеть.',
+        diag_auth401: 'Сервер отклонил учётные данные (HTTP 401) — проверьте заголовок Authorization или токен.',
+        diag_auth403: 'Доступ запрещён (HTTP 403) — учётные данные действуют, но прав недостаточно.',
+        diag_path404: 'Путь вернул 404 — проверьте URL, например суффикс /mcp.',
+        diag_rateLimit: 'Сработало ограничение частоты — подождите или уменьшите частоту запросов.',
+        diag_permission: 'Ошибка доступа — проверьте права файлов, PATH и возможность запуска команды.',
+        diag_reconnectExhausted: 'Лимит повторных подключений исчерпан. Исправьте причину и перезагрузите строку или профиль.',
+        diag_reconnectWaiting: 'Клиент ждёт перед повторным подключением и попробует снова автоматически.',
+        diag_entryFailed: 'Строка Cordis не подключилась — проверьте диагностику загрузчика и конфигурацию.',
+        diagCodeFallback: 'Рекомендация',
+        addServer: 'Добавить сервер',
+        editServer: 'Изменить',
+        removeServer: 'Удалить (выключить)',
+        removeConfirm: 'Удаление добавит операцию disabled: true. Строка останется в файле, и сервер можно будет включить снова.',
+        editorTitleAdd: 'Добавить MCP-сервер',
+        editorTitleEdit: 'Изменить {name}',
+        fieldServerName: 'serverName (пространство имён)',
+        fieldTransport: 'Транспорт',
+        fieldCommand: 'Команда',
+        fieldArgs: 'Аргументы (по одному в строке)',
+        fieldCwd: 'Рабочая папка (необязательно)',
+        fieldUrl: 'URL',
+        fieldTimeout: 'Таймаут вызова toolCallTimeoutMs',
+        fieldFailFast: 'Останавливать подключение при ошибке запуска',
+        fieldReconnectEnabled: 'Автоматически переподключаться',
+        fieldReconnectMaxAttempts: 'Максимум повторных подключений',
+        fieldEnv: 'Переменные окружения',
+        fieldHeaders: 'Заголовки запроса',
+        keyColumn: 'Ключ',
+        valueColumn: 'Значение',
+        unchanged: '(без изменений — сохранить исходное значение)',
+        addRow: 'Добавить строку',
+        removeRow: 'Удалить',
+        save: 'Сохранить',
+        cancel: 'Отмена',
+        previewPatch: 'Подготовить изменение',
+        copyPatch: 'Скопировать изменение',
+        patchCopied: 'Скопировано в буфер обмена.',
+        copyFailed: 'Не удалось скопировать: {message}',
+        patchFor: 'Будет добавлено в {file}:',
+        patchFileUnknown: 'Путь к файлу профиля неизвестен — изменение можно только скопировать.',
+        writeToProfile: 'Записать в профиль',
+        confirmWrite: 'Подтвердить запись',
+        writeRequiresConfirm: 'Проверьте изменение выше, затем нажмите «Подтвердить запись».',
+        writeDone: 'Записано в {file}; резервная копия: {backup}.',
+        writeFailed: 'Ошибка записи: {message}',
+        writeDisabled: 'Запись отключена настройкой writeEnabled; изменение можно только скопировать.',
+        approvalHarness: 'Подтверждение через Harness',
+        approvalInteractive: 'Подтверждение в интерфейсе',
+        trial: 'Пробный вызов инструмента',
+        trialHint: 'Вызов проходит через штатные разрешения и подтверждения; результат остаётся только на этой странице.',
+        trialServer: 'Сервер',
+        trialTool: 'Инструмент',
+        trialArgs: 'Аргументы (JSON)',
+        trialRun: 'Вызвать',
+        trialRunning: 'Вызов…',
+        trialResult: 'Результат',
+        trialDuration: '{ms} мс',
+        trialTruncated: 'Результат превышает лимит отображения и был сокращён.',
+        trialApprovalNote: 'Вызовы с подтверждением работают только во время активного хода сессии.',
+        trialDisabled: 'Пробные вызовы отключены настройкой trialEnabled.',
+        trialNoTools: 'У сервера нет зарегистрированных инструментов — возможно, он не подключён или синхронизация не завершилась.',
+        trialArgsInvalid: 'Аргументы должны быть корректным JSON.',
+        capabilities: 'Возможности',
+        capResources: 'Ресурсы',
+        capPrompts: 'Промпты',
+        capPending: 'Ожидается поддержка в официальном клиенте; сейчас через MCP передаются только инструменты.',
       },
       'dsh-context': {
         tab: 'Контекст',
@@ -1860,6 +2144,78 @@ window.__ModuleLoader__.load({
             const translated = translateWithPatterns(current, SETTINGS_FALLBACK_TEXT, SETTINGS_FALLBACK_PATTERNS)
             if (translated) element.setAttribute(attribute, translated)
           }
+        }
+      }
+    }
+
+    function applyManagedPluginInventoryTranslations() {
+      for (const label of document.querySelectorAll('button strong')) {
+        const technicalId = label.textContent?.trim()
+        const translated = MANAGED_PLUGIN_NAMES_RU.get(technicalId)
+        if (!translated) continue
+        label.textContent = translated
+        label.dataset.gildraPluginId = technicalId
+        const row = label.closest('button')
+        if (!row) continue
+        const ariaLabel = row.getAttribute('aria-label')
+        if (ariaLabel?.startsWith(`${technicalId},`)) {
+          row.setAttribute('aria-label', `${translated}${ariaLabel.slice(technicalId.length)}`)
+        }
+        if (!row.hasAttribute('title')) row.setAttribute('title', `Технический ID: ${technicalId}`)
+      }
+    }
+
+    function applyTerminalTranslations() {
+      for (const root of document.querySelectorAll('.dshTermRoot')) {
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+        let node
+        while ((node = walker.nextNode())) {
+          const translated = translateWithPatterns(node.nodeValue, TERMINAL_TEXT, TERMINAL_PATTERNS)
+          if (translated) node.nodeValue = node.nodeValue.replace(node.nodeValue.trim(), translated)
+        }
+        for (const element of root.querySelectorAll('[aria-label], [title]')) {
+          for (const attribute of ['aria-label', 'title']) {
+            const current = element.getAttribute(attribute)
+            const translated = translateWithPatterns(current, TERMINAL_TEXT, TERMINAL_PATTERNS)
+            if (translated) element.setAttribute(attribute, translated)
+          }
+        }
+      }
+    }
+
+    function applySystemMonitorTranslations() {
+      const root = document.querySelector('.sysmon')
+      if (!root) return
+      const replacements = new Map([
+        ['SYSTEM', 'СИСТЕМА'],
+        ['MEM', 'ОЗУ'],
+        ['DISK', 'ДИСК'],
+        ['NAME', 'ПРОЦЕСС'],
+        ['loading…', 'загрузка…'],
+        ['n/a', 'н/д'],
+        ['not available on this host', 'недоступно на этом компьютере'],
+      ])
+      const patterns = [
+        [/^(\d+) cores$/, '$1 ядер'],
+        [/^(.+) \/ (.+) used$/, '$1 / $2 занято'],
+      ]
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+      let node
+      while ((node = walker.nextNode())) {
+        const translated = translateWithPatterns(node.nodeValue, replacements, patterns)
+        if (translated) node.nodeValue = node.nodeValue.replace(node.nodeValue.trim(), translated)
+      }
+      const toggle = root.querySelector('.sysmon__toggle')
+      if (toggle) toggle.setAttribute('title', toggle.textContent?.trim() === '+' ? 'Развернуть' : 'Свернуть')
+    }
+
+    function applySshRemoteTranslations() {
+      for (const root of document.querySelectorAll('[role="menu"], [role="dialog"]')) {
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+        let node
+        while ((node = walker.nextNode())) {
+          const translated = SSH_REMOTE_STATUS_TEXT.get(node.nodeValue?.trim())
+          if (translated) node.nodeValue = node.nodeValue.replace(node.nodeValue.trim(), translated)
         }
       }
     }
@@ -3167,6 +3523,10 @@ window.__ModuleLoader__.load({
         id: 'plugins',
         enhance() {
           applyAgentSyncTranslations()
+          applyManagedPluginInventoryTranslations()
+          applyTerminalTranslations()
+          applySystemMonitorTranslations()
+          applySshRemoteTranslations()
         },
       },
       {
@@ -3276,6 +3636,10 @@ window.__ModuleLoader__.load({
           applyGitHubTranslations()
           applyWorkspaceFilesTranslations()
           applySettingsFallbackTranslations()
+          applyManagedPluginInventoryTranslations()
+          applyTerminalTranslations()
+          applySystemMonitorTranslations()
+          applySshRemoteTranslations()
         }, 500)
         return () => window.clearInterval(timer)
       }, 'gildra-ui-compact: plugin interface translation')

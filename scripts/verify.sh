@@ -27,6 +27,9 @@ zsh -n "$ROOT/install/Update-GildraDSH.command"
 zsh -n "$ROOT/Install Gildra DSH.command"
 zsh -n "$ROOT/Update Gildra DSH.command"
 zsh -n "$ROOT/script/build_and_run.sh"
+bash -n "$ROOT/install/linux-server-install.sh"
+bash -n "$ROOT/install/dsh-gildra-server"
+bash -n "$ROOT/install/Start-GildraDSH.server.sh"
 
 node -e "import('$ROOT/scripts/kit-config.mjs').then(async m => process.stdout.write(await m.renderProfilePatch('$ROOT')))" \
   > "$TEMP_DIR/cordis.patch.yml"

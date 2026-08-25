@@ -1,0 +1,58 @@
+# Safe defaults for managed third-party developer tools. Credentials, browser
+# login state and webhook URLs always remain local user configuration.
+- id: mcp-panel
+  config:
+    probeEnabled: true
+    probeTimeoutMs: 10000
+    maxProbes: 10
+    refreshIntervalMs: 0
+    outputLanguage: en
+    passiveProbeEnabled: false
+    passiveProbeIntervalMs: 60000
+    trialEnabled: true
+    trialTimeoutMs: 120000
+    trialMaxResultChars: 60000
+    writeEnabled: true
+    backupCount: 5
+
+- id: browser
+  config:
+    automationMode: standard
+    browserRuntime: playwright
+    channel: chromium
+    headless: true
+    opencliEnabled: false
+    usagePolicy:
+      minDelayMs: 750
+      maxConcurrency: 2
+      burst: 3
+      maxPagesPerRun: 20
+      maxDepth: 2
+      retryLimit: 2
+      backoffBaseMs: 1000
+      cooldownMs: 30000
+    storageStatePath: ""
+    authProfiles: {}
+    rulePacks: {}
+    autoInstall: false
+    verbose: false
+
+- id: notify
+  config:
+    notifyOnIdle: true
+    notifyOnError: true
+    notifyOnApproval: true
+    minTurnDurationMs: 10000
+    desktop: true
+    browser: false
+    browserOnlyWhenHidden: true
+    webhookUrl: ""
+    title: Gildra Coding
+
+- id: dsh-plugin-finder
+  config:
+    indexUrl: https://www.dsh.so/plugins-index.json
+    maxResults: 5
+    cacheTtlMs: 600000
+    timeoutMs: 15000
+    attribution: true

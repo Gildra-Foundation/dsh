@@ -1,11 +1,29 @@
 import { createHash } from 'node:crypto'
-import { access, cp, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
+import { access, chmod, cp, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { constants as fsConstants } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
 
 export const MANAGED_STATE_FILE = '.gildra-managed-plugins.json'
 export const PROFILE_PATCH_FILE = 'cordis.patch.yml'
+
+export async function repairNodePtySpawnHelpers(profileDir, platform = process.platform) {
+  if (platform !== 'darwin') return []
+  const repaired = []
+  const roots = [
+    join(profileDir, 'node_modules', 'node-pty', 'prebuilds'),
+    join(profileDir, 'node_modules', 'dsh-plugin-terminal', 'node_modules', 'node-pty', 'prebuilds'),
+  ]
+  for (const root of roots) {
+    for (const architecture of ['darwin-arm64', 'darwin-x64']) {
+      const helper = join(root, architecture, 'spawn-helper')
+      if (!(await pathExists(helper))) continue
+      await chmod(helper, 0o755)
+      repaired.push(helper)
+    }
+  }
+  return repaired
+}
 
 export async function readManifest(repoDir) {
   const path = join(repoDir, 'config', 'kit.json')
@@ -25,14 +43,19 @@ export function validateManifest(manifest) {
   if (manifest.distribution?.channel !== 'stable') {
     throw new Error('config/kit.json distribution.channel must be stable')
   }
-  for (const key of ['dshCommit', 'dshVersion', 'nodeVersion', 'pnpmVersion', 'codegraphCommit']) {
+  for (const key of ['dshCommit', 'dshVersion', 'nodeVersion', 'pnpmVersion', 'ollamaVersion', 'ollamaModel', 'codegraphCommit']) {
     if (typeof manifest.runtime?.[key] !== 'string' || manifest.runtime[key].length === 0) {
       throw new Error(`config/kit.json runtime.${key} must be a non-empty string`)
     }
   }
-  for (const key of ['darwinArm64', 'darwinX64', 'winX64']) {
+  for (const key of ['darwinArm64', 'darwinX64', 'linuxArm64', 'linuxX64', 'winX64']) {
     if (!/^[a-f0-9]{64}$/.test(manifest.runtime.nodeSha256?.[key] ?? '')) {
       throw new Error(`config/kit.json runtime.nodeSha256.${key} must be a SHA-256 digest`)
+    }
+  }
+  for (const key of ['linuxArm64', 'linuxX64']) {
+    if (!/^[a-f0-9]{64}$/.test(manifest.runtime.ollamaSha256?.[key] ?? '')) {
+      throw new Error(`config/kit.json runtime.ollamaSha256.${key} must be a SHA-256 digest`)
     }
   }
   if (!Array.isArray(manifest.plugins) || manifest.plugins.length === 0) {
@@ -127,6 +150,13 @@ export function dependencyValue(plugin) {
     : plugin.expandedSpec
 }
 
+export function pluginsMissingFromLock(plugins, lockText) {
+  return plugins.filter((plugin) => {
+    const specifier = dependencyValue(plugin)
+    return !lockText.includes(`specifier: ${specifier}\n`)
+  })
+}
+
 export function patchWorkspaceFilesExplorerClient(source) {
   const openMarker = '        open: true,\n        toggle() {'
   const closedMarker = '        open: false,\n        toggle() {'
@@ -135,6 +165,18 @@ export function patchWorkspaceFilesExplorerClient(source) {
   if (openMatches === 0 && closedMatches === 1) return source
   if (openMatches !== 1 || closedMatches !== 0) {
     throw new Error(`workspace-files-explorer startup marker changed: open=${String(openMatches)}, closed=${String(closedMatches)}`)
+  }
+  return source.replace(openMarker, closedMarker)
+}
+
+export function patchDshTopClient(source) {
+  const openMarker = 'const [open, setOpen] = useState(true);'
+  const closedMarker = 'const [open, setOpen] = useState(false);'
+  const openMatches = source.split(openMarker).length - 1
+  const closedMatches = source.split(closedMarker).length - 1
+  if (openMatches === 0 && closedMatches === 1) return source
+  if (openMatches !== 1 || closedMatches !== 0) {
+    throw new Error(`dsh-top startup marker changed: open=${String(openMatches)}, closed=${String(closedMatches)}`)
   }
   return source.replace(openMarker, closedMarker)
 }

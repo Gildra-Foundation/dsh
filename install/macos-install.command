@@ -48,6 +48,7 @@ fi
 
 export PATH="$RUNTIME_DIR/node/bin:$PATH"
 corepack prepare "pnpm@$PNPM_VERSION" --activate
+corepack enable pnpm
 
 source_marker="$INSTALL_ROOT/source/.gildra-commit"
 installed_source_commit="$(test -f "$source_marker" && /bin/cat "$source_marker" || true)"

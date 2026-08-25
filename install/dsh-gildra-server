@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+KIT_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+export DSH_HOME="$KIT_ROOT/home"
+export PATH="$KIT_ROOT/lsp/node_modules/.bin:$KIT_ROOT/runtime/node/bin:$PATH"
+
+exec "$KIT_ROOT/runtime/node/bin/node" "$KIT_ROOT/source/apps/cli/lib/bin.js" "$@"

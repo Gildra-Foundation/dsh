@@ -1,0 +1,25 @@
+# Server-first development defaults. The RAG index is isolated per operating
+# system user under DSH_HOME and embeddings never leave the host.
+- id: rag
+  config:
+    enabled: true
+    provider: ollama-nomic
+    model: nomic-embed-text
+    endpoint: http://127.0.0.1:11434/v1
+    topK: 8
+    dataDir: ""
+    includeToolResults: true
+    includeReasoning: false
+    maxChunkChars: 4000
+
+# Read access is always available. Compose lifecycle remains off in the shared
+# profile; a full-access agent can still use the normal terminal after the user
+# selects that permission preset, without granting every session mutation tools.
+- id: dsh-docker
+  config:
+    compose: false
+    inspectTimeoutMs: 30000
+    composeTimeoutMs: 600000
+    maxOutputBytes: 2000000
+    defaultLogTail: 300
+    maxLogChars: 60000

@@ -14,7 +14,7 @@ jobs:
       - name: Build app
         run: |
           if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then node -e 'const m=require("./config/kit.json"); if (process.env.GITHUB_REF_NAME !== `v${m.distribution.version}`) throw new Error("Release tag and kit version differ")'; fi
-          chmod +x desktop/macos/build.sh install/*.command install/dsh-gildra 'Install Gildra DSH.command' 'Update Gildra DSH.command'
+          chmod +x desktop/macos/build.sh install/*.command install/dsh-gildra install/*.sh install/dsh-gildra-server 'Install Gildra DSH.command' 'Update Gildra DSH.command'
           chmod +x scripts/*.sh scripts/*.mjs
           ./scripts/verify.sh
       - name: Clean install smoke test
@@ -88,9 +88,30 @@ jobs:
           name: Gildra-DSH-Windows
           path: dist/Gildra-DSH-Windows.zip
 
+  linux-server:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate server installer
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then node -e 'const m=require("./config/kit.json"); if (process.env.GITHUB_REF_NAME !== `v${m.distribution.version}`) throw new Error("Release tag and kit version differ")'; fi
+          chmod +x install/*.sh install/dsh-gildra-server scripts/*.mjs
+          bash -n install/linux-server-install.sh install/dsh-gildra-server install/Start-GildraDSH.server.sh
+          node scripts/kit-config.test.mjs
+      - name: Assemble archive
+        run: |
+          mkdir -p dist/linux-server
+          cp -R config plugins templates patches install scripts dist/linux-server/
+          cp README.md LICENSE dist/linux-server/
+          tar -C dist/linux-server -czf dist/Gildra-DSH-Linux-Server.tar.gz .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Gildra-DSH-Linux-Server
+          path: dist/Gildra-DSH-Linux-Server.tar.gz
+
   release:
     if: startsWith(github.ref, 'refs/tags/')
-    needs: [macos, windows]
+    needs: [macos, windows, linux-server]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -102,9 +123,10 @@ jobs:
       - name: Create release checksums
         run: |
           cd artifacts
-          sha256sum *.zip > SHA256SUMS.txt
+          sha256sum *.zip *.tar.gz > SHA256SUMS.txt
       - uses: softprops/action-gh-release@v2
         with:
           files: |
             artifacts/*.zip
+            artifacts/*.tar.gz
             artifacts/SHA256SUMS.txt

@@ -1,0 +1,18 @@
+[Unit]
+Description=Gildra DSH local Ollama embeddings
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=@INSTALL_ROOT@/runtime/ollama/bin/ollama serve
+Environment=HOME=@INSTALL_ROOT@/home/ollama
+Environment=OLLAMA_HOST=127.0.0.1:11434
+Environment=OLLAMA_MODELS=@INSTALL_ROOT@/home/ollama/models
+Environment=OLLAMA_NO_CLOUD=true
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target
