@@ -1,0 +1,4 @@
+# Local profile policy. Authentication data is never bundled.
+- id: llm-subscriptions
+  config:
+    providers: [codex, claude]

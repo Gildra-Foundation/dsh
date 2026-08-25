@@ -1,0 +1,3 @@
+- insert:
+    - id: gildra-ui-compact
+      name: '@gildra/dsh-ui-compact'

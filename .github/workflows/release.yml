@@ -1,0 +1,61 @@
+name: Build installers
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build app
+        run: |
+          chmod +x desktop/macos/build.sh install/*.command install/dsh-gildra 'Install Gildra DSH.command'
+          desktop/macos/build.sh
+      - name: Assemble archive
+        run: |
+          mkdir -p dist/mac/dist
+          cp -R config plugins templates desktop install dist/mac/
+          cp README.md LICENSE dist/mac/
+          cp -R 'desktop/macos/build/Gildra DSH.app' 'dist/mac/dist/Gildra DSH.app'
+          cp 'Install Gildra DSH.command' 'dist/mac/Install Gildra DSH.command'
+          cd dist/mac && ditto -c -k --sequesterRsrc --keepParent . ../Gildra-DSH-macOS.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Gildra-DSH-macOS
+          path: dist/Gildra-DSH-macOS.zip
+
+  windows:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assemble archive
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist\windows | Out-Null
+          Copy-Item config,plugins,templates,install -Destination dist\windows -Recurse
+          Copy-Item README.md,LICENSE -Destination dist\windows
+          Copy-Item 'Install Gildra DSH.cmd' 'dist\windows\Install Gildra DSH.cmd'
+          Compress-Archive -Path dist\windows\* -DestinationPath dist\Gildra-DSH-Windows.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Gildra-DSH-Windows
+          path: dist/Gildra-DSH-Windows.zip
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [macos, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*.zip

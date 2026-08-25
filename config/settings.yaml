@@ -1,0 +1,8 @@
+ui-onboarding:
+  welcomeNoticeVersion: 2026-08-13.1
+agent-presets:
+  default: engineering
+agent-default-model:
+  provider: codex
+  model: gpt-5.6-sol
+  reasoningEffort: max
