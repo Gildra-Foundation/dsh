@@ -1,6 +1,6 @@
 {
   "name": "@gildra/dsh-ui-compact",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Compact UI overrides for the Gildra DeepSeek Harness kit",
   "type": "module",
   "scripts": {
@@ -25,7 +25,10 @@
     "client": {
       "platform": "web",
       "inject": [
-        "@deepseek-ai/dsh-client-locale"
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-ui-model-selection"
       ]
     }
   }

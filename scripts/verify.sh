@@ -43,6 +43,14 @@ grep -F '@michengai/dsh-skills-manager@$SKILLS_MANAGER_VERSION' \
   "$ROOT/install/macos-install.command" >/dev/null
 grep -F '@michengai/dsh-skills-manager@$($Versions.SKILLS_MANAGER_VERSION)' \
   "$ROOT/install/windows-install.ps1" >/dev/null
+grep -F 'dsh-team@$DSH_TEAM_VERSION' \
+  "$ROOT/install/macos-install.command" >/dev/null
+grep -F 'dsh-team@$($Versions.DSH_TEAM_VERSION)' \
+  "$ROOT/install/windows-install.ps1" >/dev/null
+grep -F 'gildra/agent-presets' \
+  "$ROOT/plugins/gildra-dsh-ui-compact/lib/index.js" >/dev/null
+grep -F 'Конструктор агентов' \
+  "$ROOT/plugins/gildra-dsh-ui-compact/lib/client.js" >/dev/null
 grep -F 'github:GHJIVHIDD/dsh-plugin-canvas#$CANVAS_COMMIT' \
   "$ROOT/install/macos-install.command" >/dev/null
 grep -F 'github:GHJIVHIDD/dsh-plugin-canvas#$($Versions.CANVAS_COMMIT)' \

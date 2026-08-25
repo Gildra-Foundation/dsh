@@ -70,6 +70,7 @@ if ((Test-Path $ProfilePackage) -and ((Get-Content $ProfilePackage -Raw) -match 
   "@openma/dsh-agents-plugins-bridge@$($Versions.AGENT_PLUGINS_BRIDGE_VERSION)",
   "github:GooDAnDReaDY/dsh-russian-lang#$($Versions.RUSSIAN_LANG_COMMIT)",
   "@michengai/dsh-skills-manager@$($Versions.SKILLS_MANAGER_VERSION)",
+  "dsh-team@$($Versions.DSH_TEAM_VERSION)",
   "link:$SkillInstallerDir",
   "@syncended/dsh-automations@$($Versions.AUTOMATIONS_VERSION)",
   'github:omdsh-dev/dsh-genui#d99c978d4b0b29ba2a6993f8544a24930fc7d25a',

@@ -149,6 +149,190 @@ window.__ModuleLoader__.load({
           padding: 14px !important;
         }
       }
+
+      .gildra-preset-studio-entry {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 18px;
+        margin: 12px 0 18px;
+        padding: 14px 16px;
+        border: 1px solid color-mix(in srgb, var(--dsw-alias-state-business-primary) 34%, var(--dsw-alias-border-l2));
+        border-radius: 12px;
+        background: color-mix(in srgb, var(--dsw-alias-state-business-tertiary) 28%, var(--dsw-alias-bg-layer-1));
+      }
+      .gildra-preset-studio-entry strong {
+        display: block;
+        margin-bottom: 3px;
+        color: var(--dsw-alias-label-primary);
+        font-size: 13px;
+      }
+      .gildra-preset-studio-entry span {
+        display: block;
+        color: var(--dsw-alias-label-secondary);
+        font-size: 11px;
+        line-height: 17px;
+      }
+      .gildra-preset-studio-entry button,
+      .gildra-preset-studio-actions button {
+        min-height: 34px;
+        padding: 7px 13px;
+        border: 1px solid var(--dsw-alias-border-l2);
+        border-radius: 8px;
+        background: var(--dsw-alias-bg-base);
+        color: var(--dsw-alias-label-primary);
+        font: 600 12px/18px var(--dsw-font-family, system-ui);
+        white-space: nowrap;
+        cursor: pointer;
+      }
+      .gildra-preset-studio-entry button,
+      .gildra-preset-studio-actions button[type="submit"] {
+        border-color: var(--dsw-alias-state-business-primary);
+        background: var(--dsw-alias-state-business-primary);
+        color: white;
+      }
+      .gildra-preset-studio-entry button:hover,
+      .gildra-preset-studio-actions button:hover {
+        filter: brightness(1.08);
+      }
+      .gildra-preset-studio-backdrop {
+        position: fixed;
+        z-index: 7000;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        background: rgba(4, 6, 10, .7);
+      }
+      .gildra-preset-studio-dialog {
+        width: min(720px, 100%);
+        max-height: min(860px, calc(100vh - 48px));
+        overflow: auto;
+        border: 1px solid var(--dsw-alias-border-l2);
+        border-radius: 14px;
+        background: var(--dsw-alias-bg-layer-1);
+        box-shadow: 0 28px 90px rgba(0, 0, 0, .62);
+      }
+      .gildra-preset-studio-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 19px 20px 14px;
+        border-bottom: 1px solid var(--dsw-alias-border-l2);
+      }
+      .gildra-preset-studio-head h2 {
+        margin: 0 0 4px;
+        color: var(--dsw-alias-label-primary);
+        font-size: 18px;
+      }
+      .gildra-preset-studio-head p {
+        margin: 0;
+        color: var(--dsw-alias-label-secondary);
+        font-size: 12px;
+        line-height: 18px;
+      }
+      .gildra-preset-studio-close {
+        width: 30px;
+        min-width: 30px;
+        height: 30px;
+        border: 0;
+        border-radius: 7px;
+        background: transparent;
+        color: var(--dsw-alias-label-secondary);
+        font-size: 20px;
+        cursor: pointer;
+      }
+      .gildra-preset-studio-form {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+        padding: 18px 20px 20px;
+      }
+      .gildra-preset-field {
+        display: grid;
+        gap: 6px;
+        color: var(--dsw-alias-label-primary);
+        font: 600 11px/16px var(--dsw-font-family, system-ui);
+      }
+      .gildra-preset-field--wide {
+        grid-column: 1 / -1;
+      }
+      .gildra-preset-field small {
+        color: var(--dsw-alias-label-tertiary, var(--dsw-alias-label-secondary));
+        font-weight: 400;
+      }
+      .gildra-preset-field input,
+      .gildra-preset-field textarea,
+      .gildra-preset-field select {
+        width: 100%;
+        box-sizing: border-box;
+        border: 1px solid var(--dsw-alias-border-l2);
+        border-radius: 8px;
+        background: var(--dsw-alias-bg-base);
+        color: var(--dsw-alias-label-primary);
+        font: 400 12px/18px var(--dsw-font-family, system-ui);
+      }
+      .gildra-preset-field input,
+      .gildra-preset-field select {
+        min-height: 36px;
+        padding: 7px 10px;
+      }
+      .gildra-preset-field textarea {
+        min-height: 160px;
+        padding: 10px;
+        resize: vertical;
+      }
+      .gildra-preset-field input:focus,
+      .gildra-preset-field textarea:focus,
+      .gildra-preset-field select:focus {
+        border-color: var(--dsw-alias-state-business-primary);
+        outline: 2px solid color-mix(in srgb, var(--dsw-alias-state-business-primary) 20%, transparent);
+      }
+      .gildra-preset-studio-status {
+        grid-column: 1 / -1;
+        min-height: 18px;
+        margin: 0;
+        color: var(--dsw-alias-label-secondary);
+        font-size: 12px;
+        line-height: 18px;
+      }
+      .gildra-preset-studio-status[data-kind="error"] {
+        color: var(--dsw-alias-state-error-primary, #ff6b6b);
+      }
+      .gildra-preset-studio-status[data-kind="success"] {
+        color: var(--dsw-alias-state-success-primary, #43c778);
+      }
+      .gildra-preset-studio-actions {
+        grid-column: 1 / -1;
+        display: flex;
+        justify-content: flex-end;
+        gap: 9px;
+      }
+      .gildra-preset-studio-actions button:disabled {
+        cursor: wait;
+        opacity: .62;
+      }
+      @media (max-width: 640px) {
+        .gildra-preset-studio-entry {
+          align-items: stretch;
+          flex-direction: column;
+        }
+        .gildra-preset-studio-backdrop {
+          padding: 8px;
+        }
+        .gildra-preset-studio-dialog {
+          max-height: calc(100vh - 16px);
+        }
+        .gildra-preset-studio-form {
+          grid-template-columns: 1fr;
+        }
+        .gildra-preset-field--wide,
+        .gildra-preset-studio-status,
+        .gildra-preset-studio-actions {
+          grid-column: 1;
+        }
+      }
     `
 
     const BRAND_HEADLINE = 'Gildra Coding'
@@ -697,6 +881,48 @@ window.__ModuleLoader__.load({
       ['自定义', 'Пользовательский'],
     ])
 
+    const TEAM_TEXT = new Map([
+      ['Agent team', 'Команда агентов'],
+      ['Team room', 'Командная комната'],
+      ['Mailbox', 'Сообщения'],
+      ['Task board', 'Доска задач'],
+      ['Shared workspace', 'Общие заметки'],
+      ['All idle', 'Все свободны'],
+      ['This session has no team yet', 'В этой сессии пока нет команды'],
+      ['Ask the main session to call team_spawn for the first teammate.', 'Попросите главного агента создать первого участника команды.'],
+      ['No messages yet', 'Сообщений пока нет'],
+      ['No tasks yet', 'Задач пока нет'],
+      ['The shared workspace is empty', 'Общие заметки пока пусты'],
+      ['Members write conclusions here with team_note instead of messaging them around.', 'Участники сохраняют выводы здесь, чтобы не пересылать их сообщениями.'],
+      ['Panels', 'Панели'],
+      ['Close the panel', 'Закрыть панель'],
+      ['Who is doing what', 'Кто чем занят'],
+      ['Traffic', 'Переписка'],
+      ['Nothing said yet', 'Переписки пока нет'],
+      ['working…', 'работает…'],
+      ['Main session', 'Главный агент'],
+      ['Back to the main session', 'Вернуться к главному агенту'],
+      ['Managed', 'Управляемый'],
+      ['Peer', 'Равноправный'],
+      ['Working', 'Работает'],
+      ['Idle', 'Свободен'],
+      ['To do', 'К выполнению'],
+      ['In progress', 'В работе'],
+      ['Done', 'Готово'],
+      ['Unassigned', 'Не назначено'],
+      ['report', 'отчёт'],
+      ['finished', 'завершено'],
+    ])
+
+    const TEAM_PATTERNS = [
+      [/^(\d+) members$/, '$1 участников'],
+      [/^(\d+) working$/, '$1 работают'],
+      [/^(\d+)\/(\d+) tasks$/, '$1/$2 задач'],
+      [/^(\d+) open$/, '$1 открыто'],
+      [/^Open the session of (.+)$/, 'Открыть сессию: $1'],
+      [/^hop (\d+)$/, 'переход $1'],
+    ]
+
     const AUTOMATION_TEMPLATES = [
       {
         title: 'Проверка кода',
@@ -876,6 +1102,35 @@ window.__ModuleLoader__.load({
       }
     }
 
+    function translateTeamValue(value) {
+      const trimmed = value?.trim()
+      if (!trimmed) return null
+      const exact = TEAM_TEXT.get(trimmed)
+      if (exact) return exact
+      for (const [pattern, replacement] of TEAM_PATTERNS) {
+        if (pattern.test(trimmed)) return trimmed.replace(pattern, replacement)
+      }
+      return null
+    }
+
+    function applyTeamTranslations() {
+      const roots = document.querySelectorAll('[class$="_stage"], [class*="_stage "], [role="tab"]')
+      for (const root of roots) {
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+        let node
+        while ((node = walker.nextNode())) {
+          const translated = translateTeamValue(node.nodeValue)
+          if (translated) node.nodeValue = node.nodeValue.replace(node.nodeValue.trim(), translated)
+        }
+        for (const element of root.querySelectorAll('[aria-label], [title]')) {
+          for (const attribute of ['aria-label', 'title']) {
+            const translated = translateTeamValue(element.getAttribute(attribute))
+            if (translated) element.setAttribute(attribute, translated)
+          }
+        }
+      }
+    }
+
     function translateCodeMapValue(value) {
       const trimmed = value?.trim()
       if (!trimmed) return null
@@ -904,6 +1159,288 @@ window.__ModuleLoader__.load({
       }
     }
 
+    const PRESET_STUDIO_ENDPOINT = '/gildra/agent-presets'
+    const presetModelsApplied = new Map()
+    let presetMappingsPromise
+
+    function slugifyPresetId(value) {
+      const transliterated = value.replace(/[А-Яа-яЁё]/g, (letter) => ({
+        а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'yo', ж: 'zh', з: 'z',
+        и: 'i', й: 'y', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r',
+        с: 's', т: 't', у: 'u', ф: 'f', х: 'kh', ц: 'ts', ч: 'ch', ш: 'sh',
+        щ: 'sch', ъ: '', ы: 'y', ь: '', э: 'e', ю: 'yu', я: 'ya',
+      })[letter.toLocaleLowerCase('ru-RU')] ?? '')
+      return transliterated
+        .toLocaleLowerCase('ru-RU')
+        .normalize('NFKD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 64)
+    }
+
+    async function presetMappings(force = false) {
+      if (force) presetMappingsPromise = undefined
+      presetMappingsPromise ??= fetch(PRESET_STUDIO_ENDPOINT, {
+        method: 'GET',
+        headers: { accept: 'application/json' },
+        cache: 'no-store',
+      }).then(async (response) => {
+        const body = await response.json().catch(() => ({}))
+        if (!response.ok || body.ok !== true || !Array.isArray(body.presets)) {
+          throw new Error(body.error ?? `HTTP ${String(response.status)}`)
+        }
+        return new Map(body.presets.map(preset => [preset.id, preset]))
+      }).catch((error) => {
+        presetMappingsPromise = undefined
+        throw error
+      })
+      return presetMappingsPromise
+    }
+
+    async function applyPresetModel(ctx, sessionId, presetId) {
+      const summary = ctx.sessions.list.getSnapshot().byId[sessionId]
+      if (summary?.blank !== true) return
+      const mapping = (await presetMappings()).get(presetId)
+      if (!mapping) {
+        presetModelsApplied.delete(sessionId)
+        return
+      }
+      const key = `${presetId}:${mapping.provider}:${mapping.model}:${mapping.reasoningEffort ?? ''}`
+      if (presetModelsApplied.get(sessionId) === key) return
+      const latest = ctx.sessions.list.getSnapshot().byId[sessionId]
+      if (latest?.blank !== true || latest.agentPreset !== presetId) return
+      await ctx.modelDirectories.directoryFor(sessionId).select({
+        provider: mapping.provider,
+        model: mapping.model,
+        ...(mapping.reasoningEffort ? { reasoningEffort: mapping.reasoningEffort } : {}),
+      })
+      presetModelsApplied.set(sessionId, key)
+    }
+
+    function syncPresetModels(ctx) {
+      const snapshot = ctx.sessions.list.getSnapshot()
+      for (const id of snapshot.ids) {
+        const session = snapshot.byId[id]
+        if (session?.blank !== true || !session.agentPreset) {
+          presetModelsApplied.delete(id)
+          continue
+        }
+        void applyPresetModel(ctx, id, session.agentPreset).catch((error) => {
+          console.warn('[Gildra] Не удалось применить модель пресета:', error)
+        })
+      }
+    }
+
+    function selectedModel(select, catalog) {
+      let provider = ''
+      let model = ''
+      try {
+        [provider, model] = JSON.parse(select.value)
+      } catch {
+        // An empty or stale option is rejected by the Host-side validation.
+      }
+      const group = catalog.groups.find(candidate => candidate.id === provider)
+      const row = group?.models.find(candidate => candidate.id === model)
+      return { provider, model, row }
+    }
+
+    function fillEfforts(modelSelect, effortSelect, catalog) {
+      const { row } = selectedModel(modelSelect, catalog)
+      effortSelect.replaceChildren()
+      const defaultOption = document.createElement('option')
+      defaultOption.value = ''
+      defaultOption.textContent = 'По умолчанию модели'
+      effortSelect.appendChild(defaultOption)
+      for (const effort of row?.reasoning?.efforts ?? []) {
+        const option = document.createElement('option')
+        option.value = effort.id
+        option.textContent = effort.name
+        effortSelect.appendChild(option)
+      }
+      effortSelect.value = row?.reasoning?.defaultEffort ?? ''
+      effortSelect.disabled = (row?.reasoning?.efforts?.length ?? 0) === 0
+    }
+
+    async function loadModelCatalog(ctx, modelSelect, effortSelect, status) {
+      const { result } = await ctx.connection.api.llm.models({})
+      if (!result.ok) throw new Error(result.error.message)
+      const catalog = result.value
+      modelSelect.replaceChildren()
+      for (const group of catalog.groups) {
+        const optionGroup = document.createElement('optgroup')
+        optionGroup.label = group.name
+        for (const model of group.models) {
+          const option = document.createElement('option')
+          option.value = JSON.stringify([group.id, model.id])
+          option.textContent = `${model.name} · ${group.name}`
+          optionGroup.appendChild(option)
+        }
+        modelSelect.appendChild(optionGroup)
+      }
+      if (modelSelect.options.length === 0) throw new Error('Нет доступных моделей. Сначала настройте провайдера в разделе «Модели».')
+      const preferredValue = JSON.stringify(['codex', 'gpt-5.6-sol'])
+      const preferred = [...modelSelect.options].find(option => option.value === preferredValue)
+      if (preferred) modelSelect.value = preferred.value
+      fillEfforts(modelSelect, effortSelect, catalog)
+      modelSelect.addEventListener('change', () => fillEfforts(modelSelect, effortSelect, catalog))
+      status.textContent = catalog.failures.length === 0
+        ? 'Пресет получит инженерные инструменты, а выбранная модель будет применяться при его включении.'
+        : `Часть каталогов моделей недоступна: ${catalog.failures.map(row => row.name).join(', ')}`
+      return catalog
+    }
+
+    function closePresetStudio(backdrop) {
+      backdrop.remove()
+    }
+
+    function openPresetStudio(ctx) {
+      document.querySelector('.gildra-preset-studio-backdrop')?.remove()
+      const backdrop = document.createElement('div')
+      backdrop.className = 'gildra-preset-studio-backdrop'
+      const dialog = document.createElement('section')
+      dialog.className = 'gildra-preset-studio-dialog'
+      dialog.setAttribute('role', 'dialog')
+      dialog.setAttribute('aria-modal', 'true')
+      dialog.setAttribute('aria-labelledby', 'gildra-preset-studio-title')
+      dialog.innerHTML = `
+        <header class="gildra-preset-studio-head">
+          <div>
+            <h2 id="gildra-preset-studio-title">Новый пресет агента</h2>
+            <p>Задайте роль, системный промпт и модель. Инженерные инструменты и работа с командой подключаются автоматически.</p>
+          </div>
+          <button class="gildra-preset-studio-close" type="button" aria-label="Закрыть">×</button>
+        </header>
+        <form class="gildra-preset-studio-form">
+          <label class="gildra-preset-field">
+            Название
+            <input name="name" maxlength="80" required placeholder="Например, Архитектор" autocomplete="off">
+          </label>
+          <label class="gildra-preset-field">
+            Идентификатор
+            <input name="id" maxlength="64" required pattern="[a-z0-9][a-z0-9-]*" placeholder="architect" autocomplete="off" spellcheck="false">
+            <small>Латинские буквы, цифры и дефисы.</small>
+          </label>
+          <label class="gildra-preset-field gildra-preset-field--wide">
+            Описание
+            <input name="description" maxlength="240" placeholder="Когда использовать этого агента">
+          </label>
+          <label class="gildra-preset-field gildra-preset-field--wide">
+            Системный промпт
+            <textarea name="systemPrompt" maxlength="32000" required placeholder="Ты — ведущий архитектор. Сначала изучай кодовую базу, затем предлагай минимальные проверяемые изменения…"></textarea>
+          </label>
+          <label class="gildra-preset-field">
+            Модель
+            <select name="model" disabled><option>Загрузка моделей…</option></select>
+          </label>
+          <label class="gildra-preset-field">
+            Глубина рассуждения
+            <select name="effort" disabled><option>По умолчанию модели</option></select>
+          </label>
+          <p class="gildra-preset-studio-status" role="status">Загружаю доступные модели…</p>
+          <div class="gildra-preset-studio-actions">
+            <button type="button" data-cancel>Отмена</button>
+            <button type="submit" disabled>Создать пресет</button>
+          </div>
+        </form>
+      `
+      backdrop.appendChild(dialog)
+      document.body.appendChild(backdrop)
+
+      const form = dialog.querySelector('form')
+      const name = form.elements.namedItem('name')
+      const id = form.elements.namedItem('id')
+      const model = form.elements.namedItem('model')
+      const effort = form.elements.namedItem('effort')
+      const submit = form.querySelector('button[type="submit"]')
+      const status = form.querySelector('[role="status"]')
+      let idEdited = false
+
+      id.addEventListener('input', () => { idEdited = true })
+      name.addEventListener('input', () => {
+        if (!idEdited) id.value = slugifyPresetId(name.value)
+      })
+      const close = () => {
+        document.removeEventListener('keydown', onKey)
+        closePresetStudio(backdrop)
+      }
+      dialog.querySelector('.gildra-preset-studio-close').addEventListener('click', close)
+      form.querySelector('[data-cancel]').addEventListener('click', close)
+      backdrop.addEventListener('mousedown', event => { if (event.target === backdrop) close() })
+      const onKey = (event) => {
+        if (event.key !== 'Escape') return
+        close()
+      }
+      document.addEventListener('keydown', onKey)
+
+      void loadModelCatalog(ctx, model, effort, status).then(() => {
+        model.disabled = false
+        submit.disabled = false
+        name.focus()
+      }).catch((error) => {
+        status.dataset.kind = 'error'
+        status.textContent = error instanceof Error ? error.message : String(error)
+      })
+
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault()
+        if (!form.reportValidity()) return
+        const { provider, model: modelId } = selectedModel(model, { groups: [] })
+        submit.disabled = true
+        status.dataset.kind = ''
+        status.textContent = 'Создаю и проверяю пресет…'
+        try {
+          const response = await fetch(PRESET_STUDIO_ENDPOINT, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', accept: 'application/json' },
+            body: JSON.stringify({
+              id: id.value,
+              name: name.value,
+              description: form.elements.namedItem('description').value,
+              systemPrompt: form.elements.namedItem('systemPrompt').value,
+              provider,
+              model: modelId,
+              reasoningEffort: effort.value || undefined,
+              source: 'engineering',
+            }),
+          })
+          const body = await response.json().catch(() => ({}))
+          if (!response.ok || body.ok !== true) throw new Error(body.error ?? `HTTP ${String(response.status)}`)
+          await presetMappings(true)
+          status.dataset.kind = 'success'
+          status.textContent = 'Пресет создан и проверен. Обновляю список…'
+          window.setTimeout(() => window.location.reload(), 650)
+        } catch (error) {
+          submit.disabled = false
+          status.dataset.kind = 'error'
+          status.textContent = error instanceof Error ? error.message : String(error)
+        }
+      })
+    }
+
+    function ensurePresetStudioEntry(ctx) {
+      if (document.querySelector('.gildra-preset-studio-entry')) return
+      const headings = [...document.querySelectorAll('[role="dialog"] h2, [role="dialog"] h3')]
+      const heading = headings.find(node => /agent\s*presets?|пресет/i.test(node.textContent ?? ''))
+      if (!heading || heading.closest('.gildra-preset-studio-dialog')) return
+      const section = heading.parentElement
+      if (!section) return
+      const entry = document.createElement('div')
+      entry.className = 'gildra-preset-studio-entry'
+      const copy = document.createElement('div')
+      const title = document.createElement('strong')
+      title.textContent = 'Конструктор агентов'
+      const hint = document.createElement('span')
+      hint.textContent = 'Создайте пресет с собственным системным промптом и закреплённой моделью.'
+      copy.append(title, hint)
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.textContent = 'Создать пресет'
+      button.addEventListener('click', () => openPresetStudio(ctx))
+      entry.append(copy, button)
+      heading.insertAdjacentElement('afterend', entry)
+    }
+
     function registerRussianPluginDictionaries(ctx) {
       for (const [namespace, dictionary] of Object.entries(PLUGIN_RU_DICTIONARIES)) {
         ctx.effect(() => {
@@ -916,12 +1453,14 @@ window.__ModuleLoader__.load({
       }
     }
 
-    function applyUiEnhancements() {
+    function applyUiEnhancements(ctx) {
       applyBrandHeadline()
       applyAutomationTranslations()
       applyAgentSyncTranslations()
+      applyTeamTranslations()
       applyCodeMapTranslations()
       ensureAutomationQuickstart()
+      ensurePresetStudioEntry(ctx)
     }
 
     function handleAutomationEntry(event) {
@@ -952,11 +1491,11 @@ window.__ModuleLoader__.load({
       }, 'gildra-ui-compact: styles')
 
       ctx.effect(() => {
-        applyUiEnhancements()
+        applyUiEnhancements(ctx)
         let frame = 0
         const observer = new MutationObserver(() => {
           window.cancelAnimationFrame(frame)
-          frame = window.requestAnimationFrame(applyUiEnhancements)
+          frame = window.requestAnimationFrame(() => applyUiEnhancements(ctx))
         })
         observer.observe(document.body, {
           childList: true,
@@ -969,12 +1508,29 @@ window.__ModuleLoader__.load({
         }
       }, 'gildra-ui-compact: interface enhancements')
 
-      ctx.effect(() => ctx.locale.subscribe(applyUiEnhancements), 'gildra-ui-compact: locale changes')
+      ctx.effect(() => ctx.locale.subscribe(() => applyUiEnhancements(ctx)), 'gildra-ui-compact: locale changes')
+
+      ctx.effect(() => {
+        syncPresetModels(ctx)
+        const stopList = ctx.sessions.list.subscribe(() => syncPresetModels(ctx))
+        const stopPreset = ctx.remote.$on('agent-preset/selected', (sessionId, agentPreset) => {
+          presetModelsApplied.delete(sessionId)
+          void applyPresetModel(ctx, sessionId, agentPreset).catch((error) => {
+            console.warn('[Gildra] Не удалось переключить модель пресета:', error)
+          })
+        })
+        return () => {
+          stopList()
+          stopPreset()
+          presetModelsApplied.clear()
+        }
+      }, 'gildra-ui-compact: preset model switching')
 
       ctx.effect(() => {
         const timer = window.setInterval(() => {
           applyAutomationTranslations()
           applyAgentSyncTranslations()
+          applyTeamTranslations()
           applyCodeMapTranslations()
         }, 500)
         return () => window.clearInterval(timer)
@@ -987,7 +1543,7 @@ window.__ModuleLoader__.load({
     }
 
     exports.apply = apply
-    exports.inject = ['locale']
+    exports.inject = ['locale', 'connection', 'sessions', 'remote', 'modelDirectories']
     return module.exports
   },
 })

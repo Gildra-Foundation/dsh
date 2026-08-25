@@ -75,6 +75,7 @@ plugins=(
   "@openma/dsh-agents-plugins-bridge@$AGENT_PLUGINS_BRIDGE_VERSION"
   "github:GooDAnDReaDY/dsh-russian-lang#$RUSSIAN_LANG_COMMIT"
   "@michengai/dsh-skills-manager@$SKILLS_MANAGER_VERSION"
+  "dsh-team@$DSH_TEAM_VERSION"
   "link:$INSTALL_ROOT/vendor/gildra-skill-installer"
   "@syncended/dsh-automations@$AUTOMATIONS_VERSION"
   "github:omdsh-dev/dsh-genui#d99c978d4b0b29ba2a6993f8544a24930fc7d25a"
