@@ -8,7 +8,7 @@
 - Профиль **Engineering** с Codex и Claude Code subagents.
 - Интернет-поиск DuckDuckGo, GenUI, Archify, CodeGraph, Context, Context Doctor, Security Audit и `@file`.
 - `dsh-automation` 0.1.7: отдельные фоновые Agent-сессии, расписания, история запусков, выбор provider/model/reasoning и управление через инструменты `automation_*`.
-- Компактный Context Doctor: индикатор 31×27 px и уменьшенная панель.
+- Компактный Context Doctor: индикатор 31×27 px без перекрывающей интерфейс панели; аудит и Agent-инструмент продолжают работать.
 - Нативная оболочка macOS и ярлык desktop-app для Windows через Edge WebView.
 
 ## Установка

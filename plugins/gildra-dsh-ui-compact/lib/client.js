@@ -13,6 +13,7 @@ window.__ModuleLoader__.load({
         justify-content: center !important;
         border-radius: 7px !important;
         font-size: 11px !important;
+        cursor: default !important;
       }
       [data-context-doctor] > button > span:nth-child(2) {
         position: absolute !important;
@@ -32,16 +33,7 @@ window.__ModuleLoader__.load({
         align-self: flex-end !important;
       }
       [data-context-doctor] > section[role="dialog"] {
-        width: 340px !important;
-        max-width: calc(100vw - 20px) !important;
-        max-height: min(58vh, 480px) !important;
-        border-radius: 10px !important;
-      }
-      @media (max-width: 520px) {
-        [data-context-doctor] > section[role="dialog"] {
-          width: 300px !important;
-          max-height: min(54vh, 430px) !important;
-        }
+        display: none !important;
       }
     `
 
