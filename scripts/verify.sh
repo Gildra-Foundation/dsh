@@ -27,6 +27,14 @@ grep -F '@openma/dsh-agents-plugins-bridge@$AGENT_PLUGINS_BRIDGE_VERSION' \
   "$ROOT/install/macos-install.command" >/dev/null
 grep -F '@openma/dsh-agents-plugins-bridge@$($Versions.AGENT_PLUGINS_BRIDGE_VERSION)' \
   "$ROOT/install/windows-install.ps1" >/dev/null
+grep -F 'github:GooDAnDReaDY/dsh-russian-lang#$RUSSIAN_LANG_COMMIT' \
+  "$ROOT/install/macos-install.command" >/dev/null
+grep -F 'github:GooDAnDReaDY/dsh-russian-lang#$($Versions.RUSSIAN_LANG_COMMIT)' \
+  "$ROOT/install/windows-install.ps1" >/dev/null
+grep -F "'settings.pluginBridge'" \
+  "$ROOT/plugins/gildra-dsh-ui-compact/lib/client.js" >/dev/null
+grep -F "['MCP/Skills 管理', 'Управление MCP и навыками']" \
+  "$ROOT/plugins/gildra-dsh-ui-compact/lib/client.js" >/dev/null
 
 "$ROOT/desktop/macos/build.sh" >/dev/null
 codesign --verify --deep --strict "$ROOT/desktop/macos/build/Gildra DSH.app"

@@ -65,6 +65,7 @@ if ((Test-Path $ProfilePackage) -and ((Get-Content $ProfilePackage -Raw) -match 
   '@deepseek-ai/dsh-subagent-claude-code@0.1.1-rc.2',
   "github:kuaiyukuaikuai/dsh-agent-sync#$($Versions.AGENT_SYNC_COMMIT)",
   "@openma/dsh-agents-plugins-bridge@$($Versions.AGENT_PLUGINS_BRIDGE_VERSION)",
+  "github:GooDAnDReaDY/dsh-russian-lang#$($Versions.RUSSIAN_LANG_COMMIT)",
   "@syncended/dsh-automations@$($Versions.AUTOMATIONS_VERSION)",
   'github:omdsh-dev/dsh-genui#d99c978d4b0b29ba2a6993f8544a24930fc7d25a',
   'github:omdsh-dev/dsh-security-audit#ae927be8c92e483a8c8739b32831c0a237c0ed01',

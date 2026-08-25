@@ -224,6 +224,366 @@ window.__ModuleLoader__.load({
       ['Review new test failures, identify the regression, and propose the smallest verified fix…', 'Опишите, что проверить, когда исправлять автоматически и какие действия запрещены…'],
     ])
 
+    const PLUGIN_RU_DICTIONARIES = {
+      'settings.pluginBridge': {
+        tab: 'Плагины агентов',
+        title: 'Мост плагинов агентов',
+        bridgeTabs: 'Состояние по агентам',
+        bridgeOverview: 'Обзор',
+        codexBridge: 'Codex',
+        claudeCodeBridge: 'Claude Code',
+        piBridge: 'Pi',
+        loading: 'Читаем плагины и каталоги…',
+        loadError: 'Мост плагинов временно недоступен.',
+        retry: 'Повторить',
+        mutationError: 'Операция не выполнена. Существующие плагины не изменены.',
+        installErrorTimeout: 'Источник плагина отвечал слишком долго. Повторите попытку или проверьте журнал Host.',
+        installErrorInstalled: 'Этот плагин уже установлен. Обновите список.',
+        installErrorUnsupported: 'Установка невозможна: мост не поддерживает возможности этого плагина.',
+        installErrorInvalid: 'Некорректный манифест или структура плагина. Проверьте журнал Host.',
+        installErrorActivation: 'Плагин загружен, но его возможности не подключились. Проверьте журнал Host.',
+        installErrorSource: 'Не удалось загрузить источник. Проверьте адрес и соединение.',
+        installErrorGeneric: 'Host не смог завершить установку.',
+        rescan: 'Обновить список',
+        piUpdates: 'Обновления пакетов Pi',
+        piUpdateMode: 'Режим обновлений',
+        piUpdateModeNotify: 'Только уведомлять',
+        piUpdateModeAuto: 'Обновлять автоматически',
+        piUpdateModeOff: 'Не проверять',
+        checkUpdates: 'Проверить сейчас',
+        updateAll: 'Обновить всё',
+        update: 'Обновить',
+        lastChecked: 'Последняя проверка',
+        piUpdatesEmpty: 'Для импортированных пакетов Pi обновлений нет.',
+        autoUpdatePackage: 'Разрешить автоматическое обновление этого пакета',
+        piScope_user: 'Для пользователя',
+        piScope_project: 'Для проекта',
+        installed: 'Установлено',
+        installedEmpty: 'В DSH пока не импортировано ни одного плагина.',
+        configuredMarketplaces: 'Подключённые каталоги',
+        marketplaceLocation: 'Локальный путь или GitHub-адрес каталога',
+        add: 'Добавить',
+        configuredEmpty: 'Подключённых каталогов нет.',
+        plugins: 'плагинов',
+        searchPlugins: 'Поиск плагинов',
+        noPluginMatches: 'Подходящих плагинов нет.',
+        discoveredMarketplaces: 'Найденные регистрации каталогов',
+        discoveredMarketplacesEmpty: 'Каталоги Codex или Claude Code не найдены.',
+        discoveredLocal: 'Найденные локальные плагины',
+        discoveredLocalEmpty: 'Локальные плагины Codex, Claude Code или Pi не найдены.',
+        rows: 'модулей возможностей',
+        protected: 'защищено',
+        unsupported: 'не поддерживается',
+        codexHostRequired: 'Плагин использует подключение App из Codex. Подключитесь и войдите в Codex, чтобы оно заработало.',
+        enabled: 'Включён',
+        disabled: 'Выключен',
+        foreignEnabled: 'Включён в источнике',
+        foreignDisabled: 'Выключен в источнике',
+        enable: 'Включить',
+        disable: 'Выключить',
+        install: 'Установить',
+        installing: 'Установка…',
+        working: 'Выполняется…',
+        downloading: 'Загрузка…',
+        remoteMarketplaceRegistration: 'Регистрация Git · полный каталог загрузится при добавлении',
+        import: 'Импортировать',
+        imported: 'Импортирован',
+      },
+      'at-file': {
+        'dock.aria': 'Упомянутые пути проекта',
+        'dock.remove': 'Убрать {name}',
+        nav: 'Упоминания файлов',
+        'settings.title': 'Упоминания файлов проекта',
+        'settings.subtitle': 'Введите @, чтобы найти путь в проекте. Плагин передаёт путь, не читая содержимое файла.',
+        'settings.enabled': 'Включить упоминания файлов через @',
+        'settings.enabledDesc': 'При выключении скрываются поиск путей и выбранные ссылки, а пути не передаются модели.',
+        'settings.ignorePastedMentions': 'Игнорировать @ в вставленном тексте',
+        'settings.ignorePastedMentionsDesc': 'Вставленные через буфер @-ссылки останутся обычным текстом.',
+        'settings.ignoreFiles': 'Фильтры файлов',
+        'settings.ignoreFilesDesc': 'Правила применяются только к имени файла. Можно использовать точное имя или регулярное выражение.',
+        'settings.scope': 'Область фильтра',
+        'settings.global': 'Глобально',
+        'settings.workspace': 'Проект',
+        'settings.globalTitle': 'Глобальные правила',
+        'settings.globalDesc': 'Применяются ко всем проектам.',
+        'settings.workspaceTitle': 'Правила проекта',
+        'settings.workspaceDesc': 'Применяются только к выбранному проекту вместе с глобальными правилами.',
+        'settings.workspaceSelect': 'Проект',
+        'settings.noWorkspace': 'Нет доступного проекта',
+        'settings.restoreDefaults': 'Восстановить стандартные',
+        'settings.clearWorkspace': 'Очистить правила проекта',
+        'settings.emptyGlobal': 'Глобальных фильтров нет.',
+        'settings.emptyWorkspace': 'У проекта нет дополнительных фильтров.',
+        'settings.namePlaceholder': 'Например, desktop.ini',
+        'settings.regexPlaceholder': 'Например, \\.map$ или ^test-',
+        'settings.nameHint': 'Введите полное имя файла без пути.',
+        'settings.regexHint': 'Регулярное выражение проверяется по полному имени файла без пути.',
+        'settings.invalidName': 'Имя файла не может содержать разделители пути.',
+        'settings.invalidRegex': 'Некорректное регулярное выражение.',
+        'settings.duplicateName': 'Такое имя уже есть в текущем списке.',
+        'settings.inheritedName': 'Это имя уже отфильтровано глобально.',
+        'settings.add': 'Добавить',
+        'settings.saving': 'Сохранение',
+        'settings.remove': 'Удалить {name}',
+        'settings.inherited': 'Также применяются глобальные правила',
+        'settings.ruleType': 'Тип правила',
+        'settings.kind.exact': 'Точное имя',
+        'settings.kind.regex': 'Регулярное выражение',
+        'settings.caseSensitive': 'Учитывать регистр',
+        'settings.caseInsensitive': 'Не учитывать регистр',
+        'settings.caseSensitiveOption': 'Учитывать регистр',
+      },
+      'dsh-context': {
+        tab: 'Контекст',
+        'cat.system': 'Системный промпт',
+        'cat.tools': 'Схемы инструментов',
+        'cat.user': 'Сообщения пользователя',
+        'cat.inject': 'Добавленный контекст',
+        'cat.assistant': 'Ответы ассистента',
+        'cat.tool': 'Результаты инструментов',
+        'overview.title': 'Текущий контекст',
+        'overview.estimate': 'токенов (оценка)',
+        'overview.free': 'Свободное окно',
+        'overview.used': 'контекста использовано',
+        'overview.ofUsed': 'использованного контекста',
+        'overview.compactReserve': 'Резерв автосжатия: оно запускается на {pct}% окна, поэтому эта область обычно остаётся свободной.',
+        'stats.title': 'Статистика контекста',
+        'stats.hint': 'Содержится в текущем контексте',
+        'stats.turns': 'Ходы',
+        'stats.steps': 'Шаги',
+        'stats.injects': 'Добавления',
+        'stats.compactions': 'Сжатия',
+        'stats.prunes': 'Очистки',
+        'stats.toolCalls': 'Вызовы инструментов',
+        'stats.images': 'Изображения',
+        'stats.cacheHit': 'Попадание в кэш',
+        'stats.cost': 'Стоимость',
+        'stats.costTip': 'Приблизительная стоимость всей сессии по тарифам DeepSeek. Значение справочное.',
+        'stats.costPriceHead': 'Цена за 1 млн токенов (пик | половина цены вне пика):',
+        'stats.costHit': 'кэш',
+        'stats.costMiss': 'без кэша',
+        'stats.costOut': 'вывод',
+        'plugin.title': 'О плагине',
+        'plugin.hint': 'Расширенная панель контекста DSH',
+        'plugin.name': 'Плагин',
+        'plugin.github': 'GitHub',
+        'tools.top': 'Самые объёмные схемы:',
+        'tools.more': 'из {n}',
+        'trend.title': 'История контекста',
+        'gran.step': 'Шаг',
+        'gran.turn': 'Ход',
+        'settings.title': 'Контекст',
+        'settings.desc': 'Настройки отображения панели Context',
+        'settings.gran': 'Детализация графика',
+        'settings.mode': 'Режим графика',
+        'settings.expand': 'Развернуть',
+        'settings.collapse': 'Свернуть',
+        'settings.readOnly': 'В этом окружении настройки доступны только для чтения',
+        'gran.total': 'Всего',
+        'gran.delta': 'Изменение',
+        'gran.modeHint': 'Всего: накопленный состав; изменение: разница с предыдущим запросом.',
+        'trend.hint': '✂ означает сжатие или очистку; Шаг/Ход меняет детализацию.',
+        'trend.empty': 'После отправки сообщения здесь появится состав контекста каждого запроса.',
+        'detail.step': 'Ход {t} · шаг {s}',
+        'detail.turn': 'Ход {t} · шагов: {n}',
+        'detail.lastStep': 'Последний шаг',
+        'detail.estTotal': 'Оценка ≈ {n}',
+        'detail.actual': 'Фактически во входе {n}',
+        'detail.output': 'Вывод {n}',
+        'detail.cache': 'Кэш {n}%',
+        'events.title': 'События контекста',
+        'events.empty': 'Событий пока нет: здесь появятся сжатия, добавления и смена модели.',
+        'events.at': 'Ход {t} · шаг {s}',
+        'events.range': 'Ход {t} · шаги {a}→{b}',
+        'events.rangeTo': 'Ход {a} · шаг {as} → ход {b} · шаг {bs}',
+        'kind.inject': 'Добавление',
+        'kind.compaction': 'Сжатие',
+        'kind.prune': 'Очистка',
+        'kind.model': 'Смена модели',
+        'kind.mode': 'Режим',
+        'nodes.title': 'Сообщения',
+        'nodes.hint': 'видимые модели сейчас, новые сверху',
+        'nodes.more': '… пропущено предыдущих сообщений: {n}',
+        'nodes.empty': 'Сейчас модель не видит сообщений',
+        loading: 'Читаем журнал сессии…',
+        error: 'Не удалось прочитать контекст: ',
+        'error.retry': 'Повторить',
+        footer: 'Оценка использует приближение около 4 символов на токен; фактическое значение сообщает провайдер.',
+        'tip.step': 'Ход {t} · шаг {s}',
+        'tip.turn': 'Ход {t} · шагов: {n}',
+        'tip.total': 'Всего ≈ {n}',
+        'tip.actual': ' (фактически {n})',
+        'tip.delta': 'Δ {n}',
+        'ev.compaction': 'Контекст сжат: сводка заменила сообщений — {n}',
+        'ev.prune': 'Результат инструмента очищен',
+        'ev.skill': 'Добавлен навык {name}',
+        'ev.model': 'Модель изменена: {a} → {b}',
+        'ev.mode.plan.on': 'Режим планирования включён',
+        'ev.mode.plan.off': 'Режим планирования выключен',
+        'form.instructions': 'Инструкции',
+        'form.catalog': 'Обновление каталога',
+        'form.snapshot': 'Снимок состояния',
+        'form.notice': 'Уведомление',
+        'form.relay': 'Передача агенту',
+        'form.recall': 'Воспоминание',
+        'form.context': 'Добавление контекста',
+        'node.toolResult': 'Результат инструмента',
+        'node.calls': 'Вызовы ',
+        'node.empty': '(пустой ответ)',
+        'node.nonText': '(нетекстовое сообщение)',
+        'node.snapshot': 'Снимок: ',
+        'node.skillTag': 'Навык · {name}',
+        'cmd.desc': 'Показать текущий состав контекста по шагам',
+        'cmd.close': 'Закрыть',
+        'browser.title': 'Просмотр контекста',
+        'browser.live': 'Сейчас (следующий запрос)',
+        'browser.liveNow': 'Сейчас · следующий запрос',
+        'browser.items': 'Элементов: {n}',
+        'browser.missingLive': '… ещё {n} предыдущих сообщений входят в контекст за пределами загруженного окна.',
+        'browser.approx': 'Некоторые удалённые сообщения уже не хранятся, поэтому состав приблизительный.',
+        'browser.deltaHint': 'относительно предыдущего хода',
+        'browser.noHeader': 'Старая версия плагина: доступны только оценки токенов.',
+        'browser.noEpoch': 'Заголовок этого шага уже не хранится.',
+        'browser.noContent': 'Полное содержимое вне загруженного окна. Загрузите старую историю в чате.',
+        'browser.loading': 'Загружаем полное содержимое из истории…',
+        'browser.preview': 'Предпросмотр',
+        'tool.desc': 'Описание',
+        'tool.params': 'Параметры',
+        'tool.paramsEmpty': '(параметров нет)',
+        'tool.jsonToggle': 'Показать исходный JSON',
+        'tool.jsonHide': 'Свернуть',
+        'rich.raw': 'Исходный текст',
+        'rich.md': 'Markdown',
+        'rich.toMd': 'Показать как Markdown',
+        'rich.toRaw': 'Показать исходный текст',
+        'block.thinking': 'Рассуждение',
+        'block.answer': 'Ответ',
+        'block.content': 'Содержимое',
+        'block.result': 'Результат',
+        'block.summary': 'Сводка',
+        'block.line': '1 строка',
+        'block.lines': 'Строк: {n}',
+        'call.ok': 'Готово',
+        'call.fail': 'Ошибка',
+        'call.exit': 'код выхода {n}',
+        'node.failed': 'Инструмент завершился с ошибкой',
+        'attach.images': 'Изображения',
+        'attach.other': 'Другое содержимое',
+        'attach.image': 'Изображение',
+        'attach.open': 'Открыть изображение',
+        'attach.preview': 'Предпросмотр изображения',
+        'attach.close': 'Закрыть',
+        'attach.loading': '…',
+        'attach.loadFailed': 'Не удалось загрузить · нажмите для повтора',
+        'attach.raw': 'Оригинал',
+        'attach.sent': 'Отправлено',
+        'attach.token': 'Токены',
+        'attach.tokensTip': 'Приблизительный расход токенов изображения.',
+      },
+    }
+
+    const AGENT_SYNC_TEXT = new Map([
+      ['MCP/Skills 管理', 'Управление MCP и навыками'],
+      ['MCP/Skills', 'MCP/Навыки'],
+      ['MCP/Skills同步', 'Синхронизация MCP и навыков'],
+      ['MCP/Skills同步 →', 'Синхронизировать MCP/Skills →'],
+      ['🔄 刷新', '🔄 Обновить'],
+      ['加载中…', 'Загрузка…'],
+      ['启停 / 移除已同步到 DSH 的 MCP 与 skill', 'Включение, отключение и удаление MCP и навыков в DSH'],
+      ['（当前会话未挂载 skill 提供方，模型暂不可用，文件已就位）', 'Провайдер навыков не подключён к этой сессии; файлы уже установлены.'],
+      ['⇄ 迁移技能', '⇄ Перенести навыки'],
+      ['＋ 添加 MCP', '＋ Добавить MCP'],
+      ['＋ 添加 Skill', '＋ Добавить навык'],
+      ['暂无 profile 数据', 'Данные профиля пока недоступны'],
+      ['暂无已同步的 MCP', 'Синхронизированных MCP пока нет'],
+      ['暂无已同步的 skill', 'Синхронизированных навыков пока нет'],
+      ['该工作区暂无 skill', 'В этом проекте навыков пока нет'],
+      ['← 返回', '← Назад'],
+      ['从其他 agent 一键同步 MCP 与 skill 进 DSH', 'Импорт MCP и навыков из других агентов в DSH'],
+      ['更多 ▾', 'Ещё ▾'],
+      ['无自定义源', 'Пользовательских источников нет'],
+      ['名称', 'Название'],
+      ['类型', 'Тип'],
+      ['目录 (skills)', 'Папка с навыками'],
+      ['路径', 'Путь'],
+      ['绝对路径', 'Абсолютный путь'],
+      ['添加', 'Добавить'],
+      ['插件设置', 'Настройки плагина'],
+      ['⚙️ 设置', '⚙️ Настройки'],
+      ['✕ 关闭', '✕ Закрыть'],
+      ['Skill 同步方式', 'Способ синхронизации навыков'],
+      ['文件复制（默认）', 'Копирование файлов (по умолчанию)'],
+      ['软连接（链接源目录，实时同步）', 'Ссылка на исходную папку (обновляется автоматически)'],
+      ['MCP 同步目标', 'Профили для MCP'],
+      ['全部 profile（desktop + web）', 'Все профили (desktop + web)'],
+      ['仅 desktop', 'Только desktop'],
+      ['仅 web', 'Только web'],
+      ['保存', 'Сохранить'],
+      ['全选本页', 'Выбрать всё на странице'],
+      ['同步选中 MCP', 'Синхронизировать выбранные MCP'],
+      ['同步到', 'Синхронизировать в'],
+      ['全局 (~/.dsh/skills)', 'Глобально (~/.dsh/skills)'],
+      ['同步选中 Skill', 'Синхронизировать выбранные навыки'],
+      ['覆盖同步', 'Перезаписать'],
+      ['添加技能', 'Добавить навык'],
+      ['添加到', 'Добавить в'],
+      ['全局', 'Глобально'],
+      ['选择来源', 'Выберите источник'],
+      ['📁 选择文件夹', '📁 Выбрать папку'],
+      ['📄 选择单个 .md', '📄 Выбрать файл .md'],
+      ['📦 选择 .zip', '📦 Выбрать .zip'],
+      ['拖放', 'Перетащить'],
+      ['将 .md / .zip / 技能文件夹拖到这里', 'Перетащите сюда .md, .zip или папку навыка'],
+      ['文件夹需包含 SKILL.md（目录束）；单文件需为带 frontmatter 的 .md', 'Папка должна содержать SKILL.md; одиночный .md — frontmatter.'],
+      ['添加 MCP 服务器', 'Добавить MCP-сервер'],
+      ['传输方式', 'Транспорт'],
+      ['stdio（本地命令）', 'stdio (локальная команда)'],
+      ['命令', 'Команда'],
+      ['参数', 'Аргументы'],
+      ['环境变量', 'Переменные окружения'],
+      ['KEY=VALUE，每行一个', 'KEY=VALUE, по одной на строку'],
+      ['添加到 DSH 的 MCP 客户端（重启后生效）', 'MCP будет добавлен в DSH после перезапуска.'],
+      ['迁移技能', 'Перенести навыки'],
+      ['选择技能', 'Выберите навыки'],
+      ['当前作用域没有技能', 'В этой области нет навыков'],
+      ['迁移到', 'Перенести в'],
+      ['方式', 'Способ'],
+      ['移动（删除源）', 'Переместить (удалить источник)'],
+      ['复制（保留源）', 'Копировать (сохранить источник)'],
+      ['复制到目标作用域，源位置保留', 'Копия будет создана в целевой области, источник сохранится.'],
+      ['迁移 = 移动到目标作用域（源位置删除）', 'Перемещение удалит навык из исходной области.'],
+      ['复制', 'Копировать'],
+      ['迁移', 'Перенести'],
+      ['编辑分组', 'Изменить группу'],
+      ['新建分组', 'Новая группа'],
+      ['分组名称', 'Название группы'],
+      ['输入分组名称（必填）', 'Введите название группы'],
+      ['删除分组', 'Удалить группу'],
+      ['保存分组', 'Сохранить группу'],
+      ['＋ 分组', '＋ Группа'],
+      ['全部', 'Все'],
+      ['🔍 搜索技能…', '🔍 Поиск навыков…'],
+      ['启用', 'Включён'],
+      ['已停用', 'Выключен'],
+      ['🔗 软连接', '🔗 Ссылка'],
+      ['移除', 'Удалить'],
+      ['确认删除?', 'Удалить?'],
+      ['点击停用', 'Нажмите, чтобы выключить'],
+      ['点击启用', 'Нажмите, чтобы включить'],
+      ['MCP 详情', 'Сведения об MCP'],
+      ['Skill 详情', 'Сведения о навыке'],
+      ['Skills', 'Навыки'],
+      ['来源', 'Источник'],
+      ['描述', 'Описание'],
+      ['仓库', 'Репозиторий'],
+      ['内容', 'Содержимое'],
+      ['错误', 'Ошибка'],
+      ['环境变量(键)', 'Переменные окружения (имена)'],
+      ['Headers(键)', 'Заголовки (имена)'],
+      ['(空)', '(пусто)'],
+      ['自定义', 'Пользовательский'],
+    ])
+
     const AUTOMATION_TEMPLATES = [
       {
         title: 'Проверка кода',
@@ -314,7 +674,7 @@ window.__ModuleLoader__.load({
     }
 
     function applyAutomationTranslations() {
-      const roots = document.querySelectorAll('.dsh-automation-shell, .dsh-automation-sidebar-action, [role="tab"]')
+      const roots = document.querySelectorAll('.dsh-automation-shell, .dsh-automation-sidebar-action, [data-dsh-automation-entry], [data-dsh-automations-trigger], [role="tab"], [role="dialog"]')
       for (const root of roots) {
         const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
         let node
@@ -333,16 +693,91 @@ window.__ModuleLoader__.load({
           }
         }
       }
-      const entry = document.querySelector('[data-dsh-automation-entry]')
-      if (entry) {
+      for (const entry of document.querySelectorAll('[data-dsh-automation-entry], [data-dsh-automations-trigger]')) {
         entry.setAttribute('aria-label', 'Открыть автоматизации')
-        entry.setAttribute('title', 'Открыть автоматизации')
+        entry.setAttribute('title', 'Автоматизации')
+      }
+    }
+
+    const AGENT_SYNC_PATTERNS = [
+      [/^全部 \((\d+)\)$/, 'Все ($1)'],
+      [/^自定义 \((\d+)\)$/, 'Пользовательский ($1)'],
+      [/^全局 \((\d+)\)$/, 'Глобально ($1)'],
+      [/^工作区: (.+)$/, 'Проект: $1'],
+      [/^可同步的 MCP \((\d+)\)$/, 'Доступные MCP ($1)'],
+      [/^可同步的 Skills \((\d+)\)$/, 'Доступные навыки ($1)'],
+      [/^自定义源 \((\d+)\)$/, 'Пользовательские источники ($1)'],
+      [/^已启用 (.+)$/, 'Включено: $1'],
+      [/^已停用 (.+)$/, 'Выключено: $1'],
+      [/^已移除 (.+)$/, 'Удалено: $1'],
+      [/^已删除 (.+)$/, 'Удалено: $1'],
+      [/^加载失败: (.+)$/, 'Ошибка загрузки: $1'],
+      [/^同步失败: (.+)$/, 'Ошибка синхронизации: $1'],
+      [/^移除失败: (.+)$/, 'Ошибка удаления: $1'],
+      [/^操作失败: (.+)$/, 'Ошибка операции: $1'],
+      [/^保存失败: (.+)$/, 'Ошибка сохранения: $1'],
+      [/^删除失败: (.+)$/, 'Ошибка удаления: $1'],
+      [/^添加失败: (.+)$/, 'Ошибка добавления: $1'],
+      [/^迁移失败: (.+)$/, 'Ошибка переноса: $1'],
+      [/^工作区暂无 (.+)$/, 'В проекте пока нет: $1'],
+    ]
+
+    function translateAgentSyncValue(value) {
+      const trimmed = value?.trim()
+      if (!trimmed) return null
+      const exact = AGENT_SYNC_TEXT.get(trimmed)
+      if (exact) return exact
+      for (const [pattern, replacement] of AGENT_SYNC_PATTERNS) {
+        if (pattern.test(trimmed)) return trimmed.replace(pattern, replacement)
+      }
+      return null
+    }
+
+    function applyAgentSyncTranslations() {
+      for (const button of document.querySelectorAll('[role="dialog"] nav button')) {
+        if (button.textContent?.trim() !== 'MCP/Skills') continue
+        const walker = document.createTreeWalker(button, NodeFilter.SHOW_TEXT)
+        let text
+        while ((text = walker.nextNode())) {
+          if (text.nodeValue?.trim() === 'MCP/Skills') {
+            text.nodeValue = text.nodeValue.replace('MCP/Skills', 'MCP/Навыки')
+            break
+          }
+        }
+      }
+      for (const root of document.querySelectorAll('.ags-panel')) {
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+        let node
+        while ((node = walker.nextNode())) {
+          const translated = translateAgentSyncValue(node.nodeValue)
+          if (translated) node.nodeValue = node.nodeValue.replace(node.nodeValue.trim(), translated)
+        }
+        for (const element of root.querySelectorAll('[placeholder], [aria-label], [title]')) {
+          for (const attribute of ['placeholder', 'aria-label', 'title']) {
+            const current = element.getAttribute(attribute)
+            const translated = translateAgentSyncValue(current)
+            if (translated) element.setAttribute(attribute, translated)
+          }
+        }
+      }
+    }
+
+    function registerRussianPluginDictionaries(ctx) {
+      for (const [namespace, dictionary] of Object.entries(PLUGIN_RU_DICTIONARIES)) {
+        ctx.effect(() => {
+          try {
+            return ctx.locale.register(namespace, 'ru', dictionary)
+          } catch {
+            return undefined
+          }
+        }, `gildra-ui-compact: Russian dictionary ${namespace}`)
       }
     }
 
     function applyUiEnhancements() {
       applyBrandHeadline()
       applyAutomationTranslations()
+      applyAgentSyncTranslations()
       ensureAutomationQuickstart()
     }
 
@@ -361,6 +796,8 @@ window.__ModuleLoader__.load({
     }
 
     function apply(ctx) {
+      registerRussianPluginDictionaries(ctx)
+
       ctx.effect(() => {
         const previous = document.querySelector('style[data-gildra-ui-compact]')
         previous?.remove()
@@ -373,26 +810,31 @@ window.__ModuleLoader__.load({
 
       ctx.effect(() => {
         applyUiEnhancements()
-        const observer = new MutationObserver((mutations) => {
-          for (const mutation of mutations) {
-            if (mutation.type === 'characterData') {
-              applyBrandHeadline(mutation.target.parentElement)
-              continue
-            }
-            for (const node of mutation.addedNodes) {
-              applyBrandHeadline(node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement)
-            }
-          }
-          applyAutomationTranslations()
-          ensureAutomationQuickstart()
+        let frame = 0
+        const observer = new MutationObserver(() => {
+          window.cancelAnimationFrame(frame)
+          frame = window.requestAnimationFrame(applyUiEnhancements)
         })
         observer.observe(document.body, {
           childList: true,
           subtree: true,
           characterData: true,
         })
-        return () => observer.disconnect()
+        return () => {
+          window.cancelAnimationFrame(frame)
+          observer.disconnect()
+        }
       }, 'gildra-ui-compact: interface enhancements')
+
+      ctx.effect(() => ctx.locale.subscribe(applyUiEnhancements), 'gildra-ui-compact: locale changes')
+
+      ctx.effect(() => {
+        const timer = window.setInterval(() => {
+          applyAutomationTranslations()
+          applyAgentSyncTranslations()
+        }, 500)
+        return () => window.clearInterval(timer)
+      }, 'gildra-ui-compact: plugin interface translation')
 
       ctx.effect(() => {
         document.addEventListener('click', handleAutomationEntry, true)
@@ -401,7 +843,7 @@ window.__ModuleLoader__.load({
     }
 
     exports.apply = apply
-    exports.inject = []
+    exports.inject = ['locale']
     return module.exports
   },
 })
