@@ -6,9 +6,11 @@
 
 - DeepSeek Harness `0.1.1-rc.2`, закреплённый на commit `b150a551b8d465e31e418e1b2eaf5e79bbb7d28e`.
 - Профиль **Engineering** с Codex и Claude Code subagents.
+- Брендированный стартовый экран **Gildra Coding**.
 - Интернет-поиск DuckDuckGo, GenUI, Archify, CodeGraph, Context, Context Doctor, Security Audit и `@file`.
 - `dsh-automation` 0.1.7: отдельные фоновые Agent-сессии, расписания, история запусков, выбор provider/model/reasoning и управление через инструменты `automation_*`.
-- Компактный Context Doctor: индикатор 31×27 px без перекрывающей интерфейс панели; аудит и Agent-инструмент продолжают работать.
+- Упрощённый русскоязычный центр автоматизаций с шаблонами проверки кода, свежести данных и восстановления парсера.
+- Компактный Context Doctor: индикатор 31×27 px и небольшая открываемая панель до 320×420 px.
 - Нативная оболочка macOS и ярлык desktop-app для Windows через Edge WebView.
 
 ## Установка
