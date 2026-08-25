@@ -51,6 +51,8 @@ fi
 
 rm -rf "$INSTALL_ROOT/vendor/gildra-dsh-ui-compact"
 cp -R "$REPO_DIR/plugins/gildra-dsh-ui-compact" "$INSTALL_ROOT/vendor/gildra-dsh-ui-compact"
+rm -rf "$INSTALL_ROOT/vendor/gildra-skill-installer"
+cp -R "$REPO_DIR/plugins/gildra-skill-installer" "$INSTALL_ROOT/vendor/gildra-skill-installer"
 cp "$REPO_DIR/install/dsh-gildra" "$INSTALL_ROOT/bin/dsh-gildra"
 cp "$REPO_DIR/install/Start-GildraDSH.command" "$INSTALL_ROOT/bin/Start-GildraDSH.command"
 chmod +x "$INSTALL_ROOT/bin/dsh-gildra" "$INSTALL_ROOT/bin/Start-GildraDSH.command"
@@ -72,6 +74,8 @@ plugins=(
   "github:kuaiyukuaikuai/dsh-agent-sync#$AGENT_SYNC_COMMIT"
   "@openma/dsh-agents-plugins-bridge@$AGENT_PLUGINS_BRIDGE_VERSION"
   "github:GooDAnDReaDY/dsh-russian-lang#$RUSSIAN_LANG_COMMIT"
+  "@michengai/dsh-skills-manager@$SKILLS_MANAGER_VERSION"
+  "link:$INSTALL_ROOT/vendor/gildra-skill-installer"
   "@syncended/dsh-automations@$AUTOMATIONS_VERSION"
   "github:omdsh-dev/dsh-genui#d99c978d4b0b29ba2a6993f8544a24930fc7d25a"
   "github:omdsh-dev/dsh-security-audit#ae927be8c92e483a8c8739b32831c0a237c0ed01"

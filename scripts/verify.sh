@@ -7,10 +7,13 @@ source "$ROOT/config/versions.env"
 
 node --check "$ROOT/plugins/gildra-dsh-ui-compact/lib/index.js"
 node --check "$ROOT/plugins/gildra-dsh-ui-compact/lib/client.js"
+node --check "$ROOT/plugins/gildra-skill-installer/lib/index.js"
+node "$ROOT/plugins/gildra-skill-installer/test.mjs"
 zsh -n "$ROOT/install/macos-install.command"
 zsh -n "$ROOT/install/dsh-gildra"
 zsh -n "$ROOT/install/Start-GildraDSH.command"
 zsh -n "$ROOT/Install Gildra DSH.command"
+zsh -n "$ROOT/script/build_and_run.sh"
 
 ruby -ryaml -e 'ARGV.each { |path| YAML.parse_file(path) }' \
   "$ROOT/config/settings.yaml" \
@@ -35,6 +38,14 @@ grep -F "'settings.pluginBridge'" \
   "$ROOT/plugins/gildra-dsh-ui-compact/lib/client.js" >/dev/null
 grep -F "['MCP/Skills 管理', 'Управление MCP и навыками']" \
   "$ROOT/plugins/gildra-dsh-ui-compact/lib/client.js" >/dev/null
+grep -F '@michengai/dsh-skills-manager@$SKILLS_MANAGER_VERSION' \
+  "$ROOT/install/macos-install.command" >/dev/null
+grep -F '@michengai/dsh-skills-manager@$($Versions.SKILLS_MANAGER_VERSION)' \
+  "$ROOT/install/windows-install.ps1" >/dev/null
+grep -F 'install_skill_from_github' \
+  "$ROOT/plugins/gildra-skill-installer/lib/index.js" >/dev/null
+grep -F '"--no-open"' \
+  "$ROOT/desktop/macos/HarnessService.swift" >/dev/null
 
 "$ROOT/desktop/macos/build.sh" >/dev/null
 codesign --verify --deep --strict "$ROOT/desktop/macos/build/Gildra DSH.app"

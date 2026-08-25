@@ -23,12 +23,12 @@ struct ContentView: View {
 
                     if case .failed = service.state {
                         HStack(spacing: 12) {
-                            Button("重新启动") {
+                            Button("Перезапустить") {
                                 service.restart()
                             }
                             .keyboardShortcut(.defaultAction)
 
-                            Button("安装全局 dsh") {
+                            Button("Установить DSH") {
                                 service.installGlobalDSH()
                             }
                         }

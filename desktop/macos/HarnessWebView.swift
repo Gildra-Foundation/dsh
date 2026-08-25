@@ -129,7 +129,7 @@ struct HarnessWebView: NSViewRepresentable {
         ) {
             let alert = NSAlert()
             alert.alertStyle = .informational
-            alert.messageText = "DeepSeek Harness"
+            alert.messageText = "Gildra DSH"
             alert.informativeText = message
             presentAlert(alert) { _ in
                 completionHandler()
@@ -144,10 +144,10 @@ struct HarnessWebView: NSViewRepresentable {
         ) {
             let alert = NSAlert()
             alert.alertStyle = .warning
-            alert.messageText = "DeepSeek Harness"
+            alert.messageText = "Gildra DSH"
             alert.informativeText = message
-            alert.addButton(withTitle: "确定")
-            alert.addButton(withTitle: "取消")
+            alert.addButton(withTitle: "Подтвердить")
+            alert.addButton(withTitle: "Отмена")
             presentAlert(alert) { response in
                 completionHandler(response == .alertFirstButtonReturn)
             }
@@ -162,13 +162,13 @@ struct HarnessWebView: NSViewRepresentable {
         ) {
             let alert = NSAlert()
             alert.alertStyle = .informational
-            alert.messageText = "DeepSeek Harness"
+            alert.messageText = "Gildra DSH"
             alert.informativeText = prompt
             let inputField = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
             inputField.stringValue = defaultText ?? ""
             alert.accessoryView = inputField
-            alert.addButton(withTitle: "确定")
-            alert.addButton(withTitle: "取消")
+            alert.addButton(withTitle: "Подтвердить")
+            alert.addButton(withTitle: "Отмена")
             presentAlert(alert) { response in
                 completionHandler(response == .alertFirstButtonReturn ? inputField.stringValue : nil)
             }
@@ -301,7 +301,7 @@ struct HarnessWebView: NSViewRepresentable {
 
             let alert = NSAlert()
             alert.alertStyle = .warning
-            alert.messageText = "下载失败"
+            alert.messageText = "Ошибка загрузки"
             alert.informativeText = error.localizedDescription
             alert.runModal()
         }
@@ -344,8 +344,8 @@ struct HarnessWebView: NSViewRepresentable {
         private func showDownloadSucceeded(destination: URL?, isSessionLog: Bool) {
             let alert = NSAlert()
             alert.alertStyle = .informational
-            alert.messageText = isSessionLog ? "Session 日志下载成功" : "文件下载成功"
-            alert.informativeText = destination?.path ?? "文件已保存到你选择的位置。"
+            alert.messageText = isSessionLog ? "Журнал сессии сохранён" : "Файл сохранён"
+            alert.informativeText = destination?.path ?? "Файл сохранён в выбранную папку."
             if let window = NSApp.keyWindow ?? NSApp.mainWindow {
                 alert.beginSheetModal(for: window)
             } else {

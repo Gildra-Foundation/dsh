@@ -36,12 +36,12 @@ final class HarnessService: ObservableObject {
 
     var statusText: String {
         switch state {
-        case .idle: "准备启动"
-        case .starting: "正在启动 DeepSeek Harness…"
-        case .installing: "正在全局安装 dsh…"
-        case .running: "已连接到本地服务"
-        case .failed(let message): "启动失败：\(message)"
-        case .stopped: "服务已停止"
+        case .idle: "Готово к запуску"
+        case .starting: "Запускаем Gildra DSH…"
+        case .installing: "Устанавливаем DSH…"
+        case .running: "Приложение готово"
+        case .failed(let message): "Ошибка запуска: \(message)"
+        case .stopped: "Служба остановлена"
         }
     }
 
@@ -75,13 +75,15 @@ final class HarnessService: ObservableObject {
             case .nothingListening:
                 self.launchProcess(port: self.preferredPort)
             case .foreignService:
-                self.state = .failed("端口 \(self.preferredPort) 已被其他程序占用。请修改 DSHPreferredPort 设置更换端口，或关闭占用该端口的程序后重试。")
+                self.state = .failed("Порт \(self.preferredPort) занят другой программой. Закройте её или измените DSHPreferredPort.")
             }
         }
     }
 
     private func launchProcess(port: Int) {
-        let baseArguments = ["web", "--host", "127.0.0.1", "--port", "\(port)"]
+        // The local Web service is an implementation detail of the desktop
+        // shell. Never open a separate browser window or tab.
+        let baseArguments = ["web", "--host", "127.0.0.1", "--port", "\(port)", "--no-open"]
 
         let executableURL: URL
         let arguments: [String]
@@ -92,7 +94,7 @@ final class HarnessService: ObservableObject {
             executableURL = npx
             arguments = ["--yes", dshPackageSpecifier] + baseArguments
         } else {
-            state = .failed("找不到 dsh，也未找到 npx。请先安装 Node.js（https://nodejs.org），或点“安装全局 dsh”。")
+            state = .failed("Не найдены dsh и npx. Установите Node.js или нажмите «Установить DSH».")
             return
         }
 
@@ -251,8 +253,8 @@ final class HarnessService: ObservableObject {
                 let lastLine = outputBuffer
                     .split(whereSeparator: \.isNewline)
                     .last
-                    .map(String.init) ?? "退出码 \(status)"
-                state = .failed("全局安装失败：\(lastLine)")
+                    .map(String.init) ?? "код завершения \(status)"
+                state = .failed("Не удалось установить DSH: \(lastLine)")
             }
             return
         }
@@ -264,24 +266,24 @@ final class HarnessService: ObservableObject {
                 // Lost the race: the probe saw the port free but something
                 // grabbed it before `dsh web` bound it. Report the conflict
                 // explicitly instead of silently switching ports.
-                state = .failed("端口 \(preferredPort) 已被占用。请修改 DSHPreferredPort 设置更换端口，或关闭占用该端口的程序后重试。")
+                state = .failed("Порт \(preferredPort) занят. Закройте использующую его программу или измените DSHPreferredPort.")
                 return
             }
             let lastLine = outputBuffer
                 .split(whereSeparator: \.isNewline)
                 .last
-                .map(String.init) ?? "退出码 \(status)"
+                .map(String.init) ?? "код завершения \(status)"
             state = .failed(lastLine)
         } else {
             serverURL = nil
-            state = .failed("本地服务意外退出（\(status)）")
+            state = .failed("Локальная служба неожиданно завершилась (\(status)).")
         }
     }
 
     func installGlobalDSH() {
         guard process == nil, !installing else { return }
         guard let npm = locateExecutable(named: "npm") else {
-            state = .failed("找不到 npm，无法全局安装。请先安装 Node.js（https://nodejs.org）。")
+            state = .failed("Не найден npm. Сначала установите Node.js.")
             return
         }
 

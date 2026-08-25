@@ -44,6 +44,9 @@ Expand-GitHubArchive "https://github.com/JohnXu22786/codegraph/archive/$($Versio
 $CompactDir = Join-Path $InstallRoot 'vendor\gildra-dsh-ui-compact'
 Remove-Item $CompactDir -Recurse -Force -ErrorAction SilentlyContinue
 Copy-Item (Join-Path $RepoDir 'plugins\gildra-dsh-ui-compact') $CompactDir -Recurse
+$SkillInstallerDir = Join-Path $InstallRoot 'vendor\gildra-skill-installer'
+Remove-Item $SkillInstallerDir -Recurse -Force -ErrorAction SilentlyContinue
+Copy-Item (Join-Path $RepoDir 'plugins\gildra-skill-installer') $SkillInstallerDir -Recurse
 Copy-Item (Join-Path $RepoDir 'install\dsh-gildra.ps1') (Join-Path $InstallRoot 'bin\dsh-gildra.ps1')
 Copy-Item (Join-Path $RepoDir 'install\Start-GildraDSH.ps1') (Join-Path $InstallRoot 'bin\Start-GildraDSH.ps1')
 
@@ -66,6 +69,8 @@ if ((Test-Path $ProfilePackage) -and ((Get-Content $ProfilePackage -Raw) -match 
   "github:kuaiyukuaikuai/dsh-agent-sync#$($Versions.AGENT_SYNC_COMMIT)",
   "@openma/dsh-agents-plugins-bridge@$($Versions.AGENT_PLUGINS_BRIDGE_VERSION)",
   "github:GooDAnDReaDY/dsh-russian-lang#$($Versions.RUSSIAN_LANG_COMMIT)",
+  "@michengai/dsh-skills-manager@$($Versions.SKILLS_MANAGER_VERSION)",
+  "link:$SkillInstallerDir",
   "@syncended/dsh-automations@$($Versions.AUTOMATIONS_VERSION)",
   'github:omdsh-dev/dsh-genui#d99c978d4b0b29ba2a6993f8544a24930fc7d25a',
   'github:omdsh-dev/dsh-security-audit#ae927be8c92e483a8c8739b32831c0a237c0ed01',

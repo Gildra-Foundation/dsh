@@ -1,0 +1,3 @@
+- insert:
+    - id: gildra-skill-installer
+      name: '@gildra/dsh-skill-installer'
