@@ -55,10 +55,15 @@ Add-Plugin 'dsh-plugin-subscriptions@0.5.2'
 New-Item -ItemType Directory -Force $ProfileDir | Out-Null
 Copy-Item (Join-Path $RepoDir 'config\profile\pnpm-workspace.yaml') (Join-Path $ProfileDir 'pnpm-workspace.yaml') -Force
 
+$ProfilePackage = Join-Path $ProfileDir 'package.json'
+if ((Test-Path $ProfilePackage) -and ((Get-Content $ProfilePackage -Raw) -match '"@dsh-external/dsh-automation"')) {
+  & (Join-Path $NodeDir 'node.exe') $Cli plugin --profile web remove '@dsh-external/dsh-automation'
+}
+
 @(
   '@deepseek-ai/dsh-subagent-codex@0.1.1-rc.2',
   '@deepseek-ai/dsh-subagent-claude-code@0.1.1-rc.2',
-  "github:titanwings/dsh-automation#$($Versions.AUTOMATION_VERSION)",
+  "@syncended/dsh-automations@$($Versions.AUTOMATIONS_VERSION)",
   'github:omdsh-dev/dsh-genui#d99c978d4b0b29ba2a6993f8544a24930fc7d25a',
   'github:omdsh-dev/dsh-security-audit#ae927be8c92e483a8c8739b32831c0a237c0ed01',
   'github:Zhenyu98/dsh-context-doctor#f45096dc7a7ad52cfa7cf32cdaccae717faa662d',

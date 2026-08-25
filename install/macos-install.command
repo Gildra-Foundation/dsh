@@ -62,10 +62,14 @@ DSH="$INSTALL_ROOT/bin/dsh-gildra"
 mkdir -p "$PROFILE_DIR"
 cp "$REPO_DIR/config/profile/pnpm-workspace.yaml" "$PROFILE_DIR/pnpm-workspace.yaml"
 
+if [[ -f "$PROFILE_DIR/package.json" ]] && grep -q '"@dsh-external/dsh-automation"' "$PROFILE_DIR/package.json"; then
+  "$DSH" plugin --profile web remove @dsh-external/dsh-automation
+fi
+
 plugins=(
   "@deepseek-ai/dsh-subagent-codex@0.1.1-rc.2"
   "@deepseek-ai/dsh-subagent-claude-code@0.1.1-rc.2"
-  "github:titanwings/dsh-automation#$AUTOMATION_VERSION"
+  "@syncended/dsh-automations@$AUTOMATIONS_VERSION"
   "github:omdsh-dev/dsh-genui#d99c978d4b0b29ba2a6993f8544a24930fc7d25a"
   "github:omdsh-dev/dsh-security-audit#ae927be8c92e483a8c8739b32831c0a237c0ed01"
   "github:Zhenyu98/dsh-context-doctor#f45096dc7a7ad52cfa7cf32cdaccae717faa662d"

@@ -6,5 +6,6 @@ autoInstallPeers: false
 allowBuilds:
   dsh-free-web-search@https://codeload.github.com/delef/dsh-free-web-search/tar.gz/94bd12880a8f4000374cd25629f5e97c9d5364fd: true
 minimumReleaseAgeExclude:
+  - '@syncended/dsh-automations@0.8.7'
   - dsh-plugin-subscriptions@0.5.2
   - dsh-context@0.31.0

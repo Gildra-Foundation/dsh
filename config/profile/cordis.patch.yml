@@ -2,3 +2,8 @@
 - id: llm-subscriptions
   config:
     providers: [codex, claude]
+- id: automations
+  config:
+    maxConcurrentRuns: 2
+    allowedProjectRoots:
+      - "~"
