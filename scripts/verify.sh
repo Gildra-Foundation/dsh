@@ -19,13 +19,13 @@ ruby -ryaml -e 'ARGV.each { |path| YAML.parse_file(path) }' \
   "$ROOT/config/agent-presets/engineering/preset.yml" \
   "$ROOT/config/agent-presets/engineering/agent.cordis.yml"
 
-rg -F 'github:kuaiyukuaikuai/dsh-agent-sync#$AGENT_SYNC_COMMIT' \
+grep -F 'github:kuaiyukuaikuai/dsh-agent-sync#$AGENT_SYNC_COMMIT' \
   "$ROOT/install/macos-install.command" >/dev/null
-rg -F 'github:kuaiyukuaikuai/dsh-agent-sync#$($Versions.AGENT_SYNC_COMMIT)' \
+grep -F 'github:kuaiyukuaikuai/dsh-agent-sync#$($Versions.AGENT_SYNC_COMMIT)' \
   "$ROOT/install/windows-install.ps1" >/dev/null
-rg -F '@openma/dsh-agents-plugins-bridge@$AGENT_PLUGINS_BRIDGE_VERSION' \
+grep -F '@openma/dsh-agents-plugins-bridge@$AGENT_PLUGINS_BRIDGE_VERSION' \
   "$ROOT/install/macos-install.command" >/dev/null
-rg -F '@openma/dsh-agents-plugins-bridge@$($Versions.AGENT_PLUGINS_BRIDGE_VERSION)' \
+grep -F '@openma/dsh-agents-plugins-bridge@$($Versions.AGENT_PLUGINS_BRIDGE_VERSION)' \
   "$ROOT/install/windows-install.ps1" >/dev/null
 
 "$ROOT/desktop/macos/build.sh" >/dev/null
