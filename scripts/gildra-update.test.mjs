@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -11,6 +12,7 @@ import {
   STOP_PROCESS_SCRIPT,
   archiveNameForPlatform,
   acquireUpdateLock,
+  applyUpdate,
   checkForUpdate,
   compareVersions,
   parseVersion,
@@ -207,6 +209,251 @@ await assert.rejects(
   } finally {
     helper.kill('SIGKILL')
     await rm(lockRoot, { recursive: true, force: true })
+  }
+}
+
+// --- Жизненный цикл applyUpdate ---
+// Сеть, распаковка, остановка, установка и перезапуск инжектируются, чтобы
+// покрыть все переходы state-файла и инварианты сохранности без Windows и
+// без реальных архивов.
+
+const archiveBytes = Buffer.from('gildra fake update archive')
+const archiveSha = createHash('sha256').update(archiveBytes).digest('hex')
+const goodChecksums = `${archiveSha}  Gildra-DSH-macOS.zip\n${'b'.repeat(64)}  Gildra-DSH-Windows.zip\n`
+const applyRelease = {
+  tag_name: 'v0.1.12',
+  html_url: 'https://github.com/Gildra-Foundation/dsh/releases/tag/v0.1.12',
+  published_at: '2026-08-26T00:00:00Z',
+  assets: [
+    { name: 'Gildra-DSH-macOS.zip', browser_download_url: 'https://assets.test/Gildra-DSH-macOS.zip' },
+    { name: 'Gildra-DSH-Windows.zip', browser_download_url: 'https://assets.test/Gildra-DSH-Windows.zip' },
+    { name: 'SHA256SUMS.txt', browser_download_url: 'https://assets.test/SHA256SUMS.txt' },
+  ],
+}
+
+async function makeInstallRoot() {
+  const root = await mkdtemp(join(tmpdir(), 'gildra-apply-'))
+  await mkdir(join(root, 'config'), { recursive: true })
+  await mkdir(join(root, 'home'), { recursive: true })
+  await mkdir(join(root, 'source'), { recursive: true })
+  await writeFile(join(root, '.gildra-kit-version'), '0.1.11')
+  await writeFile(join(root, 'config', 'kit.json'), JSON.stringify({
+    distribution: { repository: 'Gildra-Foundation/dsh' },
+  }))
+  await writeFile(join(root, 'home', 'user-data.txt'), 'precious user data\n')
+  await writeFile(join(root, 'source', 'existing.js'), 'previous install\n')
+  return root
+}
+
+function makeFetch({ release = applyRelease, shaText = goodChecksums } = {}) {
+  const calls = []
+  const fetchImpl = async (url) => {
+    calls.push(String(url))
+    const text = String(url)
+    if (text.includes('/releases/latest')) return new Response(JSON.stringify(release), { status: 200 })
+    if (text.endsWith('SHA256SUMS.txt')) return new Response(shaText, { status: 200 })
+    if (text.endsWith('.zip')) return new Response(archiveBytes, { status: 200 })
+    return new Response('not found', { status: 404 })
+  }
+  return { fetchImpl, calls }
+}
+
+function makeSeams() {
+  const log = { extracts: [], stops: 0, installs: [], restarts: 0 }
+  return {
+    log,
+    seams: {
+      async extractArchiveImpl(archive, destination) {
+        log.extracts.push({ archive, destination })
+        await mkdir(join(destination, 'kit', 'install'), { recursive: true })
+        await writeFile(join(destination, 'kit', 'install', 'macos-install.command'), '#!/bin/zsh\n')
+      },
+      async stopApplicationImpl() {
+        log.stops += 1
+      },
+      runInstallerImpl(installer, repoDir, environment) {
+        log.installs.push({ installer, repoDir, environment })
+        // Реальный установщик пишет маркер версии — имитируем через env,
+        // чтобы проверить корректность окружения установки.
+        const target = environment.GILDRA_DSH_INSTALL_ROOT
+        assert.equal(environment.GILDRA_DSH_NO_LAUNCH, '1')
+        writeFileSyncMarker(target, '0.1.12')
+      },
+      restartApplicationImpl() {
+        log.restarts += 1
+      },
+    },
+  }
+}
+
+function writeFileSyncMarker(root, version) {
+  const { writeFileSync } = fsSyncModule
+  writeFileSync(join(root, '.gildra-kit-version'), version)
+}
+const fsSyncModule = await import('node:fs')
+
+const readState = root => JSON.parse(readFileSync(join(root, 'update-state.json'), 'utf8'))
+const assertUserDataIntact = (root) => {
+  assert.equal(readFileSync(join(root, 'home', 'user-data.txt'), 'utf8'), 'precious user data\n')
+  assert.equal(readFileSync(join(root, 'source', 'existing.js'), 'utf8'), 'previous install\n')
+}
+
+// S1: успешное обновление — переходы state, окружение установщика,
+// сохранность user home, очистка temp, снятый лок.
+{
+  const root = await makeInstallRoot()
+  const { fetchImpl } = makeFetch()
+  const { log, seams } = makeSeams()
+  const result = await applyUpdate({ installRoot: root, targetPlatform: 'darwin', fetchImpl, ...seams })
+  assert.equal(result.applied, true)
+  assert.equal(readState(root).status, 'success')
+  assert.equal(readState(root).version, '0.1.12')
+  assert.equal(log.stops, 1)
+  assert.equal(log.installs.length, 1)
+  assert.equal(log.restarts, 1)
+  assert.equal(log.installs[0].environment.GILDRA_DSH_INSTALL_ROOT, root)
+  assert.ok(log.installs[0].repoDir.endsWith('kit'))
+  assert.equal(readFileSync(join(root, '.gildra-kit-version'), 'utf8'), '0.1.12')
+  assertUserDataIntact(root)
+  assert.equal(existsSync(dirname(log.extracts[0].destination)), false)
+  assert.equal(existsSync(join(root, '.gildra-update.lock')), false)
+  await rm(root, { recursive: true, force: true })
+}
+
+// S2: неверная контрольная сумма — ошибка до распаковки/остановки/установки.
+{
+  const root = await makeInstallRoot()
+  const { fetchImpl } = makeFetch({ shaText: `${'a'.repeat(64)}  Gildra-DSH-macOS.zip\n` })
+  const { log, seams } = makeSeams()
+  await assert.rejects(
+    applyUpdate({ installRoot: root, targetPlatform: 'darwin', fetchImpl, ...seams }),
+    /Контрольная сумма/,
+  )
+  assert.equal(readState(root).status, 'error')
+  assert.equal(log.extracts.length, 0)
+  assert.equal(log.stops + log.installs.length + log.restarts, 0)
+  assert.equal(readFileSync(join(root, '.gildra-kit-version'), 'utf8'), '0.1.11')
+  assertUserDataIntact(root)
+  assert.equal(existsSync(join(root, '.gildra-update.lock')), false)
+  await rm(root, { recursive: true, force: true })
+}
+
+// S3: в релизе нет платформенного архива — ошибка до записи state-файла.
+{
+  const root = await makeInstallRoot()
+  const releaseWithoutAsset = { ...applyRelease, assets: applyRelease.assets.filter(a => a.name !== 'Gildra-DSH-macOS.zip') }
+  const { fetchImpl } = makeFetch({ release: releaseWithoutAsset })
+  const { log, seams } = makeSeams()
+  await assert.rejects(
+    applyUpdate({ installRoot: root, targetPlatform: 'darwin', fetchImpl, ...seams }),
+    /нет архива/,
+  )
+  assert.equal(existsSync(join(root, 'update-state.json')), false)
+  assert.equal(log.extracts.length + log.stops + log.installs.length + log.restarts, 0)
+  await rm(root, { recursive: true, force: true })
+}
+
+// S4: сбой распаковки — state=error, приложение не останавливалось и не
+// перезапускалось.
+{
+  const root = await makeInstallRoot()
+  const { fetchImpl } = makeFetch()
+  const { log, seams } = makeSeams()
+  seams.extractArchiveImpl = async () => { throw new Error('extract boom') }
+  await assert.rejects(
+    applyUpdate({ installRoot: root, targetPlatform: 'darwin', fetchImpl, ...seams }),
+    /extract boom/,
+  )
+  assert.equal(readState(root).status, 'error')
+  assert.match(readState(root).error, /extract boom/)
+  assert.equal(log.stops + log.installs.length + log.restarts, 0)
+  assertUserDataIntact(root)
+  await rm(root, { recursive: true, force: true })
+}
+
+// S5: сбой установщика — state=error, приложение перезапущено обратно,
+// прежняя установка и данные пользователя целы, temp очищен.
+{
+  const root = await makeInstallRoot()
+  const { fetchImpl } = makeFetch()
+  const { log, seams } = makeSeams()
+  seams.runInstallerImpl = () => { throw new Error('installer boom') }
+  await assert.rejects(
+    applyUpdate({ installRoot: root, targetPlatform: 'darwin', fetchImpl, ...seams }),
+    /installer boom/,
+  )
+  assert.equal(readState(root).status, 'error')
+  assert.equal(log.restarts, 1)
+  assert.equal(readFileSync(join(root, '.gildra-kit-version'), 'utf8'), '0.1.11')
+  assertUserDataIntact(root)
+  assert.equal(existsSync(dirname(log.extracts[0].destination)), false)
+  assert.equal(existsSync(join(root, '.gildra-update.lock')), false)
+  await rm(root, { recursive: true, force: true })
+}
+
+// S6: сбой остановки приложения — установка не запускается вовсе.
+{
+  const root = await makeInstallRoot()
+  const { fetchImpl } = makeFetch()
+  const { log, seams } = makeSeams()
+  seams.stopApplicationImpl = async () => { throw new Error('still running') }
+  await assert.rejects(
+    applyUpdate({ installRoot: root, targetPlatform: 'darwin', fetchImpl, ...seams }),
+    /still running/,
+  )
+  assert.equal(readState(root).status, 'error')
+  assert.equal(log.installs.length + log.restarts, 0)
+  assert.equal(readFileSync(join(root, '.gildra-kit-version'), 'utf8'), '0.1.11')
+  await rm(root, { recursive: true, force: true })
+}
+
+// S7: сбой перезапуска после успешной установки — статус остаётся success.
+{
+  const root = await makeInstallRoot()
+  const { fetchImpl } = makeFetch()
+  const { seams } = makeSeams()
+  seams.restartApplicationImpl = () => { throw new Error('restart boom') }
+  const result = await applyUpdate({ installRoot: root, targetPlatform: 'darwin', fetchImpl, ...seams })
+  assert.equal(result.applied, true)
+  assert.equal(readState(root).status, 'success')
+  assert.match(readState(root).restartError, /restart boom/)
+  await rm(root, { recursive: true, force: true })
+}
+
+// S8: обновление не требуется — ничего не скачивается и не меняется.
+{
+  const root = await makeInstallRoot()
+  await writeFile(join(root, '.gildra-kit-version'), '0.1.13')
+  const { fetchImpl, calls } = makeFetch()
+  const { log, seams } = makeSeams()
+  const result = await applyUpdate({ installRoot: root, targetPlatform: 'darwin', fetchImpl, ...seams })
+  assert.equal(result.applied, false)
+  assert.equal(calls.length, 1)
+  assert.equal(existsSync(join(root, 'update-state.json')), false)
+  assert.equal(log.extracts.length + log.stops + log.installs.length + log.restarts, 0)
+  assert.equal(existsSync(join(root, '.gildra-update.lock')), false)
+  await rm(root, { recursive: true, force: true })
+}
+
+// S9: параллельный updater — второй запуск отклоняется до любых действий.
+{
+  const root = await makeInstallRoot()
+  const holder = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], { stdio: 'ignore' })
+  try {
+    await mkdir(join(root, '.gildra-update.lock'))
+    await writeFile(join(root, '.gildra-update.lock', 'meta.json'), JSON.stringify({ pid: holder.pid }))
+    const { fetchImpl, calls } = makeFetch()
+    const { log, seams } = makeSeams()
+    await assert.rejects(
+      applyUpdate({ installRoot: root, targetPlatform: 'darwin', fetchImpl, ...seams }),
+      /уже выполняется/,
+    )
+    assert.equal(calls.length, 0)
+    assert.equal(existsSync(join(root, 'update-state.json')), false)
+    assert.equal(log.extracts.length + log.stops + log.installs.length + log.restarts, 0)
+  } finally {
+    holder.kill('SIGKILL')
+    await rm(root, { recursive: true, force: true })
   }
 }
 
