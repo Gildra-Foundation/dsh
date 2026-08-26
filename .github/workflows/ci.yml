@@ -115,6 +115,9 @@ jobs:
           $results = Invoke-ScriptAnalyzer -Path install -Recurse -Severity Error
           if ($results) { $results | Format-Table -AutoSize; exit 1 }
       - name: Run JS tests
+        # bash: у pwsh-шагов GitHub наружу уходит только код последней
+        # команды, и упавший промежуточный тест не валил бы шаг.
+        shell: bash
         run: |
           node scripts/kit-config.test.mjs
           node scripts/gildra-update.test.mjs
