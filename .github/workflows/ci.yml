@@ -36,8 +36,17 @@ jobs:
       - name: Parse PowerShell scripts
         shell: pwsh
         run: |
-          $errors = @()
+          # ParseFile assigns the [ref] variable per call, so errors must be
+          # accumulated manually or only the last file's result survives.
+          $allErrors = @()
           Get-ChildItem install -Filter *.ps1 | ForEach-Object {
-            [void][System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$null, [ref]$errors)
+            $tokens = $null
+            $errors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$tokens, [ref]$errors)
+            if ($errors -and $errors.Count) {
+              Write-Host "Parse errors in $($_.Name):"
+              $errors | Format-List
+              $allErrors += $errors
+            }
           }
-          if ($errors.Count) { $errors | Format-List; exit 1 }
+          if ($allErrors.Count) { exit 1 }

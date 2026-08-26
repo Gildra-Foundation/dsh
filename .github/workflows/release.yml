@@ -59,10 +59,14 @@ jobs:
         shell: pwsh
         run: |
           if ($env:GITHUB_REF_TYPE -eq 'tag') { node -e 'const m=require("./config/kit.json"); if (process.env.GITHUB_REF_NAME !== `v${m.distribution.version}`) throw new Error("Release tag and kit version differ")' }
-          $tokens = $null
-          $errors = $null
-          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'install\windows-install.ps1'), [ref]$tokens, [ref]$errors) | Out-Null
-          if ($errors.Count -gt 0) { throw ($errors | Out-String) }
+          $allErrors = @()
+          Get-ChildItem install -Filter *.ps1 | ForEach-Object {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors -and $errors.Count) { $allErrors += ($errors | ForEach-Object { "$($_.Extent.File): $_" }) }
+          }
+          if ($allErrors.Count -gt 0) { throw ($allErrors | Out-String) }
           node scripts\kit-config.test.mjs
           $env:GILDRA_DSH_INSTALL_ROOT = Join-Path $env:RUNNER_TEMP 'gildra-dsh'
           $env:GILDRA_DSH_NO_LAUNCH = '1'
