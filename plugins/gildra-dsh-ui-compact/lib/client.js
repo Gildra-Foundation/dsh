@@ -2729,6 +2729,11 @@ window.__ModuleLoader__.load({
     let environmentRefreshPromise
     let environmentWarmPromise
     let environmentLastRefresh = 0
+    // Экспоненциальный backoff фонового прогрева SSH: недоступный сервер не
+    // должен получать connect/disconnect каждые 8 секунд бесконечно.
+    const environmentWarmBackoff = new Map()
+    const WARM_BACKOFF_BASE_MS = 8000
+    const WARM_BACKOFF_MAX_MS = 300000
     let environmentState = {
       loading: true,
       localURL: null,
@@ -2976,20 +2981,32 @@ window.__ModuleLoader__.load({
       }
       const connectedPort = Number(body.localPort ?? new URL(body.url).port)
       rememberRemotePort(remote.name, connectedPort)
+      environmentWarmBackoff.delete(remote.name)
       return { ...body, localPort: connectedPort }
     }
 
     async function warmEnvironmentConnections(remotes) {
       if (environmentWarmPromise || environmentState.currentRemote) return environmentWarmPromise
-      const pending = remotes.filter(remote => !remote.connected)
+      const now = Date.now()
+      const pending = remotes.filter(remote => !remote.connected
+        && now >= (environmentWarmBackoff.get(remote.name)?.nextAttemptAt ?? 0))
       if (pending.length === 0) return undefined
       environmentWarmPromise = Promise.allSettled(pending.map(async (remote) => {
         const connected = await requestRemoteConnection(remote)
         return { name: remote.name, connected }
       })).then((results) => {
         const warmed = new Map()
-        for (const result of results) {
-          if (result.status === 'fulfilled') warmed.set(result.value.name, result.value.connected)
+        for (const [index, result] of results.entries()) {
+          if (result.status === 'fulfilled') {
+            warmed.set(result.value.name, result.value.connected)
+            continue
+          }
+          const name = pending[index].name
+          const failures = (environmentWarmBackoff.get(name)?.failures ?? 0) + 1
+          environmentWarmBackoff.set(name, {
+            failures,
+            nextAttemptAt: Date.now() + Math.min(WARM_BACKOFF_BASE_MS * 2 ** failures, WARM_BACKOFF_MAX_MS),
+          })
         }
         if (warmed.size > 0) {
           environmentState = {
@@ -4460,6 +4477,12 @@ window.__ModuleLoader__.load({
           childList: true,
           subtree: true,
           characterData: true,
+          // Переводимые атрибуты тоже наблюдаются: без этого upstream-смена
+          // только placeholder/aria-label/title оставалась бы непереведённой
+          // до страховочного прохода. Петли нет: setAttr пишет лишь при
+          // фактическом изменении значения.
+          attributes: true,
+          attributeFilter: ['placeholder', 'aria-label', 'title'],
         })
         return () => {
           window.cancelAnimationFrame(frame)
@@ -4490,22 +4513,16 @@ window.__ModuleLoader__.load({
       }, 'gildra-ui-compact: preset model switching')
 
       ctx.effect(() => {
-        const timer = window.setInterval(() => {
-          applyAutomationTranslations()
-          applyAgentSyncTranslations()
-          applyTeamTranslations()
-          applyCodeMapTranslations()
-          applyGitHubTranslations()
-          applyWorkspaceFilesTranslations()
-          applySettingsFallbackTranslations()
-          applyManagedPluginInventoryTranslations()
-          applyTerminalTranslations()
-          applySystemMonitorTranslations()
-          applySshRemoteTranslations()
-          applyContextDoctorTranslations()
-        }, 500)
+        // Основной канал перевода — MutationObserver конвейера: те же
+        // translate-функции входят в OVERLAY_FEATURES и выполняются при любых
+        // изменениях DOM и наблюдаемых атрибутов. Прежний 500-мс интервал
+        // полностью дублировал observer и гонял 12 полных проходов по DOM в
+        // секунду даже в idle. Остался только редкий страховочный проход для
+        // состояний, которых observer не видит; писать в DOM в idle он не
+        // будет благодаря идемпотентным помощникам.
+        const timer = window.setInterval(() => applyUiEnhancements(ctx), 30000)
         return () => window.clearInterval(timer)
-      }, 'gildra-ui-compact: plugin interface translation')
+      }, 'gildra-ui-compact: translation fallback sweep')
 
       ctx.effect(() => {
         const timer = window.setInterval(() => void refreshEnvironmentState(), 8000)
