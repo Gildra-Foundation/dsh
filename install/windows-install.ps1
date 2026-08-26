@@ -27,6 +27,11 @@ $ManifestPath = Join-Path $RepoDir 'config\kit.json'
 $Manifest = Get-Content $ManifestPath -Raw | ConvertFrom-Json
 
 $InstallRoot = [IO.Path]::GetFullPath($(if ($env:GILDRA_DSH_INSTALL_ROOT) { $env:GILDRA_DSH_INSTALL_ROOT } else { Join-Path $env:LOCALAPPDATA 'GildraDSH' }))
+# GetFullPath сохраняет хвостовой разделитель: "C:\Users\me\" обходил точное
+# сравнение с UserProfile. Обрезаем хвост у всего, кроме корня диска.
+if ($InstallRoot.Length -gt 3) {
+  $InstallRoot = $InstallRoot.TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
+}
 if ($InstallRoot -eq [IO.Path]::GetPathRoot($InstallRoot) -or $InstallRoot -eq [Environment]::GetFolderPath('UserProfile')) {
   throw "Unsafe GILDRA_DSH_INSTALL_ROOT: $InstallRoot"
 }

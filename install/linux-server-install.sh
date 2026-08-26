@@ -27,6 +27,11 @@ OLLAMA_VERSION="$(kit_value runtime.ollamaVersion)"
 OLLAMA_MODEL="$(kit_value runtime.ollamaModel)"
 
 INSTALL_ROOT="${GILDRA_DSH_INSTALL_ROOT:-$HOME/.gildra-dsh}"
+# Нормализация перед guard'ом: "$HOME/" или "//" обходили точное сравнение,
+# и кит рассыпался прямо в домашний каталог.
+while [[ "$INSTALL_ROOT" == */ && "$INSTALL_ROOT" != "/" ]]; do
+  INSTALL_ROOT="${INSTALL_ROOT%/}"
+done
 case "$INSTALL_ROOT" in
   ""|/|"$HOME") echo "Unsafe GILDRA_DSH_INSTALL_ROOT: $INSTALL_ROOT" >&2; exit 1 ;;
 esac
