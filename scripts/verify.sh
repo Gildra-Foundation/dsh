@@ -68,7 +68,10 @@ grep -F 'scripts' "$ROOT/.github/workflows/release.yml" >/dev/null
 grep -F 'SHA256SUMS.txt' "$ROOT/.github/workflows/release.yml" >/dev/null
 grep -F 'scripts/check-upstream-dsh.mjs' "$ROOT/.github/workflows/check-upstream.yml" >/dev/null
 
-if grep -REn 'uses:[[:space:]]+[^[:space:]#]+@v[0-9]+' "$ROOT/.github/workflows"; then
+# Любой ref у actions, кроме полного commit SHA (включая @vN, @main, теги),
+# изменяем и запрещён.
+if grep -REn 'uses:[[:space:]]+[^[:space:]#]+@' "$ROOT/.github/workflows" \
+  | grep -Ev '@[0-9a-f]{40}([^0-9a-f]|$)'; then
   echo 'GitHub Actions must be pinned to full commit SHAs.' >&2
   exit 1
 fi
