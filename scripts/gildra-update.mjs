@@ -290,9 +290,62 @@ function processAlive(pid) {
   try {
     process.kill(pid, 0)
     return true
-  } catch {
-    return false
+  } catch (error) {
+    // EPERM означает «процесс существует, но сигналить нельзя» — он жив.
+    return error?.code === 'EPERM'
   }
+}
+
+const UPDATE_LOCK_DIRECTORY = '.gildra-update.lock'
+
+// Одновременно может работать только один updater: параллельные установки
+// гоняли бы `mv source ↔ backup` с разными PID и перетирали state друг друга.
+// mkdir атомарен на всех платформах; stale-лок мёртвого процесса перехватываем
+// через rename, чтобы два претендента не удалили один и тот же лок.
+export async function acquireUpdateLock(installRoot) {
+  const lockPath = join(installRoot, UPDATE_LOCK_DIRECTORY)
+  const metaPath = join(lockPath, 'meta.json')
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      await mkdir(lockPath)
+      await writeFile(metaPath, `${JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() })}\n`)
+      let released = false
+      return {
+        path: lockPath,
+        async release() {
+          if (released) return
+          released = true
+          try {
+            const meta = JSON.parse(await readFile(metaPath, 'utf8'))
+            // Никогда не удаляем лок другого живого updater'а.
+            if (meta.pid !== process.pid) return
+          } catch {
+            // Повреждённый meta собственного лока — удаляем как свой.
+          }
+          await rm(lockPath, { recursive: true, force: true }).catch(() => {})
+        },
+      }
+    } catch (error) {
+      if (error?.code !== 'EEXIST') throw error
+    }
+    let ownerPid = null
+    try {
+      ownerPid = JSON.parse(await readFile(metaPath, 'utf8')).pid
+    } catch {
+      // Лок без meta — незавершённый/брошенный, забираем как stale.
+    }
+    if (Number.isInteger(ownerPid) && ownerPid !== process.pid && processAlive(ownerPid)) {
+      throw new Error(`Обновление уже выполняется (PID ${String(ownerPid)}). Дождитесь его завершения.`)
+    }
+    const stalePath = `${lockPath}.stale-${String(process.pid)}-${Date.now().toString(36)}`
+    try {
+      await rename(lockPath, stalePath)
+      await rm(stalePath, { recursive: true, force: true }).catch(() => {})
+    } catch {
+      // Другой процесс успел перехватить или удалить лок — пробуем заново.
+    }
+  }
+  throw new Error('Не удалось получить блокировку обновления.')
 }
 
 const DARWIN_PROCESS_NAME = 'DeepSeekHarnessApp'
@@ -346,7 +399,16 @@ async function extractArchive(archive, destination, targetPlatform) {
   await runPowerShellFile(EXTRACT_ARCHIVE_SCRIPT, [archive, destination])
 }
 
-async function applyUpdate({ installRoot, targetPlatform = platform(), parentPid, force = false, fetchImpl = fetch }) {
+async function applyUpdate(options) {
+  const lock = await acquireUpdateLock(options.installRoot)
+  try {
+    return await applyUpdateLocked(options)
+  } finally {
+    await lock.release()
+  }
+}
+
+async function applyUpdateLocked({ installRoot, targetPlatform = platform(), parentPid, force = false, fetchImpl = fetch }) {
   const statePath = join(installRoot, STATE_FILE)
   const metadata = await installationMetadata(installRoot)
   const release = await fetchJson(`https://api.github.com/repos/${metadata.repository}/releases/latest`, fetchImpl)

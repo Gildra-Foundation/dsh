@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { spawn } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -9,6 +10,7 @@ import {
   EXTRACT_ARCHIVE_SCRIPT,
   STOP_PROCESS_SCRIPT,
   archiveNameForPlatform,
+  acquireUpdateLock,
   checkForUpdate,
   compareVersions,
   parseVersion,
@@ -160,6 +162,52 @@ await assert.rejects(
   assert.ok(captured.argv.includes('-File'))
   assert.equal(existsSync(result.scriptPath), true)
   await rm(dirname(result.scriptPath), { recursive: true, force: true })
+}
+
+// --- Эксклюзивная блокировка обновления ---
+{
+  const lockRoot = await mkdtemp(join(tmpdir(), 'gildra-lock-'))
+  const lockDir = join(lockRoot, '.gildra-update.lock')
+  const helper = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], { stdio: 'ignore' })
+  try {
+    // Живой чужой владелец: второй updater получает понятную ошибку.
+    await mkdir(lockDir)
+    await writeFile(join(lockDir, 'meta.json'), JSON.stringify({ pid: helper.pid }))
+    await assert.rejects(acquireUpdateLock(lockRoot), /уже выполняется/)
+
+    // release() никогда не удаляет чужой живой лок.
+    await rm(lockDir, { recursive: true, force: true })
+    const own = await acquireUpdateLock(lockRoot)
+    await writeFile(join(lockDir, 'meta.json'), JSON.stringify({ pid: helper.pid }))
+    await own.release()
+    assert.equal(existsSync(lockDir), true)
+    await rm(lockDir, { recursive: true, force: true })
+
+    // Обычный цикл: захват создаёт лок, освобождение удаляет.
+    const first = await acquireUpdateLock(lockRoot)
+    assert.equal(existsSync(first.path), true)
+    await first.release()
+    assert.equal(existsSync(first.path), false)
+
+    // Stale-лок мёртвого процесса перехватывается новым updater'ом.
+    const deadChild = spawn(process.execPath, ['-e', 'process.exit(0)'], { stdio: 'ignore' })
+    const deadPid = deadChild.pid
+    await new Promise(resolveExit => deadChild.on('exit', resolveExit))
+    await mkdir(lockDir, { recursive: true })
+    await writeFile(join(lockDir, 'meta.json'), JSON.stringify({ pid: deadPid }))
+    const takeover = await acquireUpdateLock(lockRoot)
+    assert.equal(JSON.parse(readFileSync(join(takeover.path, 'meta.json'), 'utf8')).pid, process.pid)
+    await takeover.release()
+
+    // Брошенный лок без meta.json тоже перехватывается.
+    await mkdir(lockDir)
+    const orphanTakeover = await acquireUpdateLock(lockRoot)
+    assert.equal(existsSync(join(orphanTakeover.path, 'meta.json')), true)
+    await orphanTakeover.release()
+  } finally {
+    helper.kill('SIGKILL')
+    await rm(lockRoot, { recursive: true, force: true })
+  }
 }
 
 console.log('Gildra updater tests passed.')
