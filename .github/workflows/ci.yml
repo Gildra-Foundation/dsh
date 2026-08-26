@@ -52,6 +52,11 @@ jobs:
           node plugins/gildra-dsh-ui-compact/test.mjs
           node plugins/gildra-skill-installer/test.mjs
           node patches/workspace-files-explorer-index.test.mjs
+          node plugins/gildra-dsh-runtime/test/unit.test.mjs
+          node plugins/gildra-dsh-runtime/test/workspaces.test.mjs
+          node plugins/gildra-dsh-runtime/test/leases.test.mjs
+          node plugins/gildra-dsh-runtime/test/sessions.test.mjs
+          node plugins/gildra-dsh-runtime/test/api.test.mjs
       - name: Server installer smoke (fresh + idempotent + preservation)
         env:
           GILDRA_DSH_INSTALL_ROOT: ${{ runner.temp }}/gildra-dsh
@@ -128,6 +133,11 @@ jobs:
           node plugins/gildra-dsh-ui-compact/test.mjs
           node plugins/gildra-skill-installer/test.mjs
           node patches/workspace-files-explorer-index.test.mjs
+          node plugins/gildra-dsh-runtime/test/unit.test.mjs
+          node plugins/gildra-dsh-runtime/test/workspaces.test.mjs
+          node plugins/gildra-dsh-runtime/test/leases.test.mjs
+          node plugins/gildra-dsh-runtime/test/sessions.test.mjs
+          node plugins/gildra-dsh-runtime/test/api.test.mjs
       - name: Installer failure path must not leave a "healthy" install
         shell: pwsh
         run: |
