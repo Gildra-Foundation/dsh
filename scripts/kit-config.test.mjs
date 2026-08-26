@@ -181,7 +181,11 @@ try {
   await mkdir(join(helper, '..'), { recursive: true })
   await writeFile(helper, 'helper', { mode: 0o644 })
   assert.deepEqual(await repairNodePtySpawnHelpers(terminalProfile, 'darwin'), [helper])
-  assert.equal((await stat(helper)).mode & 0o111, 0o111)
+  if (process.platform !== 'win32') {
+    // Execute-биты — POSIX-свойство: на NTFS mode их не содержит, а сама
+    // починка spawn-helper'ов относится к darwin/linux-профилям.
+    assert.equal((await stat(helper)).mode & 0o111, 0o111)
+  }
 } finally {
   await rm(terminalProfile, { recursive: true, force: true })
 }
