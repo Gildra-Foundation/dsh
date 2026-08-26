@@ -1,0 +1,25 @@
+{
+  "name": "@gildra/dsh-runtime",
+  "version": "0.1.0",
+  "description": "Gildra Runtime: multi-session workspace, lease, process and port orchestration for Gildra DSH",
+  "type": "module",
+  "scripts": {
+    "test": "node test/unit.test.mjs && node test/workspaces.test.mjs && node test/sessions.test.mjs && node test/api.test.mjs"
+  },
+  "main": "./lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml"
+  ],
+  "license": "MIT",
+  "private": true,
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

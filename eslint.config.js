@@ -72,7 +72,7 @@ export default [
       'scripts/**/*.mjs',
       'patches/**/*.mjs',
       'plugins/**/*.mjs',
-      'plugins/**/lib/index.js',
+      'plugins/**/lib/**/*.js',
       'patches/**/*.js',
     ],
     languageOptions: {
