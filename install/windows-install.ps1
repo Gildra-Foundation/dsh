@@ -84,7 +84,13 @@ if (-not (Test-Path (Join-Path $SourceDir 'apps\cli\lib\bin.js')) -or (Read-Mark
   Move-Item $ExpandedSource $SourceStage
   Invoke-Checked 'pnpm install (harness source)' { & (Join-Path $NodeDir 'corepack.cmd') pnpm --dir $SourceStage install --frozen-lockfile }
   $env:DSH_CLIENT_COMMIT_HASH = $DshCommit
-  Invoke-Checked 'pnpm build (harness source)' { & (Join-Path $NodeDir 'corepack.cmd') pnpm --dir $SourceStage run build }
+  try {
+    Invoke-Checked 'pnpm build (harness source)' { & (Join-Path $NodeDir 'corepack.cmd') pnpm --dir $SourceStage run build }
+  } finally {
+    # Переменная нужна только сборке: без очистки она наследовалась
+    # запускаемым в конце приложением.
+    Remove-Item Env:DSH_CLIENT_COMMIT_HASH -ErrorAction SilentlyContinue
+  }
   if (Test-Path $SourceDir) { Move-Item $SourceDir $SourceBackup }
   try {
     Move-Item $SourceStage $SourceDir

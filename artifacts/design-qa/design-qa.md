@@ -63,10 +63,10 @@ final result: passed
 
 ## Evidence
 
-- Source visual truth: `artifacts/design-qa/reference-codex-sidebar.png`
-- Local implementation: `artifacts/design-qa/implementation-local.jpeg`
-- Remote implementation: `artifacts/design-qa/implementation-remote.jpeg`
-- Focused comparisons: `artifacts/design-qa/compare-local.png`, `artifacts/design-qa/compare-remote.png`
+- Source visual truth: `reference-codex-sidebar.png`
+- Local implementation: `implementation-local.jpeg`
+- Remote implementation: `implementation-remote.jpeg`
+- Focused comparisons: `compare-local.png`, `compare-remote.png`
 - Source pixels: 532 × 1248.
 - Implementation pixels and CSS viewport: 1152 × 768, desktop window, dark theme.
 - Focused comparison normalization: the 268 × 768 implementation sidebar was cropped and scaled to 435 × 1248 beside the unscaled 532 × 1248 reference. Density was normalized by equal comparison height; no browser or device frame was included in the crop.

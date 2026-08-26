@@ -540,12 +540,7 @@ final class HarnessService: ObservableObject {
     }
 
     private func defaultWorkingDirectory() -> URL {
-        let fileManager = FileManager.default
-        let preferred = fileManager.homeDirectoryForCurrentUser
-            .appendingPathComponent("Documents/Vibe", isDirectory: true)
-        return fileManager.fileExists(atPath: preferred.path)
-            ? preferred
-            : fileManager.homeDirectoryForCurrentUser
+        FileManager.default.homeDirectoryForCurrentUser
     }
 
 }

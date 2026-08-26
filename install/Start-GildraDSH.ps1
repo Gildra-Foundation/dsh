@@ -3,7 +3,7 @@ $KitRoot = Split-Path -Parent $PSScriptRoot
 $Node = Join-Path $KitRoot 'runtime\node\node.exe'
 $Cli = Join-Path $KitRoot 'source\apps\cli\lib\bin.js'
 $env:DSH_HOME = Join-Path $KitRoot 'home'
-$env:Path = "$(Join-Path $KitRoot 'lsp\node_modules\.bin');$(Join-Path $KitRoot 'runtime\node');$(Join-Path $KitRoot 'runtime\python');$env:Path"
+$env:Path = "$(Join-Path $KitRoot 'lsp\node_modules\.bin');$(Join-Path $KitRoot 'runtime\node');$env:Path"
 
 $ManifestUrl = 'http://127.0.0.1:3080/manifest.webmanifest'
 $Existing = Get-NetTCPConnection -LocalPort 3080 -State Listen -ErrorAction SilentlyContinue
