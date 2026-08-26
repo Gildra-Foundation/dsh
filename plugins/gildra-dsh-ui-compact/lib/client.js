@@ -43,6 +43,9 @@ window.__ModuleLoader__.load({
         font-size: 17px !important;
         font-weight: 560 !important;
       }
+      .gildra-suppressed {
+        display: none !important;
+      }
       .gildra-language-backdrop {
         position: fixed;
         z-index: 8000;
@@ -4428,7 +4431,9 @@ window.__ModuleLoader__.load({
       event.preventDefault()
       event.stopImmediatePropagation()
       tab.click()
-      document.querySelector('.dsh-automation-sidebar-feedback')?.remove()
+      // Узлом владеет React-рендерер Harness: физическое удаление приводит к
+      // NotFoundError при реконсиляции, поэтому элемент только скрывается.
+      document.querySelector('.dsh-automation-sidebar-feedback')?.classList.add('gildra-suppressed')
     }
 
     function apply(ctx) {
