@@ -19,6 +19,11 @@ node --check "$ROOT/plugins/gildra-dsh-ui-compact/lib/index.js"
 node --check "$ROOT/plugins/gildra-dsh-ui-compact/lib/client.js"
 node "$ROOT/scripts/build-ui-client.mjs" --check
 node "$ROOT/plugins/gildra-dsh-ui-compact/test.mjs"
+# Поведенческие DOM-тесты требуют dev-профиля (npm install → happy-dom);
+# verify остаётся работоспособным и без него, CI ставит профиль всегда.
+if [[ -d "$ROOT/node_modules/happy-dom" ]]; then
+  node "$ROOT/plugins/gildra-dsh-ui-compact/dom.test.mjs"
+fi
 node --check "$ROOT/plugins/gildra-skill-installer/lib/index.js"
 node "$ROOT/plugins/gildra-skill-installer/test.mjs"
 node --check "$ROOT/patches/workspace-files-explorer-index.js"
