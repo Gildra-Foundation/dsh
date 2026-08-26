@@ -497,6 +497,11 @@ export function registerAgentControlRoute(ctx, options = {}) {
   const ready = readAgentControl(settingsPath).then((reviewerModel) => {
     setReviewerModel(runtime, reviewerModel)
   })
+  // До первого HTTP-запроса у промиса нет обработчика отказа: ошибка чтения
+  // на старте (например EACCES) была бы unhandled rejection и в Node 22
+  // завершала бы процесс Harness. Ошибка остаётся в ready и отдаётся первому
+  // запросу как HTTP 500.
+  ready.catch(() => {})
   return ctx.webServer.register({
     kind: 'exact',
     path: AGENT_CONTROL_ROUTE,
