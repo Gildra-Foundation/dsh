@@ -55,6 +55,29 @@ assert.deepEqual(
     .map((plugin) => plugin.package),
   ['new-plugin'],
 )
+// Совпадение версии с ЧУЖИМ пакетом не должно скрывать новый плагин от
+// sentinel-преаудита: specifier обязан стоять под именем самого пакета.
+assert.deepEqual(
+  pluginsMissingFromLock(
+    [{ package: 'new-plugin', expandedSpec: 'new-plugin@0.2.0' }],
+    '      dsh-context7:\n        specifier: 0.2.0\n        version: 0.2.0\n',
+  ).map((plugin) => plugin.package),
+  ['new-plugin'],
+)
+assert.deepEqual(
+  pluginsMissingFromLock(
+    [{ package: 'new-plugin', expandedSpec: 'new-plugin@0.2.0' }],
+    '      new-plugin:\n        specifier: 0.2.0\n        version: 0.2.0\n',
+  ),
+  [],
+)
+assert.deepEqual(
+  pluginsMissingFromLock(
+    [{ package: '@scope/quoted-plugin', expandedSpec: '@scope/quoted-plugin@1.0.0' }],
+    "      '@scope/quoted-plugin':\n        specifier: 1.0.0\n        version: 1.0.0\n",
+  ),
+  [],
+)
 assert.match(renderWorkspace(manifest, plugins), /dsh-doublecheck@0\.8\.0/)
 for (const packageName of [
   'dsh-context7',

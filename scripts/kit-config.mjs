@@ -151,9 +151,17 @@ export function dependencyValue(plugin) {
 }
 
 export function pluginsMissingFromLock(plugins, lockText) {
+  const escapeRegExp = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   return plugins.filter((plugin) => {
     const specifier = dependencyValue(plugin)
-    return !lockText.includes(`specifier: ${specifier}\n`)
+    // Specifier привязан к имени пакета: голый substring-поиск считал новый
+    // плагин «уже в lock», если та же версия встречалась у другого пакета,
+    // и sentinel-преаудит нового пакета молча пропускался.
+    const entry = new RegExp(
+      `^ {6}'?${escapeRegExp(plugin.package)}'?:\\n {8}specifier: ${escapeRegExp(specifier)}$`,
+      'm',
+    )
+    return !entry.test(lockText)
   })
 }
 
