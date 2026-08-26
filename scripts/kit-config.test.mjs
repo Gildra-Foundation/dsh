@@ -78,6 +78,14 @@ assert.deepEqual(
   ),
   [],
 )
+// CRLF-вариант lock-файла (Windows-checkout/правка) тоже распознаётся.
+assert.deepEqual(
+  pluginsMissingFromLock(
+    [{ package: 'new-plugin', expandedSpec: 'new-plugin@0.2.0' }],
+    '      new-plugin:\r\n        specifier: 0.2.0\r\n        version: 0.2.0\r\n',
+  ),
+  [],
+)
 assert.match(renderWorkspace(manifest, plugins), /dsh-doublecheck@0\.8\.0/)
 for (const packageName of [
   'dsh-context7',

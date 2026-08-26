@@ -1,0 +1,12 @@
+# Репозиторий LF-нативный: bash/zsh-скрипты и генерируемый client.js обязаны
+# сохранять LF на любом checkout (Git for Windows с autocrlf иначе подставляет
+# CRLF и ломает и скрипты, и текстовые сверки).
+* text=auto eol=lf
+# Батники исполняются cmd.exe — им положен CRLF.
+*.cmd text eol=crlf
+# Бинарные артефакты.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.icns binary
+*.zip binary

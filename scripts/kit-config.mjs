@@ -157,8 +157,10 @@ export function pluginsMissingFromLock(plugins, lockText) {
     // Specifier привязан к имени пакета: голый substring-поиск считал новый
     // плагин «уже в lock», если та же версия встречалась у другого пакета,
     // и sentinel-преаудит нового пакета молча пропускался.
+    // \r-толерантность: lock, прочитанный с Windows-машины пользователя,
+    // может содержать CRLF независимо от нормализации в самом репозитории.
     const entry = new RegExp(
-      `^ {6}'?${escapeRegExp(plugin.package)}'?:\\n {8}specifier: ${escapeRegExp(specifier)}$`,
+      `^ {6}'?${escapeRegExp(plugin.package)}'?:\\r?\\n {8}specifier: ${escapeRegExp(specifier)}\\r?$`,
       'm',
     )
     return !entry.test(lockText)
