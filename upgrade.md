@@ -71,7 +71,7 @@ quit` больше не запускает закрытое приложение
 > нейтрализована именно переходом на `.Contains` + guard; зафиксирована тестом
 > `assert.doesNotMatch(script, /-like/)`.
 
-### C2. Windows-установка фиксировала провал как успех — **FIXED** `204c28d` · NEEDS WINDOWS VERIFICATION (CI-smoke добавлен)
+### C2. Windows-установка фиксировала провал как успех — **FIXED** `204c28d` · подтверждено CI-smoke на windows-2025
 
 `install/windows-install.ps1` — PowerShell 5.1 не превращает exit-коды exe в
 ошибки. Исправлено: `Invoke-Checked` (проверка `$LASTEXITCODE` + throw) вокруг
@@ -274,6 +274,26 @@ sysmon/dialog строковые хаки vs ru-локаль; CHANGELOG-дисц
 Ollama/systemd (CI использует SKIP_OLLAMA); fleet-sync на настроенные серверы.
 
 ---
+
+## 9а. Что вскрыл сам обновлённый CI (пост-серия)
+
+Первые же честные прогоны Windows-джобы нашли три латентных
+кросс-платформенных дефекта — прямое подтверждение ценности исправленных гейтов:
+
+1. **FIXED** `072f241` — `"$Description:"` в новом Invoke-Checked парсился как
+   scoped-переменная `$scope:name` (вскрыто починенным аккумулирующим
+   парс-шагом; раньше ошибка была бы замаскирована багом `[ref]$errors`).
+2. **FIXED** `72220cc` — CRLF-checkout Git for Windows ломал проверку
+   lock-покрытия; добавлен `.gitattributes` (LF-нативный репозиторий, CRLF
+   только для `.cmd`) + `\r`-толерантный регекс.
+3. **FIXED** `c0571e6` — POSIX-проверка execute-битов в тесте
+   `repairNodePtySpawnHelpers` не применима к NTFS — гвардирована по платформе.
+
+Итог: run `33020486464` — **все четыре джобы зелёные**, включая Windows-шаг
+«Installer failure path must not leave a "healthy" install» на настоящем
+`powershell.exe` 5.1 (симулированный сбой → установка падает, маркер не
+появляется, битый stage не становится source, unsafe-root отклонён) и
+Linux-джобу с полной установкой end-to-end.
 
 ## 10. Методика перепроверки
 
