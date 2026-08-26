@@ -8,6 +8,23 @@ permissions:
   contents: read
 
 jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.19.0'
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm run test:dom
+      - name: ShellCheck (errors only)
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q shellcheck
+          shellcheck --severity=error install/linux-server-install.sh install/dsh-gildra-server install/Start-GildraDSH.server.sh
+
   macos:
     runs-on: macos-15
     steps:
@@ -92,6 +109,11 @@ jobs:
             }
           }
           if ($allErrors.Count) { exit 1 }
+      - name: PSScriptAnalyzer (errors only)
+        shell: pwsh
+        run: |
+          $results = Invoke-ScriptAnalyzer -Path install -Recurse -Severity Error
+          if ($results) { $results | Format-Table -AutoSize; exit 1 }
       - name: Run JS tests
         run: |
           node scripts/kit-config.test.mjs
