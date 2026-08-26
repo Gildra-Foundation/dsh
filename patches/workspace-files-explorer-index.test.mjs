@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, realpath, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, sep } from 'node:path'
 import { Readable } from 'node:stream'
 import { apply } from './workspace-files-explorer-index.js'
 
@@ -77,6 +77,112 @@ try {
   )
   assert.equal(attackerSelectedRoot.ok, false)
   assert.match(attackerSelectedRoot.error, /не зарегистрирована/)
+
+  // --- Матрица безопасности чтения файлов -----------------------------------
+  // Кейс «обычный файл внутри workspace» и кейс «абсолютный путь вне
+  // workspace» уже покрыты выше (README.md и outside.txt). Фикстуры матрицы
+  // создаются только после проверок list, чтобы не менять ожидаемое
+  // содержимое корня рабочей папки.
+
+  // ../-traversal: литеральные «..» в присланном пути выводят за пределы root.
+  const traversal = await request(desktopRoutes, '/api/wsf-explorer/read', {
+    cwd: workspace,
+    path: [workspace, 'src', '..', '..', 'outside.txt'].join(sep),
+  })
+  assert.equal(traversal.ok, false)
+  assert.match(traversal.error, /пределами рабочей папки/)
+
+  // Коллизия префиксов: сосед «workspace-project-evil» не должен проходить
+  // проверку границ при корне «workspace-project».
+  const project = join(parent, 'workspace-project')
+  const evil = join(parent, 'workspace-project-evil')
+  await mkdir(project, { recursive: true })
+  await mkdir(evil, { recursive: true })
+  await writeFile(join(evil, 'secret.txt'), 'evil twin\n')
+  const collisionRoutes = mount([await realpath(project)])
+  const collision = await request(collisionRoutes, '/api/wsf-explorer/read', {
+    cwd: project,
+    path: join(evil, 'secret.txt'),
+  })
+  assert.equal(collision.ok, false)
+  assert.match(collision.error, /пределами рабочей папки/)
+
+  // Несуществующий путь: аккуратная ошибка в ответе, без крэша процесса.
+  const missing = await request(desktopRoutes, '/api/wsf-explorer/read', {
+    cwd: workspace,
+    path: join(workspace, 'no-such-file.txt'),
+  })
+  assert.equal(missing.ok, false)
+  assert.match(missing.error, /ENOENT/)
+
+  // Файл больше MAX_BYTES (262 144): ответ tooLarge без содержимого.
+  await writeFile(join(workspace, 'src', 'big.txt'), Buffer.alloc(262_145, 0x61))
+  const big = await request(desktopRoutes, '/api/wsf-explorer/read', {
+    cwd: workspace,
+    path: join(workspace, 'src', 'big.txt'),
+  })
+  assert.equal(big.ok, false)
+  assert.equal(big.tooLarge, true)
+  assert.equal(big.size, 262_145)
+  assert.match(big.error, /256 КБ/)
+  assert.equal(big.content, undefined)
+
+  // Каталог вместо файла: отказ. На Windows open() каталога падает системной
+  // ошибкой ещё до проверки типа, поэтому текст сообщения сверяем не везде.
+  const dirRead = await request(desktopRoutes, '/api/wsf-explorer/read', {
+    cwd: workspace,
+    path: join(workspace, 'src'),
+  })
+  assert.equal(dirRead.ok, false)
+  if (process.platform !== 'win32') assert.match(dirRead.error, /не является файлом/)
+
+  if (process.platform !== 'win32') {
+    // Симлинк-кейсы выполняются только вне Windows: там создание символьных
+    // ссылок требует привилегии SeCreateSymbolicLinkPrivilege (или режима
+    // разработчика), и symlink() на обычном раннере падает с EPERM.
+    const outsideDir = join(parent, 'outside-dir')
+    await mkdir(join(outsideDir, 'inner'), { recursive: true })
+    await writeFile(join(outsideDir, 'secret.txt'), 'outside dir secret\n')
+    await writeFile(join(outsideDir, 'inner', 'data.txt'), 'nested outside secret\n')
+
+    // Симлинк внутри workspace, указывающий на файл снаружи.
+    await symlink(outside, join(workspace, 'src', 'link-file.txt'))
+    const linkFile = await request(desktopRoutes, '/api/wsf-explorer/read', {
+      cwd: workspace,
+      path: join(workspace, 'src', 'link-file.txt'),
+    })
+    assert.equal(linkFile.ok, false)
+    assert.match(linkFile.error, /пределами рабочей папки/)
+
+    // Симлинк на каталог снаружи + чтение файла через него.
+    await symlink(outsideDir, join(workspace, 'src', 'link-dir'))
+    const throughDir = await request(desktopRoutes, '/api/wsf-explorer/read', {
+      cwd: workspace,
+      path: join(workspace, 'src', 'link-dir', 'secret.txt'),
+    })
+    assert.equal(throughDir.ok, false)
+    assert.match(throughDir.error, /пределами рабочей папки/)
+
+    // Вложенный симлинк: файл лежит в подкаталоге каталога-симлинка, то есть
+    // прыжок наружу происходит в середине пути, а не в финальном компоненте.
+    const nested = await request(desktopRoutes, '/api/wsf-explorer/read', {
+      cwd: workspace,
+      path: join(workspace, 'src', 'link-dir', 'inner', 'data.txt'),
+    })
+    assert.equal(nested.ok, false)
+    assert.match(nested.error, /пределами рабочей папки/)
+
+    // Симлинк на легальную цель внутри workspace: realpath остаётся в root,
+    // поэтому по семантике патча файл читается, а path — канонический.
+    await symlink(join(workspace, 'README.md'), join(workspace, 'src', 'alias.md'))
+    const alias = await request(desktopRoutes, '/api/wsf-explorer/read', {
+      cwd: workspace,
+      path: join(workspace, 'src', 'alias.md'),
+    })
+    assert.equal(alias.ok, true)
+    assert.equal(alias.content, '# Test\n')
+    assert.equal(alias.path, join(canonicalWorkspace, 'README.md'))
+  }
 
   process.env.GILDRA_DSH_SERVER = '1'
   // Even if an unauthenticated caller first registers the attacker-selected

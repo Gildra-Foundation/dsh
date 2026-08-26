@@ -5,9 +5,12 @@
  * its three read-only routes because the upstream DSH fs bridge can stall on
  * Harness 0.1.1-rc.2. The root must already exist in Harness' workspace
  * registry, and every resolved target must remain inside that canonical root,
- * including after resolving symbolic links.
+ * including after resolving symbolic links. File reads go through a file
+ * descriptor opened from the canonical path, so the validated target cannot be
+ * swapped between the boundary check and the read.
  */
-import { readFile, readdir, realpath, stat } from 'node:fs/promises'
+import { constants } from 'node:fs'
+import { open, readdir, realpath, stat } from 'node:fs/promises'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 
 export const name = 'workspace-files-explorer'
@@ -17,6 +20,9 @@ const MAX_ENTRIES = 500
 const MAX_BYTES = 262_144
 const MAX_BODY_BYTES = 8_192
 const SERVER_PREVIEW_OVERRIDE = 'GILDRA_DSH_ALLOW_UNAUTHENTICATED_FILE_PREVIEW'
+// O_NOFOLLOW rejects a symlink that replaced the final path component after
+// realpath(). Windows does not define the constant, so it is omitted there.
+const READ_FLAGS = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0)
 
 function json(res, status, value) {
   const body = JSON.stringify(value)
@@ -95,16 +101,24 @@ async function handleList(workspaceRegistry, input) {
 async function handleRead(workspaceRegistry, input) {
   if (typeof input?.path !== 'string' || input.path.trim() === '') throw new Error('Не выбран файл')
   const { target } = await workspaceTarget(workspaceRegistry, input, input.path)
-  const info = await stat(target)
-  if (!info.isFile()) throw new Error('Выбранный путь не является файлом')
-  if (info.size > MAX_BYTES) {
-    return { ok: false, tooLarge: true, size: info.size, error: 'Файл больше 256 КБ и не открыт для предпросмотра' }
+  // Known residual race: an intermediate directory of the canonical target can
+  // still be swapped for a symlink between realpath() and open(). Closing that
+  // window needs an openat()-style walk, out of scope for this small adapter.
+  const handle = await open(target, READ_FLAGS)
+  try {
+    const info = await handle.stat()
+    if (!info.isFile()) throw new Error('Выбранный путь не является файлом')
+    if (info.size > MAX_BYTES) {
+      return { ok: false, tooLarge: true, size: info.size, error: 'Файл больше 256 КБ и не открыт для предпросмотра' }
+    }
+    const buffer = await handle.readFile()
+    if (buffer.includes(0)) {
+      return { ok: false, binary: true, size: info.size, error: 'Двоичный файл нельзя показать как текст' }
+    }
+    return { ok: true, path: target, content: buffer.toString('utf8'), size: info.size }
+  } finally {
+    await handle.close()
   }
-  const buffer = await readFile(target)
-  if (buffer.includes(0)) {
-    return { ok: false, binary: true, size: info.size, error: 'Двоичный файл нельзя показать как текст' }
-  }
-  return { ok: true, path: target, content: buffer.toString('utf8'), size: info.size }
 }
 
 function filePreviewAvailable() {
