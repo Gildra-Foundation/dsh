@@ -4,7 +4,7 @@
   "description": "Gildra Runtime: multi-session workspace, lease, process and port orchestration for Gildra DSH",
   "type": "module",
   "scripts": {
-    "test": "node test/unit.test.mjs && node test/workspaces.test.mjs && node test/leases.test.mjs"
+    "test": "node test/unit.test.mjs && node test/workspaces.test.mjs && node test/leases.test.mjs && node test/sessions.test.mjs"
   },
   "main": "./lib/index.js",
   "exports": {
