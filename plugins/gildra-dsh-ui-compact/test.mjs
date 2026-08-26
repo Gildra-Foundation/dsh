@@ -378,6 +378,26 @@ for (const name of HOT_RENDER_FUNCTIONS) {
 }
 assert.match(sliceFunction(clientSource, 'renderEnvironmentSwitcher'), /environmentRenderSignature/)
 
+// Реестр upstream-селекторов: знание о вёрстке Harness централизовано.
+// Литерал допустим ровно дважды — в CSS-блоке (CSS не читает JS-константы)
+// и в самом реестре SELECTORS; появление третьего вхождения означает, что
+// кто-то снова захардкодил селектор мимо реестра.
+assert.match(clientSource, /const SELECTORS = Object\.freeze\(/)
+for (const [literal, allowed] of [
+  ['[data-slot="sidebar.brand.name"]', 2],
+  ['[data-slot="sidebar.workspaces"]', 1],
+  ['.dsh-automation-sidebar-feedback', 2],
+  ["'.sysmon__toggle'", 1],
+]) {
+  const count = clientSource.split(literal).length - 1
+  assert.equal(count, allowed, `селектор ${literal} должен жить только в реестре/CSS (найдено ${String(count)})`)
+}
+// Трёхлокальные подписи кнопок используются только через реестр (сами строки
+// могут легитимно встречаться в словарях переводов как данные).
+assert.match(clientSource, /SELECTORS\.sidebar\.openSidebarLabels\.includes/)
+assert.match(clientSource, /SELECTORS\.sidebar\.sshTriggerLabels\.includes/)
+assert.match(clientSource, /SELECTORS\.sidebar\.collapsedWidthPx/)
+
 // Поведенческая проверка помощников: фабрика клиента загружается без браузера
 // через стаб __ModuleLoader__, помощники получают поддельные узлы со
 // счётчиками мутаций.

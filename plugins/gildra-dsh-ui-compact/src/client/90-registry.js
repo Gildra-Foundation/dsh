@@ -101,7 +101,7 @@
         ? event.target.closest('[data-dsh-automation-entry]')
         : null
       if (!entry) return
-      const tab = [...document.querySelectorAll('[role="tab"]')]
+      const tab = [...document.querySelectorAll(SELECTORS.tabs)]
         .find((candidate) => ['Automations', 'Автоматизации'].includes(candidate.textContent?.trim()))
       if (!(tab instanceof HTMLElement)) return
       event.preventDefault()
@@ -109,7 +109,7 @@
       tab.click()
       // Узлом владеет React-рендерер Harness: физическое удаление приводит к
       // NotFoundError при реконсиляции, поэтому элемент только скрывается.
-      document.querySelector('.dsh-automation-sidebar-feedback')?.classList.add('gildra-suppressed')
+      document.querySelector(SELECTORS.automations.sidebarFeedback)?.classList.add('gildra-suppressed')
     }
 
     function apply(ctx) {

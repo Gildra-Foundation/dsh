@@ -598,7 +598,7 @@
       setTitle(remote
         ? `Gildra DSH — Сервер ${remote.name}`
         : 'Gildra DSH — Локально')
-      const brand = document.querySelector('[data-slot="sidebar.brand.name"]')
+      const brand = document.querySelector(SELECTORS.sidebar.brandName)
       if (!brand) return
       let badge = brand.querySelector('.gildra-brand-environment')
       if (!badge) {
@@ -622,7 +622,7 @@
         indicator.addEventListener('click', () => {
           const trigger = [...document.querySelectorAll('button')].find((button) => {
             const label = button.getAttribute('aria-label') ?? button.textContent?.trim()
-            return ['Открыть панель', 'Open sidebar', '打开侧边栏'].includes(label)
+            return SELECTORS.sidebar.openSidebarLabels.includes(label)
           })
           trigger?.click()
         })
@@ -686,11 +686,11 @@
 
     function syncEnvironmentPlacement() {
       const root = document.querySelector('.gildra-environments')
-      const workspaces = document.querySelector('[data-slot="sidebar.workspaces"]')
+      const workspaces = document.querySelector(SELECTORS.sidebar.workspaces)
       const content = workspaces?.firstElementChild
       if (!root || !workspaces || !(content instanceof HTMLElement)) return
       const rect = content.getBoundingClientRect()
-      const collapsed = rect.width < 140
+      const collapsed = rect.width < SELECTORS.sidebar.collapsedWidthPx
       const indicator = ensureCollapsedEnvironmentIndicator()
       setHidden(root, collapsed)
       setHidden(indicator, !collapsed || !environmentState.currentRemote)
@@ -710,7 +710,7 @@
       ensureCollapsedEnvironmentIndicator()
       for (const button of document.querySelectorAll('button')) {
         const label = button.getAttribute('aria-label') ?? button.textContent?.trim()
-        if (['Сервер SSH', 'SSH Remote', 'SSH 远端'].includes(label)) {
+        if (SELECTORS.sidebar.sshTriggerLabels.includes(label)) {
           button.classList.add('gildra-legacy-ssh-trigger')
         }
       }
@@ -718,7 +718,7 @@
         syncEnvironmentPlacement()
         return
       }
-      const workspaces = document.querySelector('[data-slot="sidebar.workspaces"]')
+      const workspaces = document.querySelector(SELECTORS.sidebar.workspaces)
       if (!workspaces) return
       const root = document.createElement('div')
       root.className = 'gildra-environments'

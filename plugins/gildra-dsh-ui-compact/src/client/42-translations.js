@@ -15,7 +15,7 @@
 
     function applyAutomationTranslations() {
       if (russianUiSuppressed) return
-      const roots = document.querySelectorAll('.dsh-automation-shell, .dsh-auto-workspace, .dsh-automation-sidebar-action, [data-dsh-automation-entry], [data-dsh-automations-trigger], [role="tab"], [role="dialog"]')
+      const roots = document.querySelectorAll(SELECTORS.automations.translationRoots)
       for (const root of roots) {
         const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
         let node
@@ -104,7 +104,7 @@
 
     function applySystemMonitorTranslations() {
       if (russianUiSuppressed) return
-      const root = document.querySelector('.sysmon')
+      const root = document.querySelector(SELECTORS.sysmon.root)
       if (!root) return
       const replacements = new Map([
         ['SYSTEM', 'СИСТЕМА'],
@@ -125,7 +125,7 @@
         const translated = translateWithPatterns(node.nodeValue, replacements, patterns)
         applyTranslatedNodeValue(node, translated)
       }
-      const toggle = root.querySelector('.sysmon__toggle')
+      const toggle = root.querySelector(SELECTORS.sysmon.toggle)
       if (toggle) {
         const collapsed = toggle.textContent?.trim() === '+'
         setDataset(root, 'gildraCollapsed', String(collapsed))

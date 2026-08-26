@@ -2248,6 +2248,40 @@ window.__ModuleLoader__.load({
       },
     ]
 
+
+    // --- Реестр upstream-селекторов ------------------------------------
+    // Централизованное знание о вёрстке DeepSeek Harness: любая правка
+    // селектора делается здесь, а не по десяти местам кода. Для каждой
+    // записи — поверхность и режим отказа: функциональные ensure-фичи при
+    // смене upstream молча исчезают, переводы деградируют в исходный язык.
+    // CSS-литералы в блоке стилей намеренно не выведены сюда: CSS не читает
+    // JS-константы, а дублирование зафиксировано контракт-тестом счётчиков.
+    const SELECTORS = Object.freeze({
+      sidebar: {
+        // Бренд-слот сайдбара; исчезнет — пропадут бейдж среды и заголовок.
+        brandName: '[data-slot="sidebar.brand.name"]',
+        // Слот списка воркспейсов; якорь позиционирования панели сред.
+        workspaces: '[data-slot="sidebar.workspaces"]',
+        // Подписи кнопки открытия свёрнутой панели (три локали upstream).
+        openSidebarLabels: ['Открыть панель', 'Open sidebar', '打开侧边栏'],
+        // Эвристика свёрнутого сайдбара: узкий контент слота.
+        collapsedWidthPx: 140,
+        // Подписи легаси-кнопки SSH; строка прячется CSS-классом.
+        sshTriggerLabels: ['Сервер SSH', 'SSH Remote', 'SSH 远端'],
+      },
+      sysmon: {
+        root: '.sysmon',
+        toggle: '.sysmon__toggle',
+      },
+      automations: {
+        shell: '.dsh-automation-shell',
+        scope: '.dsh-automation-scope',
+        formGridFirstInput: '.dsh-automation-form-grid > label:first-child input',
+        sidebarFeedback: '.dsh-automation-sidebar-feedback',
+        translationRoots: '.dsh-automation-shell, .dsh-auto-workspace, .dsh-automation-sidebar-action, [data-dsh-automation-entry], [data-dsh-automations-trigger], [role="tab"], [role="dialog"]',
+      },
+      tabs: '[role="tab"]',
+    })
     // --- Идемпотентные записи в DOM ------------------------------------
     // Конвейер оверлея перезапускается MutationObserver'ом (childList +
     // characterData), а спецификация ставит mutation record даже при записи
@@ -2427,7 +2461,7 @@ window.__ModuleLoader__.load({
     function fillAutomationTemplate(template) {
       const form = document.querySelector('.dsh-automation-create')
       if (!form) return false
-      const name = form.querySelector('.dsh-automation-form-grid > label:first-child input')
+      const name = form.querySelector(SELECTORS.automations.formGridFirstInput)
       const prompt = form.querySelector('textarea')
       if (name instanceof HTMLInputElement) setControlledValue(name, template.name)
       if (prompt instanceof HTMLTextAreaElement) setControlledValue(prompt, template.prompt)
@@ -2447,8 +2481,8 @@ window.__ModuleLoader__.load({
     }
 
     function ensureAutomationQuickstart() {
-      const shell = document.querySelector('.dsh-automation-shell')
-      const scope = shell?.querySelector('.dsh-automation-scope')
+      const shell = document.querySelector(SELECTORS.automations.shell)
+      const scope = shell?.querySelector(SELECTORS.automations.scope)
       if (!shell || !scope || shell.querySelector('.gildra-automation-quickstart')) return
 
       const quickstart = document.createElement('section')
@@ -2488,7 +2522,7 @@ window.__ModuleLoader__.load({
 
     function applyAutomationTranslations() {
       if (russianUiSuppressed) return
-      const roots = document.querySelectorAll('.dsh-automation-shell, .dsh-auto-workspace, .dsh-automation-sidebar-action, [data-dsh-automation-entry], [data-dsh-automations-trigger], [role="tab"], [role="dialog"]')
+      const roots = document.querySelectorAll(SELECTORS.automations.translationRoots)
       for (const root of roots) {
         const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
         let node
@@ -2577,7 +2611,7 @@ window.__ModuleLoader__.load({
 
     function applySystemMonitorTranslations() {
       if (russianUiSuppressed) return
-      const root = document.querySelector('.sysmon')
+      const root = document.querySelector(SELECTORS.sysmon.root)
       if (!root) return
       const replacements = new Map([
         ['SYSTEM', 'СИСТЕМА'],
@@ -2598,7 +2632,7 @@ window.__ModuleLoader__.load({
         const translated = translateWithPatterns(node.nodeValue, replacements, patterns)
         applyTranslatedNodeValue(node, translated)
       }
-      const toggle = root.querySelector('.sysmon__toggle')
+      const toggle = root.querySelector(SELECTORS.sysmon.toggle)
       if (toggle) {
         const collapsed = toggle.textContent?.trim() === '+'
         setDataset(root, 'gildraCollapsed', String(collapsed))
@@ -3465,7 +3499,7 @@ window.__ModuleLoader__.load({
       setTitle(remote
         ? `Gildra DSH — Сервер ${remote.name}`
         : 'Gildra DSH — Локально')
-      const brand = document.querySelector('[data-slot="sidebar.brand.name"]')
+      const brand = document.querySelector(SELECTORS.sidebar.brandName)
       if (!brand) return
       let badge = brand.querySelector('.gildra-brand-environment')
       if (!badge) {
@@ -3489,7 +3523,7 @@ window.__ModuleLoader__.load({
         indicator.addEventListener('click', () => {
           const trigger = [...document.querySelectorAll('button')].find((button) => {
             const label = button.getAttribute('aria-label') ?? button.textContent?.trim()
-            return ['Открыть панель', 'Open sidebar', '打开侧边栏'].includes(label)
+            return SELECTORS.sidebar.openSidebarLabels.includes(label)
           })
           trigger?.click()
         })
@@ -3553,11 +3587,11 @@ window.__ModuleLoader__.load({
 
     function syncEnvironmentPlacement() {
       const root = document.querySelector('.gildra-environments')
-      const workspaces = document.querySelector('[data-slot="sidebar.workspaces"]')
+      const workspaces = document.querySelector(SELECTORS.sidebar.workspaces)
       const content = workspaces?.firstElementChild
       if (!root || !workspaces || !(content instanceof HTMLElement)) return
       const rect = content.getBoundingClientRect()
-      const collapsed = rect.width < 140
+      const collapsed = rect.width < SELECTORS.sidebar.collapsedWidthPx
       const indicator = ensureCollapsedEnvironmentIndicator()
       setHidden(root, collapsed)
       setHidden(indicator, !collapsed || !environmentState.currentRemote)
@@ -3577,7 +3611,7 @@ window.__ModuleLoader__.load({
       ensureCollapsedEnvironmentIndicator()
       for (const button of document.querySelectorAll('button')) {
         const label = button.getAttribute('aria-label') ?? button.textContent?.trim()
-        if (['Сервер SSH', 'SSH Remote', 'SSH 远端'].includes(label)) {
+        if (SELECTORS.sidebar.sshTriggerLabels.includes(label)) {
           button.classList.add('gildra-legacy-ssh-trigger')
         }
       }
@@ -3585,7 +3619,7 @@ window.__ModuleLoader__.load({
         syncEnvironmentPlacement()
         return
       }
-      const workspaces = document.querySelector('[data-slot="sidebar.workspaces"]')
+      const workspaces = document.querySelector(SELECTORS.sidebar.workspaces)
       if (!workspaces) return
       const root = document.createElement('div')
       root.className = 'gildra-environments'
@@ -4326,7 +4360,7 @@ window.__ModuleLoader__.load({
     }
 
     function teamTab() {
-      return [...document.querySelectorAll('[role="tab"]')].find(tab =>
+      return [...document.querySelectorAll(SELECTORS.tabs)].find(tab =>
         tab instanceof HTMLElement
         && tab.offsetParent !== null
         && [
@@ -4786,7 +4820,7 @@ window.__ModuleLoader__.load({
         ? event.target.closest('[data-dsh-automation-entry]')
         : null
       if (!entry) return
-      const tab = [...document.querySelectorAll('[role="tab"]')]
+      const tab = [...document.querySelectorAll(SELECTORS.tabs)]
         .find((candidate) => ['Automations', 'Автоматизации'].includes(candidate.textContent?.trim()))
       if (!(tab instanceof HTMLElement)) return
       event.preventDefault()
@@ -4794,7 +4828,7 @@ window.__ModuleLoader__.load({
       tab.click()
       // Узлом владеет React-рендерер Harness: физическое удаление приводит к
       // NotFoundError при реконсиляции, поэтому элемент только скрывается.
-      document.querySelector('.dsh-automation-sidebar-feedback')?.classList.add('gildra-suppressed')
+      document.querySelector(SELECTORS.automations.sidebarFeedback)?.classList.add('gildra-suppressed')
     }
 
     function apply(ctx) {

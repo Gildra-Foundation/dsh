@@ -1,5 +1,5 @@
     function teamTab() {
-      return [...document.querySelectorAll('[role="tab"]')].find(tab =>
+      return [...document.querySelectorAll(SELECTORS.tabs)].find(tab =>
         tab instanceof HTMLElement
         && tab.offsetParent !== null
         && [

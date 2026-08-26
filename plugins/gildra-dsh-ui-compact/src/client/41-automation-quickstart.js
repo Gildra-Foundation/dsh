@@ -11,7 +11,7 @@
     function fillAutomationTemplate(template) {
       const form = document.querySelector('.dsh-automation-create')
       if (!form) return false
-      const name = form.querySelector('.dsh-automation-form-grid > label:first-child input')
+      const name = form.querySelector(SELECTORS.automations.formGridFirstInput)
       const prompt = form.querySelector('textarea')
       if (name instanceof HTMLInputElement) setControlledValue(name, template.name)
       if (prompt instanceof HTMLTextAreaElement) setControlledValue(prompt, template.prompt)
@@ -31,8 +31,8 @@
     }
 
     function ensureAutomationQuickstart() {
-      const shell = document.querySelector('.dsh-automation-shell')
-      const scope = shell?.querySelector('.dsh-automation-scope')
+      const shell = document.querySelector(SELECTORS.automations.shell)
+      const scope = shell?.querySelector(SELECTORS.automations.scope)
       if (!shell || !scope || shell.querySelector('.gildra-automation-quickstart')) return
 
       const quickstart = document.createElement('section')
