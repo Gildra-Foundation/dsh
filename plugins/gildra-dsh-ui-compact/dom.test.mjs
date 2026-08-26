@@ -1,7 +1,15 @@
 // Поведенческие DOM-тесты оверлея на happy-dom (нужен dev-профиль:
 // `npm install`, затем `npm run test:dom`; verify.sh запускает их только при
-// наличии node_modules). Ключевая проверка — конвейер не создаёт вечную
-// петлю observer → rAF → рендер в idle-состоянии.
+// наличии node_modules).
+//
+// Важное ограничение среды: MutationObserver в happy-dom доставляет только
+// ПЕРВУЮ пачку мутаций и замолкает (проверено изолированно), поэтому
+// конвейер здесь запускается детерминированно — напрямую через callback,
+// который apply() регистрирует в ctx.locale.subscribe. Отсутствие вечной
+// петли доказывается эквивалентным инвариантом: повторный проход по
+// неизменному состоянию не делает НИ ОДНОЙ записи в DOM (снапшот разметки
+// байт-в-байт совпадает, текстовые узлы не пересоздаются) — именно записи
+// «того же значения» и питали петлю observer → rAF → рендер.
 import assert from 'node:assert/strict'
 import { Window } from 'happy-dom'
 
@@ -53,12 +61,18 @@ document.body.innerHTML = [
 ].join('')
 
 let currentLocale = 'ru'
+let runPass = null
 const disposers = []
 const ctx = {
   locale: {
     getLocale: () => currentLocale,
     register: () => () => {},
-    subscribe: () => () => {},
+    subscribe(callback) {
+      // apply() подписывает полный проход конвейера на смену локали —
+      // используем этот callback как детерминированный запуск прохода.
+      runPass = callback
+      return () => {}
+    },
   },
   sessions: { list: { subscribe: () => () => {}, getSnapshot: () => ({ ids: [], sessions: {} }) } },
   remote: { $on: () => () => {} },
@@ -72,14 +86,13 @@ const ctx = {
 }
 
 clientModule.apply(ctx)
+assert.equal(typeof runPass, 'function', 'apply должен подписаться на смену локали')
 
-const settle = async (frames = 4) => {
-  for (let index = 0; index < frames; index++) {
-    await new Promise(resolveFrame => windowInstance.requestAnimationFrame(resolveFrame))
-    await new Promise(resolveTick => setTimeout(resolveTick, 5))
-  }
-}
-await settle(6)
+// Дать отработать асинхронному первичному refreshEnvironmentState (fetch-стаб).
+const tick = () => new Promise(resolveTick => setTimeout(resolveTick, 10))
+await tick()
+await tick()
+runPass()
 
 // 1. Бейдж среды и заголовок отрисованы для локального режима.
 const badge = document.querySelector('.gildra-brand-environment')
@@ -105,43 +118,27 @@ assert.equal(
 )
 assert.equal(document.querySelector('.sysmon').dataset.gildraCollapsed, 'true')
 
-// 4. Главное: в idle-состоянии конвейер не порождает новых мутаций.
-// Одна внешняя мутация будит observer → проходит полный конвейер → после
-// этого DOM обязан молчать: любая самопроизвольная запись означала бы
-// возвращение вечной петли observer → rAF → рендер.
-let mutationCount = 0
-const loopProbe = new windowInstance.MutationObserver((records) => {
-  mutationCount += records.length
-})
-loopProbe.observe(document.body, {
-  childList: true,
-  subtree: true,
-  characterData: true,
-  attributes: true,
-})
-const poke = document.createElement('span')
-document.body.appendChild(poke)
-poke.remove()
-await settle(4)
-const afterPipeline = mutationCount
-await settle(8)
-assert.equal(
-  mutationCount,
-  afterPipeline,
-  `конвейер продолжает мутировать DOM в idle (${String(mutationCount - afterPipeline)} лишних записей)`,
-)
-loopProbe.disconnect()
-
-// 5. Повторный проход по неизменному состоянию не пишет в DOM: тексты и
-// атрибуты остаются теми же объектами/значениями.
+// 4. Идемпотентность (доказательство отсутствия петли): три повторных
+// прохода по неизменному состоянию не меняют ни байта разметки и не
+// пересоздают текстовые узлы. Любая запись «того же значения» изменила бы
+// идентичность узла и снапшот — именно такие записи питали вечную петлю.
 const badgeTextNode = badge.firstChild
-const poke2 = document.createElement('span')
-document.body.appendChild(poke2)
-poke2.remove()
-await settle(4)
+const sysmonTextNode = document.querySelector('.sysmon-label').firstChild
+const snapshotBefore = document.body.innerHTML
+const titleBefore = document.title
+runPass()
+runPass()
+runPass()
+assert.equal(document.body.innerHTML, snapshotBefore, 'повторный проход изменил разметку')
+assert.equal(document.title, titleBefore)
 assert.equal(badge.firstChild, badgeTextNode, 'текстовый узел бейджа пересоздан без изменения состояния')
+assert.equal(
+  document.querySelector('.sysmon-label').firstChild,
+  sysmonTextNode,
+  'текстовый узел монитора пересоздан без изменения состояния',
+)
 
-// 6. Явный выбор English отключает русские DOM-словари: новый EN-узел
+// 5. Явный выбор English отключает русские DOM-словари: новый EN-узел
 // системного монитора остаётся непереведённым, пока выбор — English, и
 // переводится после переключения на русский.
 windowInstance.localStorage.setItem('gildra.language-choice.v1', 'done')
@@ -149,13 +146,10 @@ currentLocale = 'en'
 const enLabel = document.createElement('span')
 enLabel.textContent = 'DISK'
 document.querySelector('.sysmon').appendChild(enLabel)
-await settle(4)
+runPass()
 assert.equal(enLabel.textContent, 'DISK', 'при явном English перевод не должен применяться')
 currentLocale = 'ru'
-const poke3 = document.createElement('span')
-document.body.appendChild(poke3)
-poke3.remove()
-await settle(4)
+runPass()
 assert.equal(enLabel.textContent, 'ДИСК', 'после возврата на русский перевод должен примениться')
 
 for (const dispose of disposers) dispose()
