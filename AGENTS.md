@@ -46,6 +46,7 @@ DOM Harness).
 | Любых `.ps1`/`.cmd`, Windows-веток в `scripts/*.mjs` | `.claude/skills/powershell-51/SKILL.md` |
 | Файлов в `install/`, корневых лаунчеров | `.claude/skills/installer-parity/SKILL.md` |
 | `plugins/gildra-dsh-ui-compact` (client.js / index.js) | `.claude/skills/client-feature/SKILL.md` |
+| `plugins/gildra-dsh-runtime` (sessions/workspaces/leases) | `docs/architecture.md` §2а + тесты плагина как спецификация |
 | Реализации фичи или багфикса (до написания кода) | `.claude/skills/test-driven-development/SKILL.md` |
 | Любого бага, падающего теста, странного поведения | `.claude/skills/systematic-debugging/SKILL.md` |
 | Плана крупной задачи | `.claude/skills/writing-plans/SKILL.md` |
@@ -71,6 +72,12 @@ DOM Harness).
   продублированы по многим файлам** — меняешь значение, грепни репозиторий.
 - В `plugins/gildra-dsh-ui-compact/test.mjs` ассерты привязаны к тексту
   `client.js` — рефакторинг клиента требует синхронного обновления ассертов.
+- **Gildra Runtime (`plugins/gildra-dsh-runtime`)** использует только
+  `node:`-модули (как все локальные плагины); orchestration-логика сессий/
+  worktree/lease/merge живёт ТОЛЬКО там — не переноси её в DOM-оверлей и не
+  выполняй управляемые git-операции (checkout/switch/reset --hard/clean -f/
+  worktree remove) внутри `<installRoot>/workspaces/**` — это ломает изоляцию
+  сессий, и tools-guard такие команды блокирует.
 - **`plugins/gildra-dsh-ui-compact/lib/client.js` — generated-артефакт**:
   правь фрагменты в `plugins/gildra-dsh-ui-compact/src/client/*`, затем
   пересобери `node scripts/build-ui-client.mjs`; verify.sh гоняет `--check`

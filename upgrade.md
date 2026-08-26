@@ -295,6 +295,37 @@ Ollama/systemd (CI использует SKIP_OLLAMA); fleet-sync на настр
 появляется, битый stage не становится source, unsafe-root отклонён) и
 Linux-джобу с полной установкой end-to-end.
 
+## 11. Multi-user / Session Isolation (этап 27.08.2026, серия «Gildra Runtime»)
+
+Крупный архитектурный этап: Gildra DSH → AI engineering control plane с
+изоляцией пользователей/сессий/агентов. Статусы:
+
+| Область | Статус | Детали |
+| --- | --- | --- |
+| User isolation (Unix) | **DONE (формализовано)** | Инвариант в architecture.md 0а.5 + SECURITY.md; state/workspaces 0700/0600; операционная модель отдельных Unix-пользователей была и сохранена |
+| Worktree isolation | **DONE** | worktree+ветка `session/<user>/<id>` per write-сессия; флагманский интеграционный тест §36 в каталоге с пробелом |
+| Lease | **DONE** | mkdir+owner-token+heartbeat, ACTIVE/STALE/ORPHANED, PID-reuse-защита, конкурентные тесты (8 писателей → 1) |
+| Branch protection | **DONE** | main/master/production/release/* закрыты на уровне Workspace Manager; merge только через workflow |
+| Process isolation | **DONE (MVP)** | реестр за сессией + POSIX process groups; Windows — taskkill /T (задокументированный best-effort, Job Objects — OPEN) |
+| Port isolation | **DONE** | аллокатор под локом, реальная проба bind, stale-переиспользование; конкурентные тесты |
+| Docker namespace | **DONE (env)** | COMPOSE_PROJECT_NAME=gildra_<session> инъектируется; compose-файлы не переписываются |
+| DB isolation | **PARTIAL** | extension point Project Runtime Profile с подстановкой ${…} (POSTGRES_DB и т.п.); готовых адаптеров БД нет — намеренно |
+| Task model | **DONE (минимальная)** | PLANNED→…→MERGED/FAILED, связи sessions/agents/workspaces; UI Task Center — OPEN |
+| Merge workflow | **DONE** | merge-worktree, конфликт никогда не молчит (маркер-проверка), complete/abort, BRANCH_CHECKED_OUT вместо порчи чужого дерева |
+| Recovery | **DONE** | скан orphaned (PID+lease+тишина) и брошенных worktree без автоудаления; Recover/cleanup c подтверждениями; UI-кнопки в панели |
+| API | **DONE** | /gildra/v1/* (loopback, same-origin, owner-token, структурные коды ошибок) |
+| UI identity/panel | **DONE (MVP)** | Проект·Сессия·Ветка·Режим + панель Workspaces (create/merge/cleanup/recover); отдельный полноэкранный Workspace Manager — OPEN |
+| Agent context/guard | **DONE** | systemPrompt-правила + tools-guard опасных git-команд в управляемых воркспейсах + agentContextBlock через API |
+| Selector registry | **DONE (ядро)** | SELECTORS-реестр + контракт-тест счётчиков; словарные translation-roots частично остаются в словарях |
+| Targeted translation | **PARTIAL** | LCA-скоуп мутаций для тяжёлого TreeWalker-скана; кэширование узлов/locale revision — OPEN |
+| shell:true (§39) | **DONE** | corepack/npm через JS-входы node, run() отклоняет .cmd; тесты путей с пробелами на всех платформах |
+| macOS startup timeout | **DONE** | deadline 90 с + хвост журнала + retry (NEEDS macOS VERIFICATION вживую) |
+
+OPEN (осознанно, приоритезировано): Windows Job Objects; git checkout-guard
+на уровне терминала (сейчас — systemPrompt + tools-guard); полноэкранный
+Workspace Manager и Task Center в UI; SQLite при росте state; адаптеры БД;
+LFS/submodules (задокументированное MVP-ограничение реестра проектов).
+
 ## 10. Методика перепроверки
 
 Каждый критический/высокий пункт перепроверен по текущему коду до правок
