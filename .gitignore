@@ -2,3 +2,4 @@
 desktop/macos/build/
 dist/
 *.log
+node_modules/
