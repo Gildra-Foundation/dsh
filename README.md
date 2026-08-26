@@ -49,6 +49,7 @@
 - `dsh-agent-sync`: импорт пользовательских Skills и MCP-конфигураций из Codex и Claude Code.
 - `@michengai/dsh-skills-manager` 0.1.24: готовая панель просмотра, загрузки, включения и удаления локальных Skills.
 - Инструмент `install_skill_from_github`: ИИ проверяет GitHub-источник, закрепляет ревизию по commit SHA, вычисляет и показывает SHA-256 содержимого и предупреждения, а установка выполняется только после подтверждения в приложении.
+- `@gildra/dsh-runtime`: серверный Gildra Runtime для безопасной параллельной работы — реестр проектов, изолированный Git worktree и ветка `session/<user>/<id>` на каждую write-сессию, эксклюзивные write-lease с heartbeat, session-scoped процессы и порты, controlled merge workflow с защитой `main`, crash recovery и локальный audit-лог; API `/gildra/v1/*` только на loopback.
 - `@openma/dsh-agents-plugins-bridge` 0.0.7: обнаружение и контролируемый импорт установленных Codex/Claude plugins, marketplaces, skills, MCP, hooks, commands и agents.
 - `@goodandready/dsh-russian-lang` 0.1.2: русский язык в штатном переключателе и перевод основных экранов Harness.
 - Дополнительный русский словарь Gildra для MCP/Навыков, плагинов агентов, автоматизаций, контекста и упоминаний файлов.

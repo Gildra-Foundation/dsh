@@ -29,6 +29,9 @@ importers:
       '@dsh-so/dsh-plugins-finder':
         specifier: 0.1.10
         version: 0.1.10(@deepseek-ai/schemastery@3.18.1)
+      '@gildra/dsh-runtime':
+        specifier: link:../../../vendor/gildra-dsh-runtime
+        version: link:../../../vendor/gildra-dsh-runtime
       '@gildra/dsh-skill-installer':
         specifier: link:../../../vendor/gildra-skill-installer
         version: link:../../../vendor/gildra-skill-installer

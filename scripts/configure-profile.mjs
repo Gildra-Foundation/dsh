@@ -139,7 +139,8 @@ async function main() {
     env: environment,
     capture: true,
   })
-  if (!dump.stdout.includes('id: gildra-ui-compact') || !dump.stdout.includes('id: lsp-actions')) {
+  if (!dump.stdout.includes('id: gildra-ui-compact') || !dump.stdout.includes('id: lsp-actions')
+    || !dump.stdout.includes('id: gildra-runtime')) {
     throw new Error('Composed profile is missing required Gildra rows')
   }
   await atomicWrite(join(profileDir, MANAGED_STATE_FILE), managedState(manifest, plugins))

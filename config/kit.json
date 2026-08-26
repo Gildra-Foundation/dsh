@@ -173,6 +173,12 @@
       "localTarget": "gildra-skill-installer"
     },
     {
+      "package": "@gildra/dsh-runtime",
+      "spec": "link:../../../vendor/gildra-dsh-runtime",
+      "localSource": "plugins/gildra-dsh-runtime",
+      "localTarget": "gildra-dsh-runtime"
+    },
+    {
       "package": "@syncended/dsh-automations",
       "spec": "@syncended/dsh-automations@0.8.7",
       "minimumReleaseAgeExclude": true
