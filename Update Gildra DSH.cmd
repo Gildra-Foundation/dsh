@@ -5,6 +5,6 @@ if exist "%INSTALL_ROOT%\bin\Update-GildraDSH.cmd" (
   call "%INSTALL_ROOT%\bin\Update-GildraDSH.cmd"
 ) else (
   echo Подключаем безопасные обновления к существующей установке Gildra DSH...
-  powershell.exe -NoProfile -Command "$needle = Join-Path '%INSTALL_ROOT%' 'source\apps\cli\lib\bin.js'; Get-CimInstance Win32_Process ^| Where-Object { $_.CommandLine -like ('*' + $needle + '*') } ^| ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
+  powershell.exe -NoProfile -Command "$needle = Join-Path '%INSTALL_ROOT%' 'source\apps\cli\lib\bin.js'; if ([string]::IsNullOrWhiteSpace($needle) -or $needle.Length -lt 12) { exit 2 }; Get-CimInstance Win32_Process ^| Where-Object { $_.CommandLine -and $_.CommandLine.Contains($needle) } ^| ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
   call "%~dp0install\windows-install.cmd"
 )

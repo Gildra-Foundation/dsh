@@ -166,6 +166,105 @@ function run(command, args, options = {}) {
   }
 }
 
+// Все PowerShell-вызовы идут через временный .ps1 и `-File`: с `-Command`
+// Windows PowerShell 5.1 не заполняет $args (аргументы приклеиваются к тексту
+// команды), а интерполяция путей в строку команды небезопасна. Каждый скрипт
+// начинается с guard'а на пустые аргументы, чтобы деградация передачи
+// аргументов никогда не превращалась в слишком широкое действие.
+export const STOP_PROCESS_SCRIPT = [
+  "$ErrorActionPreference = 'Stop'",
+  '$needle = $args[0]',
+  'if ([string]::IsNullOrWhiteSpace($needle) -or $needle.Length -lt 12) { exit 2 }',
+  // .Contains — литеральное сравнение: -like трактует [] в пути как wildcard.
+  'Get-CimInstance Win32_Process |',
+  '  Where-Object { $_.CommandLine -and $_.CommandLine.Contains($needle) } |',
+  '  ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }',
+  '',
+].join('\n')
+
+export const CHECK_PROCESS_SCRIPT = [
+  "$ErrorActionPreference = 'Stop'",
+  '$needle = $args[0]',
+  'if ([string]::IsNullOrWhiteSpace($needle) -or $needle.Length -lt 12) { exit 2 }',
+  '$matching = @(Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -and $_.CommandLine.Contains($needle) })',
+  'if ($matching.Count -gt 0) { exit 1 }',
+  'exit 0',
+  '',
+].join('\n')
+
+export const EXTRACT_ARCHIVE_SCRIPT = [
+  "$ErrorActionPreference = 'Stop'",
+  '$archive = $args[0]',
+  '$destination = $args[1]',
+  'if ([string]::IsNullOrWhiteSpace($archive) -or [string]::IsNullOrWhiteSpace($destination)) { exit 2 }',
+  'Expand-Archive -LiteralPath $archive -DestinationPath $destination -Force',
+  '',
+].join('\n')
+
+export const CLEANUP_RUNTIME_SCRIPT = [
+  '$target = $args[0]',
+  'if (-not [string]::IsNullOrWhiteSpace($target)) {',
+  '  Start-Sleep -Seconds 2',
+  '  Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction SilentlyContinue',
+  '}',
+  'Remove-Item -LiteralPath (Split-Path -Parent $MyInvocation.MyCommand.Path) -Recurse -Force -ErrorAction SilentlyContinue',
+  '',
+].join('\n')
+
+export async function runPowerShellFile(scriptSource, scriptArgs, options = {}) {
+  const {
+    detached = false,
+    allowExitCodes = [0],
+    spawnImpl = spawn,
+    spawnSyncImpl = spawnSync,
+  } = options
+  for (const value of scriptArgs) {
+    if (typeof value !== 'string' || value.length === 0) {
+      throw new Error('PowerShell script arguments must be non-empty strings.')
+    }
+  }
+  const directory = await mkdtemp(join(tmpdir(), 'gildra-ps-'))
+  const scriptPath = join(directory, 'task.ps1')
+  await writeFile(scriptPath, scriptSource)
+  const argv = ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath, ...scriptArgs]
+  if (detached) {
+    // Отсоединённый скрипт удаляет свой каталог сам (см. CLEANUP_RUNTIME_SCRIPT).
+    const child = spawnImpl('powershell.exe', argv, { detached: true, stdio: 'ignore', windowsHide: true })
+    child.unref()
+    return { status: null, detached: true, scriptPath }
+  }
+  try {
+    const result = spawnSyncImpl('powershell.exe', argv, { encoding: 'utf8', stdio: 'pipe', windowsHide: true })
+    if (result.error) throw result.error
+    if (!allowExitCodes.includes(result.status)) {
+      const detail = String(result.stderr || result.stdout || '').trim()
+      throw new Error(`powershell.exe завершился с кодом ${String(result.status)}${detail ? `: ${detail}` : ''}`)
+    }
+    return { status: result.status }
+  } finally {
+    await rm(directory, { recursive: true, force: true }).catch(() => {})
+  }
+}
+
+export function validateStopTarget(needle, installRoot) {
+  const root = typeof installRoot === 'string' ? installRoot.trim() : ''
+  const target = typeof needle === 'string' ? needle.trim() : ''
+  if (root.length < 4) throw new Error(`Unsafe install root for process stop: ${JSON.stringify(installRoot)}`)
+  if (target.length < root.length + 10 || !target.startsWith(root) || !target.endsWith('bin.js')) {
+    throw new Error(`Unsafe process stop target: ${JSON.stringify(needle)}`)
+  }
+  return target
+}
+
+async function waitUntil(condition, timeoutMs = 15_000, intervalMs = 250) {
+  const deadline = Date.now() + timeoutMs
+  for (;;) {
+    if (await condition()) return true
+    if (Date.now() >= deadline) return false
+    await new Promise(resolveTimer => setTimeout(resolveTimer, intervalMs))
+  }
+}
+
 async function findFile(root, name) {
   const pending = [root]
   while (pending.length > 0) {
@@ -196,30 +295,32 @@ function processAlive(pid) {
   }
 }
 
-async function waitForExit(pid, timeoutMs = 15_000) {
-  const deadline = Date.now() + timeoutMs
-  while (processAlive(pid) && Date.now() < deadline) {
-    await new Promise(resolveTimer => setTimeout(resolveTimer, 250))
-  }
-}
+const DARWIN_PROCESS_NAME = 'DeepSeekHarnessApp'
+const STOP_ERROR = 'Gildra DSH всё ещё работает: закройте приложение и повторите обновление.'
 
+// Строгая остановка: обновление никогда не продолжается поверх живого
+// приложения — по таймауту ожидания бросаем ошибку вместо тихого продолжения.
 async function stopApplication(targetPlatform, parentPid, installRoot) {
   if (targetPlatform === 'darwin') {
-    spawnSync('/usr/bin/osascript', ['-e', 'tell application id "net.gildra.dsh" to quit'], {
-      stdio: 'ignore',
-    })
-  } else {
-    if (processAlive(parentPid)) {
-      try { process.kill(parentPid, 'SIGTERM') } catch { /* already stopped */ }
-    } else {
-      spawnSync('powershell.exe', [
-        '-NoProfile', '-Command',
-        '$needle = $args[0]; Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like "*$needle*" } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }',
-        join(installRoot, 'source', 'apps', 'cli', 'lib', 'bin.js'),
-      ], { stdio: 'ignore', windowsHide: true })
-    }
+    const running = () => spawnSync('/usr/bin/pgrep', ['-x', DARWIN_PROCESS_NAME], { stdio: 'ignore' }).status === 0
+    if (!running()) return
+    // osascript quit без предварительной проверки запустил бы приложение.
+    spawnSync('/usr/bin/osascript', ['-e', 'tell application id "net.gildra.dsh" to quit'], { stdio: 'ignore' })
+    if (await waitUntil(() => !running())) return
+    throw new Error(STOP_ERROR)
   }
-  await waitForExit(parentPid)
+  if (processAlive(parentPid)) {
+    try { process.kill(parentPid, 'SIGTERM') } catch { /* already stopped */ }
+    if (await waitUntil(() => !processAlive(parentPid))) return
+    throw new Error(STOP_ERROR)
+  }
+  const needle = validateStopTarget(join(installRoot, 'source', 'apps', 'cli', 'lib', 'bin.js'), installRoot)
+  await runPowerShellFile(STOP_PROCESS_SCRIPT, [needle])
+  const gone = await waitUntil(async () => {
+    const { status } = await runPowerShellFile(CHECK_PROCESS_SCRIPT, [needle], { allowExitCodes: [0, 1] })
+    return status === 0
+  })
+  if (!gone) throw new Error(STOP_ERROR)
 }
 
 function restartApplication(targetPlatform, installRoot) {
@@ -242,10 +343,7 @@ async function extractArchive(archive, destination, targetPlatform) {
     run('/usr/bin/ditto', ['-x', '-k', archive, destination])
     return
   }
-  run('powershell.exe', [
-    '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command',
-    'Expand-Archive -LiteralPath $args[0] -DestinationPath $args[1] -Force', archive, destination,
-  ])
+  await runPowerShellFile(EXTRACT_ARCHIVE_SCRIPT, [archive, destination])
 }
 
 async function applyUpdate({ installRoot, targetPlatform = platform(), parentPid, force = false, fetchImpl = fetch }) {
@@ -344,14 +442,9 @@ async function relaunchOutsideWindowsInstall(args) {
   return { scheduled: true }
 }
 
-function scheduleTemporaryRuntimeCleanup(path) {
+async function scheduleTemporaryRuntimeCleanup(path) {
   if (!path || platform() !== 'win32') return
-  const child = spawn('powershell.exe', [
-    '-NoProfile', '-Command',
-    'Start-Sleep -Seconds 2; Remove-Item -LiteralPath $args[0] -Recurse -Force -ErrorAction SilentlyContinue',
-    path,
-  ], { detached: true, stdio: 'ignore', windowsHide: true })
-  child.unref()
+  await runPowerShellFile(CLEANUP_RUNTIME_SCRIPT, [path], { detached: true }).catch(() => {})
 }
 
 async function main() {
@@ -367,7 +460,7 @@ async function main() {
       : await checkForUpdate(args)
     process.stdout.write(args.json ? `${JSON.stringify(result)}\n` : `${JSON.stringify(result, null, 2)}\n`)
   } finally {
-    scheduleTemporaryRuntimeCleanup(args.temporaryRuntime)
+    await scheduleTemporaryRuntimeCleanup(args.temporaryRuntime)
   }
 }
 
