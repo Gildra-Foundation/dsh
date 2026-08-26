@@ -25,7 +25,19 @@ export function runtimeRoots(env = process.env) {
     stateRoot,
     reposRoot: join(base, 'repos'),
     workspacesRoot: join(base, 'workspaces'),
+    // Merge-воркспейсы отделены от сессионных: у них нет пользователя и
+    // сессии, а жизненный цикл управляется merge workflow.
+    mergesRoot: join(base, 'merges'),
   }
+}
+
+export function mergePath(roots, projectId, mergeId) {
+  const path = join(
+    roots.mergesRoot,
+    assertSegment(projectId, 'projectId'),
+    assertSegment(mergeId, 'mergeId'),
+  )
+  return assertInsideRoot(path, roots.mergesRoot)
 }
 
 // Путь workspace строит только сервер из валидированных сегментов; ничего из

@@ -7,7 +7,7 @@
   "scripts": {
     "test": "./scripts/verify.sh",
     "verify": "./scripts/verify.sh",
-    "test:unit": "node scripts/kit-config.test.mjs && node scripts/gildra-update.test.mjs && node scripts/sync-server-fleet.test.mjs && node plugins/gildra-dsh-ui-compact/test.mjs && node plugins/gildra-skill-installer/test.mjs && node patches/workspace-files-explorer-index.test.mjs",
+    "test:unit": "node scripts/kit-config.test.mjs && node scripts/gildra-update.test.mjs && node scripts/sync-server-fleet.test.mjs && node plugins/gildra-dsh-ui-compact/test.mjs && node plugins/gildra-skill-installer/test.mjs && node patches/workspace-files-explorer-index.test.mjs && node plugins/gildra-dsh-runtime/test/unit.test.mjs && node plugins/gildra-dsh-runtime/test/workspaces.test.mjs",
     "test:dom": "node plugins/gildra-dsh-ui-compact/dom.test.mjs",
     "lint": "eslint .",
     "format:check": "prettier --check eslint.config.js package.json .prettierrc.json"

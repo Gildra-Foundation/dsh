@@ -26,6 +26,11 @@ if [[ -d "$ROOT/node_modules/happy-dom" ]]; then
 fi
 node --check "$ROOT/plugins/gildra-skill-installer/lib/index.js"
 node "$ROOT/plugins/gildra-skill-installer/test.mjs"
+for runtime_module in "$ROOT"/plugins/gildra-dsh-runtime/lib/*.js; do
+  node --check "$runtime_module"
+done
+node "$ROOT/plugins/gildra-dsh-runtime/test/unit.test.mjs"
+node "$ROOT/plugins/gildra-dsh-runtime/test/workspaces.test.mjs"
 node --check "$ROOT/patches/workspace-files-explorer-index.js"
 node "$ROOT/patches/workspace-files-explorer-index.test.mjs"
 
