@@ -13,8 +13,16 @@
       }
     }
 
-    function applyBrandHeadline(root = document.body) {
+    // Скоуп текущего прохода конвейера: observer передаёт общего предка
+    // фактических мутаций, и самый тяжёлый скан (TreeWalker бренда) обходит
+    // только изменившееся поддерево вместо всего body. Полные проходы
+    // (locale-смена, страховочный sweep) идут со скоупом null = body.
+    let enhanceScopeRoot = null
+    let lastBrandWalkRoot = null
+
+    function applyBrandHeadline(root = enhanceScopeRoot ?? document.body) {
       if (!root) return
+      lastBrandWalkRoot = root
       const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
       let node
       while ((node = walker.nextNode())) {

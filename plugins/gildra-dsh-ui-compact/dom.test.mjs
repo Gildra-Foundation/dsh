@@ -191,6 +191,25 @@ currentLocale = 'ru'
 runPass()
 assert.equal(enLabel.textContent, 'ДИСК', 'после возврата на русский перевод должен примениться')
 
+// 7. Таргетирование тяжёлого скана (§42): брендовый TreeWalker обходит
+// переданный скоуп; полный проход (locale-канал) — весь body; mutationScope
+// сводит несколько целей к их ближайшему общему предку.
+{
+  const scans = clientModule.__testables
+  const sysmonRoot = document.querySelector('.sysmon')
+  scans.applyBrandHeadline(sysmonRoot)
+  assert.equal(scans.getLastBrandWalkRoot(), sysmonRoot, 'скоуп-проход обходит только поддерево')
+  runPass()
+  assert.equal(scans.getLastBrandWalkRoot(), document.body, 'полный проход обходит body')
+
+  const label = document.querySelector('.sysmon-label')
+  const toggle = document.querySelector('.sysmon__toggle')
+  assert.equal(scans.mutationScope([{ target: label }]), label)
+  assert.equal(scans.mutationScope([{ target: label }, { target: toggle }]), sysmonRoot,
+    'скоуп двух целей — их ближайший общий предок')
+  assert.equal(scans.mutationScope([{ target: label }, { target: document.body }]), document.body)
+}
+
 for (const dispose of disposers) dispose()
 await windowInstance.happyDOM.abort()
 windowInstance.close()

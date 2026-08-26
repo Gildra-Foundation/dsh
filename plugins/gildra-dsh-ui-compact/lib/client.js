@@ -2355,8 +2355,16 @@ window.__ModuleLoader__.load({
       }
     }
 
-    function applyBrandHeadline(root = document.body) {
+    // Скоуп текущего прохода конвейера: observer передаёт общего предка
+    // фактических мутаций, и самый тяжёлый скан (TreeWalker бренда) обходит
+    // только изменившееся поддерево вместо всего body. Полные проходы
+    // (locale-смена, страховочный sweep) идут со скоупом null = body.
+    let enhanceScopeRoot = null
+    let lastBrandWalkRoot = null
+
+    function applyBrandHeadline(root = enhanceScopeRoot ?? document.body) {
       if (!root) return
+      lastBrandWalkRoot = root
       const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
       let node
       while ((node = walker.nextNode())) {
@@ -4792,9 +4800,36 @@ window.__ModuleLoader__.load({
       },
     ])
 
-    function applyUiEnhancements(ctx) {
+    function applyUiEnhancements(ctx, scope = null) {
       updateRussianUiPreference(ctx)
-      for (const feature of OVERLAY_FEATURES) feature.enhance(ctx)
+      enhanceScopeRoot = scope
+      try {
+        for (const feature of OVERLAY_FEATURES) feature.enhance(ctx)
+      } finally {
+        enhanceScopeRoot = null
+      }
+    }
+
+    // Общий предок целей мутаций: одна цель — её элемент, несколько — их
+    // ближайший общий контейнер; разъехавшиеся поддеревья дают null (полный
+    // проход). Это targeted-скоуп для тяжёлых сканов (§42), а не фильтр
+    // корректности: любые translate-функции остаются идемпотентными и при
+    // полном проходе.
+    function mutationScope(records, previous = null) {
+      let scope = previous
+      for (const record of records) {
+        const target = record.target
+        const node = target instanceof Element ? target : target?.parentElement
+        if (!node || !node.isConnected) return null
+        if (!scope) {
+          scope = node
+        } else if (scope !== node && !scope.contains(node)) {
+          // Поднимаемся до ближайшего общего предка обеих целей.
+          while (scope && !scope.contains(node)) scope = scope.parentElement
+          if (!scope) return null
+        }
+      }
+      return scope
     }
 
     function connectDesktopHost() {
@@ -4847,9 +4882,19 @@ window.__ModuleLoader__.load({
       ctx.effect(() => {
         applyUiEnhancements(ctx)
         let frame = 0
-        const observer = new MutationObserver(() => {
+        let pendingScope = null
+        let scopeSeeded = false
+        const observer = new MutationObserver((records) => {
+          // Коалесцируем скоупы всех пачек до ближайшего кадра.
+          pendingScope = scopeSeeded ? (pendingScope ? mutationScope(records, pendingScope) : null) : mutationScope(records)
+          scopeSeeded = true
           window.cancelAnimationFrame(frame)
-          frame = window.requestAnimationFrame(() => applyUiEnhancements(ctx))
+          frame = window.requestAnimationFrame(() => {
+            const scope = pendingScope
+            pendingScope = null
+            scopeSeeded = false
+            applyUiEnhancements(ctx, scope)
+          })
         })
         observer.observe(document.body, {
           childList: true,
@@ -4933,6 +4978,9 @@ window.__ModuleLoader__.load({
     // Только для тестов: идемпотентные DOM-помощники проверяются поведенчески
     // (см. test.mjs) без браузера. На runtime-поведение не влияет.
     exports.__testables = {
+      applyBrandHeadline,
+      getLastBrandWalkRoot: () => lastBrandWalkRoot,
+      mutationScope,
       applyTranslatedNodeValue,
       removeStyleProperty,
       setAttr,
