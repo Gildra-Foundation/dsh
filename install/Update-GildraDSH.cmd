@@ -1,3 +1,6 @@
 @echo off
+setlocal
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0Update-GildraDSH.ps1"
-if errorlevel 1 pause
+set "GILDRA_EXIT_CODE=%ERRORLEVEL%"
+if not "%GILDRA_EXIT_CODE%"=="0" pause
+exit /b %GILDRA_EXIT_CODE%

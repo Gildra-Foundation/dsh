@@ -1,4 +1,26 @@
 $ErrorActionPreference = 'Stop'
+
+# Windows PowerShell 5.1 не превращает ненулевой exit code нативной команды в
+# terminating error, поэтому каждая внешняя команда обязана идти через этот
+# helper — иначе провал сборки молча фиксируется как успешная установка.
+# GILDRA_DSH_TEST_FAIL_MATCH — документированный CI-хук: если описание шага
+# содержит эту подстроку, шаг падает до запуска. Используется только
+# failure-path smoke-тестом в CI и не влияет на обычные установки.
+function Invoke-Checked {
+  param(
+    [Parameter(Mandatory = $true)][string]$Description,
+    [Parameter(Mandatory = $true)][scriptblock]$Action
+  )
+  if ($env:GILDRA_DSH_TEST_FAIL_MATCH -and $Description -like "*$($env:GILDRA_DSH_TEST_FAIL_MATCH)*") {
+    throw "$Description: simulated failure (GILDRA_DSH_TEST_FAIL_MATCH)."
+  }
+  $global:LASTEXITCODE = 0
+  & $Action
+  if ($LASTEXITCODE -ne 0) {
+    throw "$Description failed with exit code $LASTEXITCODE."
+  }
+}
+
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoDir = Split-Path -Parent $ScriptDir
 $ManifestPath = Join-Path $RepoDir 'config\kit.json'
@@ -40,7 +62,7 @@ if (-not (Test-Path (Join-Path $NodeDir 'node.exe')) -or (Read-Marker $NodeMarke
   Set-Content -Path $NodeMarker -Value $NodeVersion -NoNewline
 }
 $env:Path = "$NodeDir;$env:Path"
-& (Join-Path $NodeDir 'corepack.cmd') prepare "pnpm@$($Manifest.runtime.pnpmVersion)" --activate
+Invoke-Checked 'corepack prepare pnpm' { & (Join-Path $NodeDir 'corepack.cmd') prepare "pnpm@$($Manifest.runtime.pnpmVersion)" --activate }
 
 $DshCommit = $Manifest.runtime.dshCommit
 $KitVersion = $Manifest.distribution.version
@@ -55,9 +77,9 @@ if (-not (Test-Path (Join-Path $SourceDir 'apps\cli\lib\bin.js')) -or (Read-Mark
   Remove-Item $ExpandedSource, $SourceStage, $SourceBackup -Recurse -Force -ErrorAction SilentlyContinue
   Expand-Archive $SourceZip $DownloadDir -Force
   Move-Item $ExpandedSource $SourceStage
-  & (Join-Path $NodeDir 'corepack.cmd') pnpm --dir $SourceStage install --frozen-lockfile
+  Invoke-Checked 'pnpm install (harness source)' { & (Join-Path $NodeDir 'corepack.cmd') pnpm --dir $SourceStage install --frozen-lockfile }
   $env:DSH_CLIENT_COMMIT_HASH = $DshCommit
-  & (Join-Path $NodeDir 'corepack.cmd') pnpm --dir $SourceStage run build
+  Invoke-Checked 'pnpm build (harness source)' { & (Join-Path $NodeDir 'corepack.cmd') pnpm --dir $SourceStage run build }
   if (Test-Path $SourceDir) { Move-Item $SourceDir $SourceBackup }
   try {
     Move-Item $SourceStage $SourceDir
@@ -85,10 +107,14 @@ Copy-Item (Join-Path $RepoDir 'install\Update-GildraDSH.cmd') (Join-Path $Instal
 Copy-Item (Join-Path $RepoDir 'scripts\gildra-update.mjs') (Join-Path $InstallRoot 'bin\gildra-update.mjs') -Force
 Copy-Item $ManifestPath (Join-Path $InstallRoot 'config\kit.json') -Force
 
-& (Join-Path $NodeDir 'node.exe') (Join-Path $RepoDir 'scripts\configure-profile.mjs') `
-  --repo-dir $RepoDir `
-  --install-root $InstallRoot
+Invoke-Checked 'configure-profile.mjs' {
+  & (Join-Path $NodeDir 'node.exe') (Join-Path $RepoDir 'scripts\configure-profile.mjs') `
+    --repo-dir $RepoDir `
+    --install-root $InstallRoot
+}
 
+# Маркер версии пишется строго после того, как все шаги выше завершились без
+# ошибок: частично провалившаяся установка не должна выглядеть исправной.
 Set-Content -Path (Join-Path $InstallRoot '.gildra-kit-version') -Value $KitVersion -NoNewline
 
 if ($env:GILDRA_DSH_NO_LAUNCH -eq '1') {
