@@ -12,7 +12,7 @@ function Invoke-Checked {
     [Parameter(Mandatory = $true)][scriptblock]$Action
   )
   if ($env:GILDRA_DSH_TEST_FAIL_MATCH -and $Description -like "*$($env:GILDRA_DSH_TEST_FAIL_MATCH)*") {
-    throw "$Description: simulated failure (GILDRA_DSH_TEST_FAIL_MATCH)."
+    throw "${Description}: simulated failure (GILDRA_DSH_TEST_FAIL_MATCH)."
   }
   $global:LASTEXITCODE = 0
   & $Action
