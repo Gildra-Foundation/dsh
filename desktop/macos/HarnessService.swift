@@ -19,6 +19,12 @@ final class HarnessService: ObservableObject {
 
     private static let latestDSHVersion = "latest"
     private static let defaultPreferredPort = 3080
+    /// How long a launched process may take to report readiness. If `dsh web`
+    /// prints no loopback URL within this window (hung, unexpected output
+    /// format), the user gets a diagnosable failure instead of an eternal
+    /// spinner. 90 s leaves room for a cold `npx` run that downloads the
+    /// package first.
+    private static let startupReadinessDeadline: TimeInterval = 90
     private static let dshOverrideDefaultsKey = "DSHBinOverride"
     private static let preferredPortDefaultsKey = "DSHPreferredPort"
     private static let pinnedVersionDefaultsKey = "DSHPinnedVersion"
@@ -32,6 +38,7 @@ final class HarnessService: ObservableObject {
     private var outputBuffer = ""
     private var requestedStop = false
     private var installing = false
+    private var startupDeadlineTask: Task<Void, Never>?
 
     var statusText: String {
         switch state {
@@ -169,10 +176,67 @@ final class HarnessService: ObservableObject {
             try task.run()
             process = task
             outputPipe = pipe
+            armStartupDeadline(for: task)
         } catch {
             pipe.fileHandleForReading.readabilityHandler = nil
             state = .failed(error.localizedDescription)
         }
+    }
+
+    /// Starts the readiness countdown for a freshly launched `dsh web`.
+    /// The install path (`npm install`) deliberately has no deadline: a slow
+    /// download is legitimate there and is bounded by npm's own failure modes.
+    private func armStartupDeadline(for launchedTask: Process) {
+        startupDeadlineTask?.cancel()
+        startupDeadlineTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(Self.startupReadinessDeadline * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            self?.handleStartupDeadline(for: launchedTask)
+        }
+    }
+
+    private func cancelStartupDeadline() {
+        startupDeadlineTask?.cancel()
+        startupDeadlineTask = nil
+    }
+
+    private func handleStartupDeadline(for launchedTask: Process) {
+        // Guard against a stale deadline racing a restart or a success: fire
+        // only while we are still waiting for readiness of this very process.
+        // Mirrors the `finishedTask === process` guard in handleTermination.
+        guard launchedTask === process, state == .starting else { return }
+        startupDeadlineTask = nil
+
+        outputPipe?.fileHandleForReading.readabilityHandler = nil
+        let tail = startupOutputTail()
+
+        // Drop the references before killing the tree: the dying task's
+        // terminationHandler is then filtered out by its `=== process` guard
+        // and cannot overwrite the diagnostic message below.
+        process = nil
+        outputPipe = nil
+        ProcessTreeController.stop(rootPID: launchedTask.processIdentifier, completion: nil)
+
+        let seconds = Int(Self.startupReadinessDeadline)
+        let details = tail.isEmpty
+            ? "Процесс ничего не вывел в журнал."
+            : "Последний вывод:\n\(tail)"
+        state = .failed("Служба не сообщила о готовности за \(seconds) с. \(details)")
+    }
+
+    /// Tail of the child's combined stdout/stderr for diagnostics.
+    /// `outputBuffer` is already a sliding 16 KB window (see consumeOutput),
+    /// so slicing the last lines out of it is the ring buffer we need; the
+    /// character cap keeps the status screen from turning into a wall of text.
+    private func startupOutputTail(maxLines: Int = 20, maxCharacters: Int = 1_500) -> String {
+        let lines = outputBuffer
+            .split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .suffix(maxLines)
+        let tail = lines.joined(separator: "\n")
+        guard tail.count > maxCharacters else { return tail }
+        return "…" + tail.suffix(maxCharacters)
     }
 
     private enum PortProbe {
@@ -221,6 +285,9 @@ final class HarnessService: ObservableObject {
 
     func stop(completion: (() -> Void)? = nil) {
         requestedStop = true
+        // A user-requested stop (including the stop inside restart) must not
+        // be reported as a startup failure by a still-armed deadline.
+        cancelStartupDeadline()
         outputPipe?.fileHandleForReading.readabilityHandler = nil
 
         guard let task = process, task.isRunning else {
@@ -265,6 +332,8 @@ final class HarnessService: ObservableObject {
 
         serverURL = url
         state = .running
+        // Readiness reached: the deadline must never fire after success.
+        cancelStartupDeadline()
     }
 
     private func handleTermination(of finishedTask: Process, status: Int32) {
@@ -273,6 +342,9 @@ final class HarnessService: ObservableObject {
         // otherwise tear down the new pipe and clobber the new state.
         guard finishedTask === process else { return }
 
+        // The process is gone, so termination reporting below owns the final
+        // state; a later deadline firing would only overwrite it.
+        cancelStartupDeadline()
         outputPipe?.fileHandleForReading.readabilityHandler = nil
         process = nil
         outputPipe = nil
