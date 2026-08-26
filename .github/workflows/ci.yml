@@ -33,6 +33,9 @@ jobs:
     runs-on: windows-2025
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.19.0'
       - name: Parse PowerShell scripts
         shell: pwsh
         run: |
@@ -50,3 +53,28 @@ jobs:
             }
           }
           if ($allErrors.Count) { exit 1 }
+      - name: Run JS tests
+        run: |
+          node scripts/kit-config.test.mjs
+          node scripts/gildra-update.test.mjs
+          node scripts/sync-server-fleet.test.mjs
+          node plugins/gildra-dsh-ui-compact/test.mjs
+          node plugins/gildra-skill-installer/test.mjs
+          node patches/workspace-files-explorer-index.test.mjs
+      - name: Installer failure path must not leave a "healthy" install
+        shell: pwsh
+        run: |
+          # Производственная семантика: установщик исполняется Windows
+          # PowerShell 5.1 (powershell.exe), как в windows-install.cmd.
+          $env:GILDRA_DSH_INSTALL_ROOT = Join-Path $env:RUNNER_TEMP 'gildra-failure'
+          $env:GILDRA_DSH_NO_LAUNCH = '1'
+          $env:GILDRA_DSH_TEST_FAIL_MATCH = 'corepack prepare pnpm'
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File install\windows-install.ps1
+          if ($LASTEXITCODE -eq 0) { throw 'Installer must fail when a native command fails' }
+          if (Test-Path (Join-Path $env:GILDRA_DSH_INSTALL_ROOT '.gildra-kit-version')) { throw 'Kit marker must not exist after a failed install' }
+          if (Test-Path (Join-Path $env:GILDRA_DSH_INSTALL_ROOT 'source')) { throw 'Broken stage must not become the active source' }
+          Remove-Item Env:GILDRA_DSH_TEST_FAIL_MATCH
+          $env:GILDRA_DSH_INSTALL_ROOT = "$env:USERPROFILE\"
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File install\windows-install.ps1
+          if ($LASTEXITCODE -eq 0) { throw 'Unsafe install root must be rejected' }
+          exit 0
