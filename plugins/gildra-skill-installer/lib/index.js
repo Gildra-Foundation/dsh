@@ -96,8 +96,25 @@ async function resolveDefaultBranch(spec, signal) {
   return { ...spec, ref: String(repo.default_branch) }
 }
 
+// Ветка или тег — изменяемый указатель: между предпросмотром и записью
+// источника содержимое может «уехать», а установленный Skill нельзя потом
+// сверить. Ref резолвится в commit SHA один раз, и все дальнейшие запросы и
+// запись источника используют только его.
+export async function resolvePinnedRef(rawSpec, signal, fetchJson = githubJson) {
+  const spec = rawSpec.ref ? rawSpec : await resolveDefaultBranch(rawSpec, signal)
+  if (/^[0-9a-f]{40}$/.test(spec.ref)) return { ...spec, requestedRef: rawSpec.ref ?? spec.ref }
+  const commit = await fetchJson(
+    `https://api.github.com/repos/${encodeURIComponent(spec.owner)}/${encodeURIComponent(spec.repo)}/commits/${encodeURIComponent(spec.ref)}`,
+    signal,
+  )
+  if (!/^[0-9a-f]{40}$/.test(String(commit?.sha ?? ''))) {
+    throw new Error('GitHub не вернул commit SHA для указанного ref.')
+  }
+  return { ...spec, ref: String(commit.sha), requestedRef: spec.ref }
+}
+
 async function downloadGitHubDirectory(rawSpec, signal) {
-  const spec = await resolveDefaultBranch(rawSpec, signal)
+  const spec = await resolvePinnedRef(rawSpec, signal)
   const files = []
   let totalBytes = 0
 
@@ -236,7 +253,10 @@ async function installBundle(root, metadata, bundle) {
     await writeFile(join(staging, '.gildra-source.json'), `${JSON.stringify({
       source: bundle.spec.source,
       repository: `${bundle.spec.owner}/${bundle.spec.repo}`,
+      // ref — всегда резолвленный commit SHA (см. resolvePinnedRef);
+      // requestedRef сохраняет ветку/тег, который запрашивал пользователь.
       ref: bundle.spec.ref,
+      requestedRef: bundle.spec.requestedRef ?? bundle.spec.ref,
       path: bundle.spec.path,
       digest: bundle.digest,
       installedAt: new Date().toISOString(),
