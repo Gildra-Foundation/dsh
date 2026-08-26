@@ -1,3 +1,18 @@
+    // DOM-словари оверлея переписывают интерфейс плагинов на русский. Если
+    // пользователь явно выбрал English в диалоге языка, эти проходы
+    // отключаются; до явного выбора поведение прежнее — кит поставляется
+    // русскоязычным. Бренд-заголовок не языковой и не гейтится.
+    let russianUiSuppressed = false
+
+    function updateRussianUiPreference(ctx) {
+      try {
+        const locale = String(ctx.locale?.getLocale?.() ?? '')
+        russianUiSuppressed = hasLanguageChoice() && locale.toLowerCase().startsWith('en')
+      } catch {
+        russianUiSuppressed = false
+      }
+    }
+
     function applyBrandHeadline(root = document.body) {
       if (!root) return
       const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)

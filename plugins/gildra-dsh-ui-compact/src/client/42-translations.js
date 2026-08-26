@@ -14,6 +14,7 @@
     }
 
     function applyAutomationTranslations() {
+      if (russianUiSuppressed) return
       const roots = document.querySelectorAll('.dsh-automation-shell, .dsh-auto-workspace, .dsh-automation-sidebar-action, [data-dsh-automation-entry], [data-dsh-automations-trigger], [role="tab"], [role="dialog"]')
       for (const root of roots) {
         const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
@@ -46,6 +47,7 @@
     }
 
     function applySettingsFallbackTranslations() {
+      if (russianUiSuppressed) return
       for (const root of document.querySelectorAll('[role="dialog"], [data-composer-seat]')) {
         const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
         let node
@@ -64,6 +66,7 @@
     }
 
     function applyManagedPluginInventoryTranslations() {
+      if (russianUiSuppressed) return
       for (const label of document.querySelectorAll('button strong')) {
         const technicalId = label.textContent?.trim()
         const translated = MANAGED_PLUGIN_NAMES_RU.get(technicalId)
@@ -81,6 +84,7 @@
     }
 
     function applyTerminalTranslations() {
+      if (russianUiSuppressed) return
       for (const root of document.querySelectorAll('.dshTermRoot')) {
         const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
         let node
@@ -99,6 +103,7 @@
     }
 
     function applySystemMonitorTranslations() {
+      if (russianUiSuppressed) return
       const root = document.querySelector('.sysmon')
       if (!root) return
       const replacements = new Map([
@@ -131,6 +136,7 @@
     }
 
     function applySshRemoteTranslations() {
+      if (russianUiSuppressed) return
       for (const root of document.querySelectorAll('[role="menu"], [role="dialog"]')) {
         const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
         let node
@@ -142,6 +148,7 @@
     }
 
     function applyContextDoctorTranslations() {
+      if (russianUiSuppressed) return
       const root = document.querySelector('[role="dialog"][aria-label="Аудит контекста"], [role="dialog"][aria-label="Context Doctor"]')
       if (!root) return
       const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
@@ -187,6 +194,7 @@
     }
 
     function applyAgentSyncTranslations() {
+      if (russianUiSuppressed) return
       for (const button of document.querySelectorAll('[role="dialog"] nav button')) {
         if (button.textContent?.trim() !== 'MCP/Skills') continue
         const walker = document.createTreeWalker(button, NodeFilter.SHOW_TEXT)
@@ -227,6 +235,7 @@
     }
 
     function applyTeamTranslations() {
+      if (russianUiSuppressed) return
       const roots = document.querySelectorAll('[class$="_stage"], [class*="_stage "], [role="tab"]')
       for (const root of roots) {
         const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
@@ -255,6 +264,7 @@
     }
 
     function applyCodeMapTranslations() {
+      if (russianUiSuppressed) return
       const roots = document.querySelectorAll('.cv-panel, [role="tab"]')
       for (const root of roots) {
         const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
@@ -283,6 +293,7 @@
     }
 
     function applyMappedTranslations(selector, dictionary, translateValue = (value) => dictionary.get(value?.trim())) {
+      if (russianUiSuppressed) return
       for (const root of document.querySelectorAll(selector)) {
         const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
         let node

@@ -66,6 +66,7 @@
     ])
 
     function applyUiEnhancements(ctx) {
+      updateRussianUiPreference(ctx)
       for (const feature of OVERLAY_FEATURES) feature.enhance(ctx)
     }
 
