@@ -41,12 +41,34 @@ Object.defineProperty(globalThis, 'navigator', {
   value: windowInstance.navigator,
   configurable: true,
 })
-// Сеть в тесте недоступна: /ssh-remotes и прочие маршруты отвечают отказом.
-globalThis.fetch = async () => ({
-  ok: false,
-  status: 503,
-  json: async () => ({ ok: false }),
-})
+// Сеть в тесте: маршруты Gildra Runtime отвечают фикстурами (панель
+// Workspaces должна отрисоваться), всё остальное — отказом.
+const RUNTIME_FIXTURES = {
+  '/gildra/v1/projects': { ok: true, projects: [{ projectId: 'demo', defaultBranch: 'main' }] },
+  '/gildra/v1/sessions?activeOnly=1': {
+    ok: true,
+    sessions: [{
+      sessionId: 'sess-dom1',
+      userId: 'alex',
+      projectId: 'demo',
+      status: 'ACTIVE',
+      mode: 'write',
+      branch: 'session/alex/sess-dom1',
+      workspaceId: 'demo--alex--sess-dom1',
+    }],
+  },
+  '/gildra/v1/workspaces': {
+    ok: true,
+    workspaces: [{ workspaceId: 'demo--alex--sess-dom1', dirtyFiles: 0, ahead: 1, lease: { state: 'ACTIVE' } }],
+  },
+}
+globalThis.fetch = async (url) => {
+  const fixture = RUNTIME_FIXTURES[String(url)]
+  if (fixture) {
+    return { ok: true, status: 200, json: async () => fixture }
+  }
+  return { ok: false, status: 503, json: async () => ({ ok: false }) }
+}
 
 await import('./lib/client.js')
 assert.equal(typeof definition?.factory, 'function')
@@ -117,6 +139,23 @@ assert.equal(
   'Открыть системный монитор',
 )
 assert.equal(document.querySelector('.sysmon').dataset.gildraCollapsed, 'true')
+
+// 3а. Панель Workspaces (Gildra Runtime): идентификация Project/Session/
+// Branch/Mode и строка сессии с действиями отрисованы из fixture-данных.
+{
+  const identity = document.querySelector('.gildra-workspace-identity')
+  assert.ok(identity, 'идентификация workspace должна отображаться')
+  assert.match(identity.textContent, /Проект: demo/)
+  assert.match(identity.textContent, /session\/alex\/sess-dom1/)
+  assert.match(identity.textContent, /WRITE/)
+  const row = document.querySelector('.gildra-workspace-row')
+  assert.ok(row, 'строка сессии должна отображаться')
+  assert.match(row.textContent, /alex/)
+  const buttons = [...row.querySelectorAll('button')].map(button => button.textContent)
+  assert.ok(buttons.includes('Merge'), 'чистая ahead-сессия предлагает Merge')
+  const cleanupButton = [...row.querySelectorAll('button')].find(button => button.textContent === 'Завершить')
+  assert.equal(cleanupButton.disabled, true, 'без owner-token завершение чужой сессии выключено')
+}
 
 // 4. Идемпотентность (доказательство отсутствия петли): три повторных
 // прохода по неизменному состоянию не меняют ни байта разметки и не

@@ -40,6 +40,56 @@
       .gildra-suppressed {
         display: none !important;
       }
+      .gildra-workspace-identity {
+        margin: 2px 0 6px;
+        font-size: 11px;
+        line-height: 1.35;
+        color: var(--dsw-alias-content-secondary, #8b93a7);
+        word-break: break-all;
+      }
+      .gildra-workspace-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 3px 0;
+        font-size: 11px;
+      }
+      .gildra-workspace-row[data-state="orphaned"] .gildra-workspace-detail {
+        color: var(--dsw-alias-state-warning-primary, #e0a13c);
+      }
+      .gildra-workspace-name {
+        flex: 1 1 auto;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .gildra-workspace-detail {
+        flex: 0 0 auto;
+        color: var(--dsw-alias-content-secondary, #8b93a7);
+      }
+      .gildra-workspace-actions {
+        display: inline-flex;
+        gap: 4px;
+      }
+      .gildra-workspace-actions button,
+      .gildra-workspace-create {
+        font-size: 10px;
+        padding: 1px 6px;
+        border-radius: 6px;
+        border: 1px solid var(--dsw-alias-border-primary, #2c3140);
+        background: transparent;
+        color: inherit;
+        cursor: pointer;
+      }
+      .gildra-workspace-actions button:disabled {
+        opacity: 0.45;
+        cursor: default;
+      }
+      .gildra-workspace-create {
+        margin-top: 4px;
+        width: 100%;
+      }
       .gildra-language-backdrop {
         position: fixed;
         z-index: 8000;

@@ -46,6 +46,56 @@ window.__ModuleLoader__.load({
       .gildra-suppressed {
         display: none !important;
       }
+      .gildra-workspace-identity {
+        margin: 2px 0 6px;
+        font-size: 11px;
+        line-height: 1.35;
+        color: var(--dsw-alias-content-secondary, #8b93a7);
+        word-break: break-all;
+      }
+      .gildra-workspace-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 3px 0;
+        font-size: 11px;
+      }
+      .gildra-workspace-row[data-state="orphaned"] .gildra-workspace-detail {
+        color: var(--dsw-alias-state-warning-primary, #e0a13c);
+      }
+      .gildra-workspace-name {
+        flex: 1 1 auto;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .gildra-workspace-detail {
+        flex: 0 0 auto;
+        color: var(--dsw-alias-content-secondary, #8b93a7);
+      }
+      .gildra-workspace-actions {
+        display: inline-flex;
+        gap: 4px;
+      }
+      .gildra-workspace-actions button,
+      .gildra-workspace-create {
+        font-size: 10px;
+        padding: 1px 6px;
+        border-radius: 6px;
+        border: 1px solid var(--dsw-alias-border-primary, #2c3140);
+        background: transparent;
+        color: inherit;
+        cursor: pointer;
+      }
+      .gildra-workspace-actions button:disabled {
+        opacity: 0.45;
+        cursor: default;
+      }
+      .gildra-workspace-create {
+        margin-top: 4px;
+        width: 100%;
+      }
       .gildra-language-backdrop {
         position: fixed;
         z-index: 8000;
@@ -2769,6 +2819,52 @@ window.__ModuleLoader__.load({
       error: null,
     }
 
+    // --- Gildra Runtime (/gildra/v1): сессии и воркспейсы -----------------
+    // Overlay только отображает состояние и шлёт intents; вся orchestration
+    // (worktree, lease, merge, cleanup) живёт в серверном @gildra/dsh-runtime.
+    const RUNTIME_API = '/gildra/v1'
+    const RUNTIME_TOKENS_KEY = 'gildra.runtime.tokens.v1'
+    let runtimeUiState = { available: false, projects: [], sessions: [], workspaces: [], notice: null }
+    let runtimeRefreshPromise
+
+    function runtimeTokens() {
+      try {
+        return JSON.parse(window.sessionStorage.getItem(RUNTIME_TOKENS_KEY) ?? '{}') ?? {}
+      } catch {
+        return {}
+      }
+    }
+
+    function rememberRuntimeToken(sessionId, ownerToken) {
+      try {
+        const tokens = runtimeTokens()
+        if (ownerToken) tokens[sessionId] = ownerToken
+        else delete tokens[sessionId]
+        window.sessionStorage.setItem(RUNTIME_TOKENS_KEY, JSON.stringify(tokens))
+      } catch {
+        // sessionStorage может быть недоступен — управление чужими сессиями
+        // просто останется выключенным.
+      }
+    }
+
+    async function runtimeCall(path, { method = 'GET', body } = {}) {
+      const response = await fetch(`${RUNTIME_API}${path}`, {
+        method,
+        cache: 'no-store',
+        ...(body === undefined ? {} : {
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+        }),
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok || payload.ok !== true) {
+        const error = new Error(payload?.error?.message ?? `HTTP ${String(response.status)}`)
+        error.code = payload?.error?.code ?? 'INTERNAL'
+        throw error
+      }
+      return payload
+    }
+
     function safeHarnessURL(value) {
       try {
         if (typeof value !== 'string' || value.trim() === '') return null
@@ -3086,7 +3182,219 @@ window.__ModuleLoader__.load({
           remote.name, remote.host ?? null, Boolean(remote.connected),
           Boolean(remote.tunnel?.up), remote.localPort ?? null,
         ]),
+        runtime: runtimeUiState.available ? {
+          notice: runtimeUiState.notice,
+          sessions: runtimeUiState.sessions.map(session => [
+            session.sessionId, session.status, session.mode, session.branch ?? null,
+          ]),
+          workspaces: runtimeUiState.workspaces.map(workspace => [
+            workspace.workspaceId, workspace.dirtyFiles ?? 0, workspace.ahead ?? 0,
+            workspace.lease?.state ?? 'FREE',
+          ]),
+        } : null,
       })
+    }
+
+    // --- Панель Workspaces (Gildra Runtime) --------------------------------
+
+    async function refreshRuntimeUi(force = false) {
+      if (runtimeRefreshPromise && !force) return runtimeRefreshPromise
+      runtimeRefreshPromise = (async () => {
+        try {
+          const [projects, sessions, workspaces] = await Promise.all([
+            runtimeCall('/projects'),
+            runtimeCall('/sessions?activeOnly=1'),
+            runtimeCall('/workspaces'),
+          ])
+          runtimeUiState = {
+            available: true,
+            notice: null,
+            projects: projects.projects ?? [],
+            sessions: sessions.sessions ?? [],
+            workspaces: workspaces.workspaces ?? [],
+          }
+        } catch {
+          // Runtime недоступен (старый сервер или плагин выключен): панель
+          // просто не показывается, ошибок в консоль не сыплем.
+          runtimeUiState = { ...runtimeUiState, available: false }
+        } finally {
+          runtimeRefreshPromise = undefined
+        }
+        renderEnvironmentSwitcher()
+      })()
+      return runtimeRefreshPromise
+    }
+
+    function runtimeNotice(message) {
+      runtimeUiState = { ...runtimeUiState, notice: message }
+      renderEnvironmentSwitcher()
+    }
+
+    async function runHeartbeats() {
+      const tokens = runtimeTokens()
+      for (const [sessionId, ownerToken] of Object.entries(tokens)) {
+        try {
+          await runtimeCall('/sessions/heartbeat', { method: 'POST', body: { sessionId, ownerToken } })
+        } catch (error) {
+          // Сессия завершена/чужая: токен больше не нужен.
+          if (error?.code === 'SESSION_NOT_FOUND' || error?.code === 'UNAUTHORIZED_SESSION') {
+            rememberRuntimeToken(sessionId, undefined)
+          }
+        }
+      }
+    }
+
+    async function createRuntimeSession() {
+      const project = runtimeUiState.projects[0]
+      if (!project) {
+        runtimeNotice('Сначала зарегистрируйте проект в Gildra Runtime.')
+        return
+      }
+      try {
+        const created = await runtimeCall('/sessions', {
+          method: 'POST',
+          body: { projectId: project.projectId },
+        })
+        rememberRuntimeToken(created.session.sessionId, created.ownerToken)
+        runtimeNotice(`Создана сессия ${created.session.sessionId} (ветка ${created.session.branch}).`)
+        await refreshRuntimeUi(true)
+      } catch (error) {
+        runtimeNotice(`Не удалось создать сессию: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+
+    async function mergeRuntimeSession(session) {
+      try {
+        const merge = await runtimeCall('/merges', {
+          method: 'POST',
+          body: { projectId: session.projectId, sourceBranch: session.branch },
+        })
+        if (merge.merge.status === 'completed') {
+          runtimeNotice(`Ветка ${session.branch} влита в базовую.`)
+        } else {
+          runtimeNotice(`Merge-конфликт (${String(merge.merge.conflicts.length)} файл.): разрешите в ${merge.merge.path}.`)
+        }
+        await refreshRuntimeUi(true)
+      } catch (error) {
+        runtimeNotice(`Merge не выполнен: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+
+    async function cleanupRuntimeSession(session) {
+      const ownerToken = runtimeTokens()[session.sessionId]
+      if (!ownerToken && session.status !== 'ORPHANED') {
+        runtimeNotice('Завершать можно свои сессии (токен в этом окне) или ORPHANED.')
+        return
+      }
+      try {
+        const plan = await runtimeCall(`/workspaces/plan?id=${encodeURIComponent(session.workspaceId)}`)
+        const blocking = plan.plan.reasons.filter(reason => reason.code !== 'WORKSPACE_LOCKED')
+        if (blocking.length > 0) {
+          const confirmed = window.confirm(`Workspace не пуст:\n${blocking.map(reason => `— ${reason.message}`).join('\n')}\nУдалить безвозвратно?`)
+          if (!confirmed) return
+        }
+        await runtimeCall('/sessions/cleanup', {
+          method: 'POST',
+          body: {
+            sessionId: session.sessionId,
+            ownerToken,
+            confirmDirty: blocking.some(reason => reason.code === 'WORKSPACE_DIRTY'),
+            confirmUnmerged: blocking.some(reason => reason.code === 'BRANCH_NOT_MERGED'),
+          },
+        })
+        rememberRuntimeToken(session.sessionId, undefined)
+        runtimeNotice(`Сессия ${session.sessionId} завершена.`)
+        await refreshRuntimeUi(true)
+      } catch (error) {
+        runtimeNotice(`Cleanup не выполнен: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+
+    async function recoverRuntimeSession(session) {
+      try {
+        const recovered = await runtimeCall('/sessions/recover', { method: 'POST', body: { sessionId: session.sessionId } })
+        rememberRuntimeToken(session.sessionId, recovered.ownerToken)
+        runtimeNotice(`Сессия ${session.sessionId} восстановлена.`)
+        await refreshRuntimeUi(true)
+      } catch (error) {
+        runtimeNotice(`Восстановление не удалось: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+
+    function runtimeIdentityText() {
+      const tokens = runtimeTokens()
+      const mine = runtimeUiState.sessions.find(session => tokens[session.sessionId] && session.status === 'ACTIVE')
+        ?? runtimeUiState.sessions.find(session => session.status === 'ACTIVE')
+      if (!mine) return null
+      return `Проект: ${mine.projectId} · Сессия: ${mine.sessionId} · Ветка: ${mine.branch ?? '—'} · ${mine.mode === 'read' ? 'REVIEW' : 'WRITE'}`
+    }
+
+    function renderWorkspacesGroup(root) {
+      if (!runtimeUiState.available) return
+      const group = environmentGroup('Workspaces')
+      const identity = runtimeIdentityText()
+      if (identity) {
+        const line = document.createElement('p')
+        line.className = 'gildra-workspace-identity'
+        line.textContent = identity
+        group.list.appendChild(line)
+      }
+      const byWorkspace = new Map(runtimeUiState.workspaces.map(workspace => [workspace.workspaceId, workspace]))
+      const tokens = runtimeTokens()
+      for (const session of runtimeUiState.sessions) {
+        const workspace = session.workspaceId ? byWorkspace.get(session.workspaceId) : undefined
+        const row = document.createElement('div')
+        row.className = 'gildra-workspace-row'
+        row.dataset.state = session.status.toLowerCase()
+        const label = document.createElement('span')
+        label.className = 'gildra-workspace-name'
+        label.textContent = `${session.userId} · ${session.sessionId.slice(0, 14)}… · ${session.mode === 'read' ? 'READ' : 'WRITE'}`
+        label.title = `${session.branch ?? ''}\nСтатус: ${session.status}`
+        const detail = document.createElement('span')
+        detail.className = 'gildra-workspace-detail'
+        detail.textContent = workspace
+          ? `${session.status} · изм.: ${String(workspace.dirtyFiles ?? 0)} · ↑${String(workspace.ahead ?? 0)}`
+          : session.status
+        row.append(label, detail)
+        const actions = document.createElement('span')
+        actions.className = 'gildra-workspace-actions'
+        if (session.status === 'ORPHANED') {
+          const recover = document.createElement('button')
+          recover.type = 'button'
+          recover.textContent = 'Восстановить'
+          recover.addEventListener('click', () => void recoverRuntimeSession(session))
+          actions.appendChild(recover)
+        }
+        if (session.mode === 'write' && workspace && (workspace.ahead ?? 0) > 0 && (workspace.dirtyFiles ?? 0) === 0) {
+          const merge = document.createElement('button')
+          merge.type = 'button'
+          merge.textContent = 'Merge'
+          merge.addEventListener('click', () => void mergeRuntimeSession(session))
+          actions.appendChild(merge)
+        }
+        const cleanup = document.createElement('button')
+        cleanup.type = 'button'
+        cleanup.textContent = 'Завершить'
+        cleanup.disabled = !tokens[session.sessionId] && session.status !== 'ORPHANED'
+        cleanup.title = cleanup.disabled ? 'Токен сессии в другом окне; доступно для ORPHANED.' : ''
+        cleanup.addEventListener('click', () => void cleanupRuntimeSession(session))
+        actions.appendChild(cleanup)
+        row.appendChild(actions)
+        group.list.appendChild(row)
+      }
+      const create = document.createElement('button')
+      create.type = 'button'
+      create.className = 'gildra-workspace-create'
+      create.textContent = '+ Новая изолированная сессия'
+      create.addEventListener('click', () => void createRuntimeSession())
+      group.list.appendChild(create)
+      if (runtimeUiState.notice) {
+        const notice = document.createElement('p')
+        notice.className = 'gildra-environment-empty'
+        notice.textContent = runtimeUiState.notice
+        group.list.appendChild(notice)
+      }
+      root.appendChild(group.group)
     }
 
     function renderEnvironmentSwitcher() {
@@ -3146,6 +3454,7 @@ window.__ModuleLoader__.load({
         servers.list.appendChild(error)
       }
       root.appendChild(servers.group)
+      renderWorkspacesGroup(root)
       window.requestAnimationFrame(syncEnvironmentPlacement)
     }
 
@@ -4439,6 +4748,14 @@ window.__ModuleLoader__.load({
           ensureAutomationQuickstart()
         },
       },
+      {
+        id: 'workspaces',
+        enhance() {
+          // Панель Workspaces рендерится внутри переключателя сред; данные
+          // приходят из Gildra Runtime и обновляются собственным интервалом.
+          renderEnvironmentSwitcher()
+        },
+      },
     ])
 
     function applyUiEnhancements(ctx) {
@@ -4555,6 +4872,19 @@ window.__ModuleLoader__.load({
         const timer = window.setInterval(() => void refreshEnvironmentState(), 8000)
         return () => window.clearInterval(timer)
       }, 'gildra-ui-compact: environment status refresh')
+
+      ctx.effect(() => {
+        void refreshRuntimeUi()
+        const refreshTimer = window.setInterval(() => void refreshRuntimeUi(), 10000)
+        // Heartbeat живых сессий этого окна: пока вкладка открыта, lease не
+        // протухает; закрытая вкладка перестаёт биться, и recovery-скан
+        // корректно пометит брошенную сессию ORPHANED.
+        const heartbeatTimer = window.setInterval(() => void runHeartbeats(), 30000)
+        return () => {
+          window.clearInterval(refreshTimer)
+          window.clearInterval(heartbeatTimer)
+        }
+      }, 'gildra-ui-compact: workspaces panel refresh')
 
       ctx.effect(() => {
         document.addEventListener('click', handleAutomationEntry, true)

@@ -26,3 +26,49 @@
       error: null,
     }
 
+    // --- Gildra Runtime (/gildra/v1): сессии и воркспейсы -----------------
+    // Overlay только отображает состояние и шлёт intents; вся orchestration
+    // (worktree, lease, merge, cleanup) живёт в серверном @gildra/dsh-runtime.
+    const RUNTIME_API = '/gildra/v1'
+    const RUNTIME_TOKENS_KEY = 'gildra.runtime.tokens.v1'
+    let runtimeUiState = { available: false, projects: [], sessions: [], workspaces: [], notice: null }
+    let runtimeRefreshPromise
+
+    function runtimeTokens() {
+      try {
+        return JSON.parse(window.sessionStorage.getItem(RUNTIME_TOKENS_KEY) ?? '{}') ?? {}
+      } catch {
+        return {}
+      }
+    }
+
+    function rememberRuntimeToken(sessionId, ownerToken) {
+      try {
+        const tokens = runtimeTokens()
+        if (ownerToken) tokens[sessionId] = ownerToken
+        else delete tokens[sessionId]
+        window.sessionStorage.setItem(RUNTIME_TOKENS_KEY, JSON.stringify(tokens))
+      } catch {
+        // sessionStorage может быть недоступен — управление чужими сессиями
+        // просто останется выключенным.
+      }
+    }
+
+    async function runtimeCall(path, { method = 'GET', body } = {}) {
+      const response = await fetch(`${RUNTIME_API}${path}`, {
+        method,
+        cache: 'no-store',
+        ...(body === undefined ? {} : {
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+        }),
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok || payload.ok !== true) {
+        const error = new Error(payload?.error?.message ?? `HTTP ${String(response.status)}`)
+        error.code = payload?.error?.code ?? 'INTERNAL'
+        throw error
+      }
+      return payload
+    }
+

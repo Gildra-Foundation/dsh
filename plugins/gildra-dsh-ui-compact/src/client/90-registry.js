@@ -63,6 +63,14 @@
           ensureAutomationQuickstart()
         },
       },
+      {
+        id: 'workspaces',
+        enhance() {
+          // Панель Workspaces рендерится внутри переключателя сред; данные
+          // приходят из Gildra Runtime и обновляются собственным интервалом.
+          renderEnvironmentSwitcher()
+        },
+      },
     ])
 
     function applyUiEnhancements(ctx) {
@@ -179,6 +187,19 @@
         const timer = window.setInterval(() => void refreshEnvironmentState(), 8000)
         return () => window.clearInterval(timer)
       }, 'gildra-ui-compact: environment status refresh')
+
+      ctx.effect(() => {
+        void refreshRuntimeUi()
+        const refreshTimer = window.setInterval(() => void refreshRuntimeUi(), 10000)
+        // Heartbeat живых сессий этого окна: пока вкладка открыта, lease не
+        // протухает; закрытая вкладка перестаёт биться, и recovery-скан
+        // корректно пометит брошенную сессию ORPHANED.
+        const heartbeatTimer = window.setInterval(() => void runHeartbeats(), 30000)
+        return () => {
+          window.clearInterval(refreshTimer)
+          window.clearInterval(heartbeatTimer)
+        }
+      }, 'gildra-ui-compact: workspaces panel refresh')
 
       ctx.effect(() => {
         document.addEventListener('click', handleAutomationEntry, true)
