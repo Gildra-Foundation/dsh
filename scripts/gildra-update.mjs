@@ -399,7 +399,7 @@ async function extractArchive(archive, destination, targetPlatform) {
   await runPowerShellFile(EXTRACT_ARCHIVE_SCRIPT, [archive, destination])
 }
 
-async function applyUpdate(options) {
+export async function applyUpdate(options) {
   const lock = await acquireUpdateLock(options.installRoot)
   try {
     return await applyUpdateLocked(options)
@@ -408,7 +408,24 @@ async function applyUpdate(options) {
   }
 }
 
-async function applyUpdateLocked({ installRoot, targetPlatform = platform(), parentPid, force = false, fetchImpl = fetch }) {
+function runInstaller(installer, repoDir, environment, targetPlatform) {
+  if (targetPlatform === 'darwin') {
+    run('/bin/zsh', [installer], { cwd: repoDir, env: environment, inherit: true })
+    return
+  }
+  run('powershell.exe', [
+    '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', installer,
+  ], { cwd: repoDir, env: environment, inherit: true })
+}
+
+async function applyUpdateLocked({
+  installRoot, targetPlatform = platform(), parentPid, force = false, fetchImpl = fetch,
+  // Инжектируемые seams для тестов жизненного цикла; в продакшене — реальные.
+  extractArchiveImpl = extractArchive,
+  stopApplicationImpl = stopApplication,
+  restartApplicationImpl = restartApplication,
+  runInstallerImpl = runInstaller,
+}) {
   const statePath = join(installRoot, STATE_FILE)
   const metadata = await installationMetadata(installRoot)
   const release = await fetchJson(`https://api.github.com/repos/${metadata.repository}/releases/latest`, fetchImpl)
@@ -434,27 +451,32 @@ async function applyUpdateLocked({ installRoot, targetPlatform = platform(), par
 
     const extracted = join(temporary, 'extracted')
     await mkdir(extracted)
-    await extractArchive(archive, extracted, targetPlatform)
+    await extractArchiveImpl(archive, extracted, targetPlatform)
     const installerName = targetPlatform === 'darwin' ? 'macos-install.command' : 'windows-install.ps1'
     const installer = await findFile(extracted, installerName)
     const repoDir = dirname(dirname(installer))
     await atomicJson(statePath, { status: 'installing', version: status.latestVersion, updatedAt: new Date().toISOString() })
-    await stopApplication(targetPlatform, parentPid, installRoot)
+    await stopApplicationImpl(targetPlatform, parentPid, installRoot)
     stopped = true
     const environment = {
       ...process.env,
       GILDRA_DSH_INSTALL_ROOT: installRoot,
       GILDRA_DSH_NO_LAUNCH: '1',
     }
-    if (targetPlatform === 'darwin') {
-      run('/bin/zsh', [installer], { cwd: repoDir, env: environment, inherit: true })
-    } else {
-      run('powershell.exe', [
-        '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', installer,
-      ], { cwd: repoDir, env: environment, inherit: true })
-    }
+    runInstallerImpl(installer, repoDir, environment, targetPlatform)
     await atomicJson(statePath, { status: 'success', version: status.latestVersion, updatedAt: new Date().toISOString() })
-    restartApplication(targetPlatform, installRoot)
+    try {
+      restartApplicationImpl(targetPlatform, installRoot)
+    } catch (restartError) {
+      // Обновление уже применено успешно: провал перезапуска не должен
+      // затирать статус success и выглядеть как провал установки.
+      await atomicJson(statePath, {
+        status: 'success',
+        version: status.latestVersion,
+        restartError: restartError instanceof Error ? restartError.message : String(restartError),
+        updatedAt: new Date().toISOString(),
+      }).catch(() => {})
+    }
     return { ...status, applied: true }
   } catch (error) {
     await atomicJson(statePath, {
@@ -464,7 +486,7 @@ async function applyUpdateLocked({ installRoot, targetPlatform = platform(), par
       updatedAt: new Date().toISOString(),
     }).catch(() => {})
     if (stopped) {
-      try { restartApplication(targetPlatform, installRoot) } catch { /* preserve the original failure */ }
+      try { restartApplicationImpl(targetPlatform, installRoot) } catch { /* preserve the original failure */ }
     }
     throw error
   } finally {
