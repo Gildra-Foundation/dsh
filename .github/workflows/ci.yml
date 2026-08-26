@@ -27,7 +27,46 @@ jobs:
           node-version: '22.19.0'
       - run: chmod +x install/*.sh install/dsh-gildra-server scripts/*.mjs
       - run: bash -n install/linux-server-install.sh install/dsh-gildra-server install/Start-GildraDSH.server.sh
-      - run: node scripts/kit-config.test.mjs
+      - name: Run JS tests
+        run: |
+          node scripts/kit-config.test.mjs
+          node scripts/gildra-update.test.mjs
+          node scripts/sync-server-fleet.test.mjs
+          node plugins/gildra-dsh-ui-compact/test.mjs
+          node plugins/gildra-skill-installer/test.mjs
+          node patches/workspace-files-explorer-index.test.mjs
+      - name: Server installer smoke (fresh + idempotent + preservation)
+        env:
+          GILDRA_DSH_INSTALL_ROOT: ${{ runner.temp }}/gildra-dsh
+          # Ollama — внешний рантайм с собственным SHA-контуром; его загрузка
+          # (~1 ГБ) сделала бы каждый push неоправданно тяжёлым. Хук
+          # GILDRA_DSH_SKIP_OLLAMA задокументирован в самом установщике.
+          GILDRA_DSH_SKIP_OLLAMA: '1'
+        run: |
+          ./install/linux-server-install.sh
+          test -f "$GILDRA_DSH_INSTALL_ROOT/.gildra-kit-version"
+          test -x "$GILDRA_DSH_INSTALL_ROOT/bin/dsh-gildra"
+          test -x "$GILDRA_DSH_INSTALL_ROOT/bin/Start-GildraDSH.server.sh"
+          grep -F 'CONFIGURED_PORT=3080' "$GILDRA_DSH_INSTALL_ROOT/config/server.env"
+          mkdir -p "$GILDRA_DSH_INSTALL_ROOT/home/.agent-presets/custom-preserved"
+          printf 'user-setting-preserved\n' > "$GILDRA_DSH_INSTALL_ROOT/home/user-preservation-check.txt"
+          printf 'name: Custom preserved\n' > "$GILDRA_DSH_INSTALL_ROOT/home/.agent-presets/custom-preserved/preset.yml"
+          settings_hash="$(sha256sum "$GILDRA_DSH_INSTALL_ROOT/home/settings.yaml" | awk '{print $1}')"
+          ./install/linux-server-install.sh
+          test "$settings_hash" = "$(sha256sum "$GILDRA_DSH_INSTALL_ROOT/home/settings.yaml" | awk '{print $1}')"
+          grep -F 'user-setting-preserved' "$GILDRA_DSH_INSTALL_ROOT/home/user-preservation-check.txt"
+          grep -F 'Custom preserved' "$GILDRA_DSH_INSTALL_ROOT/home/.agent-presets/custom-preserved/preset.yml"
+          "$GILDRA_DSH_INSTALL_ROOT/bin/dsh-gildra" --profile web --dump-config >/dev/null
+      - name: Installer failure paths
+        run: |
+          if GILDRA_DSH_INSTALL_ROOT="$HOME/" ./install/linux-server-install.sh; then
+            echo 'unsafe trailing-slash root was accepted'; exit 1
+          fi
+          fail_root="$RUNNER_TEMP/gildra-fail"
+          if GILDRA_DSH_INSTALL_ROOT="$fail_root" GILDRA_DSH_PORT=99 ./install/linux-server-install.sh; then
+            echo 'invalid port was accepted'; exit 1
+          fi
+          test ! -f "$fail_root/.gildra-kit-version"
 
   windows:
     runs-on: windows-2025
