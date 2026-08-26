@@ -10,6 +10,9 @@ import { userInfo } from 'node:os'
 import { RuntimeError } from './errors.js'
 
 export const SAFE_SEGMENT = /^[a-z0-9][a-z0-9-]{0,63}$/
+// Составные идентификаторы записей (workspaceKey = project--user--session)
+// длиннее одиночного path-сегмента, но алфавит тот же.
+export const SAFE_ID = /^[a-z0-9][a-z0-9-]{0,199}$/
 
 // Основание 32 без неоднозначных символов; строчные, чтобы сегменты были
 // безопасны и для файловой системы, и для git-веток.
@@ -38,6 +41,13 @@ export function generateOwnerToken() {
 export function assertSegment(value, label) {
   if (typeof value !== 'string' || !SAFE_SEGMENT.test(value)) {
     throw new RuntimeError('INVALID_ID', `${label} должен состоять из строчных латинских букв, цифр и дефисов (до 64 символов).`, { [label]: String(value ?? '') })
+  }
+  return value
+}
+
+export function assertId(value, label) {
+  if (typeof value !== 'string' || !SAFE_ID.test(value)) {
+    throw new RuntimeError('INVALID_ID', `${label} содержит недопустимые символы.`, { [label]: String(value ?? '') })
   }
   return value
 }

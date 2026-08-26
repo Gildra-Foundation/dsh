@@ -10,7 +10,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { RuntimeError } from './errors.js'
-import { assertSegment } from './ids.js'
+import { assertId, assertSegment } from './ids.js'
 
 const LOCK_RETRY_MS = 25
 const LOCK_TIMEOUT_MS = 10_000
@@ -36,7 +36,7 @@ export class JsonStore {
   }
 
   filePath(collection, id) {
-    return join(this.rootDir, assertSegment(collection, 'collection'), `${assertSegment(id, 'id')}.json`)
+    return join(this.rootDir, assertSegment(collection, 'collection'), `${assertId(id, 'id')}.json`)
   }
 
   async read(collection, id) {
