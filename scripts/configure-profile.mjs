@@ -15,6 +15,7 @@ import {
   patchDshTopClient,
   packageIsBundle,
   patchWorkspaceFilesExplorerClient,
+  packageManagerInvocation,
   pathExists,
   readManagedPackages,
   readManifest,
@@ -79,10 +80,10 @@ async function main() {
   const lockTemplate = join(repoDir, 'config', 'profile', 'pnpm-lock.yaml')
   const hasLockTemplate = await pathExists(lockTemplate)
   if (freshProfile && hasLockTemplate) await cp(lockTemplate, join(profileDir, 'pnpm-lock.yaml'))
-  const corepack = process.platform === 'win32'
-    ? join(dirname(process.execPath), 'corepack.cmd')
-    : join(dirname(process.execPath), 'corepack')
-  run(corepack, ['pnpm', 'install', freshProfile && hasLockTemplate ? '--frozen-lockfile' : '--no-frozen-lockfile'], {
+  const pnpmInstall = packageManagerInvocation('corepack', [
+    'pnpm', 'install', freshProfile && hasLockTemplate ? '--frozen-lockfile' : '--no-frozen-lockfile',
+  ])
+  run(pnpmInstall.command, pnpmInstall.args, {
     cwd: profileDir,
     env: environment,
   })
@@ -91,10 +92,10 @@ async function main() {
   // Restore the deployment-owned workspace policy after package reconciliation.
   await atomicWrite(join(profileDir, 'pnpm-workspace.yaml'), renderWorkspace(manifest, plugins))
 
-  const npm = process.platform === 'win32'
-    ? join(dirname(process.execPath), 'npm.cmd')
-    : join(dirname(process.execPath), 'npm')
-  run(npm, ['install', '--prefix', join(installRoot, 'lsp'), '--save-exact', '--no-audit', '--no-fund', ...manifest.languageServers], {
+  const lspInstall = packageManagerInvocation('npm', [
+    'install', '--prefix', join(installRoot, 'lsp'), '--save-exact', '--no-audit', '--no-fund', ...manifest.languageServers,
+  ])
+  run(lspInstall.command, lspInstall.args, {
     env: environment,
   })
 

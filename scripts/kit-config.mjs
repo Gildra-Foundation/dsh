@@ -339,13 +339,32 @@ export async function atomicWrite(path, content) {
   await rename(temporary, path)
 }
 
+// Прямой запуск .cmd/.bat требует shell, а Node с shell:true не квотирует
+// ни команду, ни аргументы: путь Windows-профиля с пробелом
+// (C:\Users\John Doe\…) разрывал команду. Поэтому известные node-инструменты
+// вызываются их JS-входами через сам node (никакого shell), а run() отклоняет
+// cmd-шиммы как класс.
+export function packageManagerInvocation(tool, args, { platform = process.platform, execPath = process.execPath } = {}) {
+  const nodeDir = dirname(execPath)
+  if (platform !== 'win32') return { command: join(nodeDir, tool), args }
+  const entries = {
+    corepack: ['node_modules', 'corepack', 'dist', 'corepack.js'],
+    npm: ['node_modules', 'npm', 'bin', 'npm-cli.js'],
+  }
+  const entry = entries[tool]
+  if (!entry) throw new Error(`Unknown package manager tool: ${tool}`)
+  return { command: execPath, args: [join(nodeDir, ...entry), ...args] }
+}
+
 export function run(command, args, options = {}) {
+  if (/\.(cmd|bat)$/i.test(command)) {
+    throw new Error(`Refusing to spawn ${command}: .cmd shims need shell:true, which breaks on spaced paths. Use packageManagerInvocation().`)
+  }
   const result = spawnSync(command, args, {
     cwd: options.cwd,
     env: options.env,
     encoding: options.capture ? 'utf8' : undefined,
     stdio: options.capture ? 'pipe' : 'inherit',
-    shell: process.platform === 'win32' && command.toLowerCase().endsWith('.cmd'),
   })
   if (result.error) throw result.error
   if (result.status !== 0) {

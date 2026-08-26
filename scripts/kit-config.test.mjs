@@ -7,6 +7,8 @@ import {
   desiredPlugins,
   dependencyValue,
   freshProfilePackage,
+  packageManagerInvocation,
+  run,
   managedAgentPresets,
   patchDshTopClient,
   patchWorkspaceFilesExplorerClient,
@@ -87,6 +89,36 @@ assert.deepEqual(
   [],
 )
 assert.match(renderWorkspace(manifest, plugins), /dsh-doublecheck@0\.8\.0/)
+
+// §39: пути с пробелами. run() больше не использует shell вовсе; .cmd-шиммы
+// отклоняются классом, а corepack/npm на Windows вызываются JS-входами через
+// node — аргументы уходят отдельными argv и пробелы безопасны.
+{
+  const unix = packageManagerInvocation('corepack', ['pnpm', 'install'], {
+    platform: 'darwin', execPath: '/opt/node dir/bin/node',
+  })
+  assert.equal(unix.command, join('/opt/node dir/bin', 'corepack'))
+  assert.deepEqual(unix.args, ['pnpm', 'install'])
+
+  const win = packageManagerInvocation('corepack', ['pnpm', 'install'], {
+    platform: 'win32', execPath: 'C:\\Users\\Test User\\GildraDSH\\runtime\\node\\node.exe',
+  })
+  assert.equal(win.command, 'C:\\Users\\Test User\\GildraDSH\\runtime\\node\\node.exe')
+  assert.match(win.args[0], /corepack[/\\]dist[/\\]corepack\.js$/)
+  assert.deepEqual(win.args.slice(1), ['pnpm', 'install'])
+
+  const winNpm = packageManagerInvocation('npm', ['install'], {
+    platform: 'win32', execPath: 'C:\\Users\\Test User\\GildraDSH\\runtime\\node\\node.exe',
+  })
+  assert.match(winNpm.args[0], /npm[/\\]bin[/\\]npm-cli\.js$/)
+  assert.throws(() => packageManagerInvocation('git', [], { platform: 'win32', execPath: 'C:\\n\\node.exe' }))
+
+  assert.throws(() => run('C:\\tools\\corepack.cmd', ['x']), /cmd shims|shell/i)
+
+  // Аргумент с пробелами доходит до процесса как один argv-элемент.
+  const spaced = run(process.execPath, ['-e', 'process.stdout.write(process.argv[1])', 'a b  c'], { capture: true })
+  assert.equal(spaced.stdout, 'a b  c')
+}
 for (const packageName of [
   'dsh-context7',
   'dsh-mcp-panel',
