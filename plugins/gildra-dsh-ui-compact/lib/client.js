@@ -2195,6 +2195,64 @@ window.__ModuleLoader__.load({
       },
     ]
 
+    // --- Идемпотентные записи в DOM ------------------------------------
+    // Конвейер оверлея перезапускается MutationObserver'ом (childList +
+    // characterData), а спецификация ставит mutation record даже при записи
+    // прежнего значения. Безусловный `textContent =` в функции, которую
+    // конвейер вызывает на каждом проходе, превращается в вечную петлю
+    // observer → rAF → рендер → observer. Поэтому все повторяющиеся
+    // render*/translate*-функции пишут в DOM только через эти помощники:
+    // запись происходит лишь при фактическом изменении значения.
+    function setText(node, value) {
+      if (node && node.textContent !== value) node.textContent = value
+    }
+
+    function setNodeValue(node, value) {
+      if (node && node.nodeValue !== value) node.nodeValue = value
+    }
+
+    function applyTranslatedNodeValue(node, translated) {
+      if (!translated) return
+      setNodeValue(node, node.nodeValue.replace(node.nodeValue.trim(), translated))
+    }
+
+    function setAttr(node, name, value) {
+      if (!node) return
+      if (value === null || value === undefined) {
+        if (node.hasAttribute(name)) node.removeAttribute(name)
+        return
+      }
+      if (node.getAttribute(name) !== value) node.setAttribute(name, value)
+    }
+
+    function setDataset(node, key, value) {
+      if (node && node.dataset[key] !== value) node.dataset[key] = value
+    }
+
+    function setClass(node, className, present) {
+      if (node && node.classList.contains(className) !== present) {
+        node.classList.toggle(className, present)
+      }
+    }
+
+    function setHidden(node, value) {
+      if (node && node.hidden !== value) node.hidden = value
+    }
+
+    function setStyleProperty(node, property, value) {
+      if (node && node.style.getPropertyValue(property) !== value) {
+        node.style.setProperty(property, value)
+      }
+    }
+
+    function removeStyleProperty(node, property) {
+      if (node && node.style.getPropertyValue(property) !== '') node.style.removeProperty(property)
+    }
+
+    function setTitle(value) {
+      if (document.title !== value) document.title = value
+    }
+
     function applyBrandHeadline(root = document.body) {
       if (!root) return
       const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
@@ -2202,9 +2260,9 @@ window.__ModuleLoader__.load({
       while ((node = walker.nextNode())) {
         const current = node.nodeValue?.trim()
         if (DEFAULT_HEADLINES.has(current)) {
-          node.nodeValue = node.nodeValue.replace(current, BRAND_HEADLINE)
+          setNodeValue(node, node.nodeValue.replace(current, BRAND_HEADLINE))
         } else if (DEFAULT_BUILD_LABELS.has(current)) {
-          node.nodeValue = node.nodeValue.replace(current, 'Gildra DSH')
+          setNodeValue(node, node.nodeValue.replace(current, 'Gildra DSH'))
         }
       }
     }
@@ -2367,20 +2425,22 @@ window.__ModuleLoader__.load({
         let node
         while ((node = walker.nextNode())) {
           const translated = translateAutomationValue(node.nodeValue)
-          if (translated) node.nodeValue = node.nodeValue.replace(node.nodeValue.trim(), translated)
+          applyTranslatedNodeValue(node, translated)
         }
         for (const element of root.querySelectorAll('input[placeholder], textarea[placeholder]')) {
           const translated = AUTOMATION_PLACEHOLDERS.get(element.getAttribute('placeholder'))
-          if (translated) element.setAttribute('placeholder', translated)
+          if (translated) setAttr(element, 'placeholder', translated)
         }
         for (const element of root.querySelectorAll('input.dsh-auto-combobox-input')) {
           const translated = translateAutomationValue(element.value)
-          if (translated && document.activeElement !== element) element.value = translated
+          if (translated && document.activeElement !== element && element.value !== translated) {
+            element.value = translated
+          }
         }
         for (const element of root.querySelectorAll('[aria-label], [title]')) {
           for (const attribute of ['aria-label', 'title']) {
             const translated = translateAutomationValue(element.getAttribute(attribute))
-            if (translated) element.setAttribute(attribute, translated)
+            if (translated) setAttr(element, attribute, translated)
           }
         }
       }
@@ -2396,13 +2456,13 @@ window.__ModuleLoader__.load({
         let node
         while ((node = walker.nextNode())) {
           const translated = translateWithPatterns(node.nodeValue, SETTINGS_FALLBACK_TEXT, SETTINGS_FALLBACK_PATTERNS)
-          if (translated) node.nodeValue = node.nodeValue.replace(node.nodeValue.trim(), translated)
+          applyTranslatedNodeValue(node, translated)
         }
         for (const element of root.querySelectorAll('[placeholder], [aria-label], [title]')) {
           for (const attribute of ['placeholder', 'aria-label', 'title']) {
             const current = element.getAttribute(attribute)
             const translated = translateWithPatterns(current, SETTINGS_FALLBACK_TEXT, SETTINGS_FALLBACK_PATTERNS)
-            if (translated) element.setAttribute(attribute, translated)
+            if (translated) setAttr(element, attribute, translated)
           }
         }
       }
@@ -2431,13 +2491,13 @@ window.__ModuleLoader__.load({
         let node
         while ((node = walker.nextNode())) {
           const translated = translateWithPatterns(node.nodeValue, TERMINAL_TEXT, TERMINAL_PATTERNS)
-          if (translated) node.nodeValue = node.nodeValue.replace(node.nodeValue.trim(), translated)
+          applyTranslatedNodeValue(node, translated)
         }
         for (const element of root.querySelectorAll('[aria-label], [title]')) {
           for (const attribute of ['aria-label', 'title']) {
             const current = element.getAttribute(attribute)
             const translated = translateWithPatterns(current, TERMINAL_TEXT, TERMINAL_PATTERNS)
-            if (translated) element.setAttribute(attribute, translated)
+            if (translated) setAttr(element, attribute, translated)
           }
         }
       }
@@ -2463,15 +2523,15 @@ window.__ModuleLoader__.load({
       let node
       while ((node = walker.nextNode())) {
         const translated = translateWithPatterns(node.nodeValue, replacements, patterns)
-        if (translated) node.nodeValue = node.nodeValue.replace(node.nodeValue.trim(), translated)
+        applyTranslatedNodeValue(node, translated)
       }
       const toggle = root.querySelector('.sysmon__toggle')
       if (toggle) {
         const collapsed = toggle.textContent?.trim() === '+'
-        root.dataset.gildraCollapsed = String(collapsed)
+        setDataset(root, 'gildraCollapsed', String(collapsed))
         const label = collapsed ? 'Открыть системный монитор' : 'Свернуть системный монитор'
-        toggle.setAttribute('aria-label', label)
-        toggle.setAttribute('title', label)
+        setAttr(toggle, 'aria-label', label)
+        setAttr(toggle, 'title', label)
       }
     }
 
@@ -2481,7 +2541,7 @@ window.__ModuleLoader__.load({
         let node
         while ((node = walker.nextNode())) {
           const translated = SSH_REMOTE_STATUS_TEXT.get(node.nodeValue?.trim())
-          if (translated) node.nodeValue = node.nodeValue.replace(node.nodeValue.trim(), translated)
+          applyTranslatedNodeValue(node, translated)
         }
       }
     }
@@ -2493,7 +2553,7 @@ window.__ModuleLoader__.load({
       let node
       while ((node = walker.nextNode())) {
         const translated = translateWithPatterns(node.nodeValue, CONTEXT_DOCTOR_TEXT, CONTEXT_DOCTOR_PATTERNS)
-        if (translated) node.nodeValue = node.nodeValue.replace(node.nodeValue.trim(), translated)
+        applyTranslatedNodeValue(node, translated)
       }
     }
 
@@ -2548,13 +2608,13 @@ window.__ModuleLoader__.load({
         let node
         while ((node = walker.nextNode())) {
           const translated = translateAgentSyncValue(node.nodeValue)
-          if (translated) node.nodeValue = node.nodeValue.replace(node.nodeValue.trim(), translated)
+          applyTranslatedNodeValue(node, translated)
         }
         for (const element of root.querySelectorAll('[placeholder], [aria-label], [title]')) {
           for (const attribute of ['placeholder', 'aria-label', 'title']) {
             const current = element.getAttribute(attribute)
             const translated = translateAgentSyncValue(current)
-            if (translated) element.setAttribute(attribute, translated)
+            if (translated) setAttr(element, attribute, translated)
           }
         }
       }
@@ -2578,12 +2638,12 @@ window.__ModuleLoader__.load({
         let node
         while ((node = walker.nextNode())) {
           const translated = translateTeamValue(node.nodeValue)
-          if (translated) node.nodeValue = node.nodeValue.replace(node.nodeValue.trim(), translated)
+          applyTranslatedNodeValue(node, translated)
         }
         for (const element of root.querySelectorAll('[aria-label], [title]')) {
           for (const attribute of ['aria-label', 'title']) {
             const translated = translateTeamValue(element.getAttribute(attribute))
-            if (translated) element.setAttribute(attribute, translated)
+            if (translated) setAttr(element, attribute, translated)
           }
         }
       }
@@ -2606,12 +2666,12 @@ window.__ModuleLoader__.load({
         let node
         while ((node = walker.nextNode())) {
           const translated = translateCodeMapValue(node.nodeValue)
-          if (translated) node.nodeValue = node.nodeValue.replace(node.nodeValue.trim(), translated)
+          applyTranslatedNodeValue(node, translated)
         }
         for (const element of root.querySelectorAll('[aria-label], [title]')) {
           for (const attribute of ['aria-label', 'title']) {
             const translated = translateCodeMapValue(element.getAttribute(attribute))
-            if (translated) element.setAttribute(attribute, translated)
+            if (translated) setAttr(element, attribute, translated)
           }
         }
       }
@@ -2632,14 +2692,13 @@ window.__ModuleLoader__.load({
         const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
         let node
         while ((node = walker.nextNode())) {
-          const translated = translateValue(node.nodeValue)
-          if (translated) node.nodeValue = node.nodeValue.replace(node.nodeValue.trim(), translated)
+          applyTranslatedNodeValue(node, translateValue(node.nodeValue))
         }
         for (const element of root.querySelectorAll('[placeholder], [aria-label], [title]')) {
           for (const attribute of ['placeholder', 'aria-label', 'title']) {
             const current = element.getAttribute(attribute)
             const translated = translateValue(current)
-            if (translated) element.setAttribute(attribute, translated)
+            if (translated) setAttr(element, attribute, translated)
           }
         }
       }
@@ -2968,10 +3027,31 @@ window.__ModuleLoader__.load({
       }
     }
 
+    let environmentRenderSignature = ''
+
+    function environmentStateSignature() {
+      return JSON.stringify({
+        current: environmentState.currentRemote?.name ?? null,
+        localURL: environmentState.localURL ?? null,
+        busy: environmentState.busy ?? null,
+        error: environmentState.error ?? null,
+        loading: environmentState.loading,
+        remotes: environmentState.remotes.map(remote => [
+          remote.name, remote.host ?? null, Boolean(remote.connected),
+          Boolean(remote.tunnel?.up), remote.localPort ?? null,
+        ]),
+      })
+    }
+
     function renderEnvironmentSwitcher() {
       const root = document.querySelector('.gildra-environments')
       renderEnvironmentBadge()
       if (!root) return
+      // Пересборка поддерева — childList-мутации, которые будят observer.
+      // Пропускаем, когда состояние сред не изменилось с прошлого рендера.
+      const signature = environmentStateSignature()
+      if (signature === environmentRenderSignature && root.childElementCount > 0) return
+      environmentRenderSignature = signature
       root.replaceChildren()
       const localActive = !environmentState.currentRemote
       const local = environmentGroup('Локально')
@@ -3025,9 +3105,11 @@ window.__ModuleLoader__.load({
 
     function renderEnvironmentBadge() {
       const remote = environmentState.currentRemote
-      document.title = remote
+      // Функция вызывается на каждом проходе observer-конвейера, поэтому все
+      // записи идут через идемпотентные помощники — см. блок setText выше.
+      setTitle(remote
         ? `Gildra DSH — Сервер ${remote.name}`
-        : 'Gildra DSH — Локально'
+        : 'Gildra DSH — Локально')
       const brand = document.querySelector('[data-slot="sidebar.brand.name"]')
       if (!brand) return
       let badge = brand.querySelector('.gildra-brand-environment')
@@ -3036,9 +3118,9 @@ window.__ModuleLoader__.load({
         badge.className = 'gildra-brand-environment'
         brand.appendChild(badge)
       }
-      badge.dataset.kind = remote ? 'remote' : 'local'
-      badge.textContent = remote ? 'Сервер' : 'Локально'
-      badge.setAttribute('title', remote
+      setDataset(badge, 'kind', remote ? 'remote' : 'local')
+      setText(badge, remote ? 'Сервер' : 'Локально')
+      setAttr(badge, 'title', remote
         ? `Активная среда: сервер ${remote.name}${remote.host ? ` (${remote.host})` : ''}`
         : 'Активная среда: этот компьютер')
     }
@@ -3059,8 +3141,8 @@ window.__ModuleLoader__.load({
         document.body.appendChild(indicator)
       }
       const remote = environmentState.currentRemote
-      indicator.textContent = remote ? `Сервер · ${remote.name}` : ''
-      indicator.setAttribute('aria-label', remote
+      setText(indicator, remote ? `Сервер · ${remote.name}` : '')
+      setAttr(indicator, 'aria-label', remote
         ? `Сервер ${remote.name}. Открыть список сред`
         : 'Открыть список сред')
       return indicator
@@ -3122,17 +3204,17 @@ window.__ModuleLoader__.load({
       const rect = content.getBoundingClientRect()
       const collapsed = rect.width < 140
       const indicator = ensureCollapsedEnvironmentIndicator()
-      root.hidden = collapsed
-      indicator.hidden = !collapsed || !environmentState.currentRemote
-      content.classList.toggle('gildra-workspaces-with-environments', !collapsed)
+      setHidden(root, collapsed)
+      setHidden(indicator, !collapsed || !environmentState.currentRemote)
+      setClass(content, 'gildra-workspaces-with-environments', !collapsed)
       if (collapsed) {
-        content.style.removeProperty('--gildra-environment-space')
+        removeStyleProperty(content, '--gildra-environment-space')
         return
       }
-      root.style.left = `${String(Math.round(rect.left))}px`
-      root.style.top = `${String(Math.round(rect.top))}px`
-      root.style.width = `${String(Math.round(rect.width))}px`
-      content.style.setProperty('--gildra-environment-space', `${String(Math.ceil(root.getBoundingClientRect().height + 8))}px`)
+      setStyleProperty(root, 'left', `${String(Math.round(rect.left))}px`)
+      setStyleProperty(root, 'top', `${String(Math.round(rect.top))}px`)
+      setStyleProperty(root, 'width', `${String(Math.round(rect.width))}px`)
+      setStyleProperty(content, '--gildra-environment-space', `${String(Math.ceil(root.getBoundingClientRect().height + 8))}px`)
     }
 
     function ensureEnvironmentSwitcher() {
@@ -4435,6 +4517,20 @@ window.__ModuleLoader__.load({
 
     exports.apply = apply
     exports.inject = ['locale', 'connection', 'sessions', 'remote', 'modelDirectories', 'workspaces']
+    // Только для тестов: идемпотентные DOM-помощники проверяются поведенчески
+    // (см. test.mjs) без браузера. На runtime-поведение не влияет.
+    exports.__testables = {
+      applyTranslatedNodeValue,
+      removeStyleProperty,
+      setAttr,
+      setClass,
+      setDataset,
+      setHidden,
+      setNodeValue,
+      setStyleProperty,
+      setText,
+      setTitle,
+    }
     return module.exports
   },
 })

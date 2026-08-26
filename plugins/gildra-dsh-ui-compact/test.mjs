@@ -92,7 +92,7 @@ assert.match(clientSource, /Память RAG/)
 assert.match(clientSource, /СИСТЕМА/)
 assert.match(clientSource, /data-gildra-collapsed/)
 assert.match(clientSource, /Открыть системный монитор/)
-assert.match(clientSource, /root\.dataset\.gildraCollapsed = String\(collapsed\)/)
+assert.match(clientSource, /setDataset\(root, 'gildraCollapsed', String\(collapsed\)\)/)
 assert.match(clientSource, /Агенты и авто-ревью/)
 assert.match(clientSource, /Модель авто-ревью/)
 assert.match(clientSource, /gildra-agent-menu-trigger/)
@@ -348,5 +348,170 @@ allowedRequest.headers.origin = 'http://127.0.0.1:3080'
 const allowedUpdate = await callRoute(testUpdateRoute, allowedRequest)
 assert.equal(allowedUpdate.status, 202)
 assert.equal(launchedUpdates, 1)
+
+// --- Идемпотентный рендер -------------------------------------------------
+// Конвейер оверлея перезапускается MutationObserver'ом; повторная запись того
+// же значения в textContent/nodeValue ставит mutation record и создаёт вечную
+// петлю observer → rAF → рендер. Здесь проверяется и поведение помощников
+// (запись только при изменении), и инвариант, что горячие функции пишут в DOM
+// только через них.
+
+function sliceFunction(source, name) {
+  const start = source.indexOf(`function ${name}(`)
+  assert.notEqual(start, -1, `function ${name} not found in client.js`)
+  const end = source.indexOf('\n    function ', start + 1)
+  return source.slice(start, end === -1 ? undefined : end)
+}
+
+const HOT_RENDER_FUNCTIONS = [
+  'renderEnvironmentBadge',
+  'ensureCollapsedEnvironmentIndicator',
+  'syncEnvironmentPlacement',
+  'applySystemMonitorTranslations',
+]
+for (const name of HOT_RENDER_FUNCTIONS) {
+  const body = sliceFunction(clientSource, name)
+  assert.doesNotMatch(body, /\.textContent = /, `${name}: пиши текст через setText`)
+  assert.doesNotMatch(body, /\.setAttribute\(/, `${name}: пиши атрибуты через setAttr`)
+  assert.doesNotMatch(body, /document\.title = /, `${name}: пиши заголовок через setTitle`)
+  assert.doesNotMatch(body, /\.dataset\.[a-zA-Z]+ = /, `${name}: пиши dataset через setDataset`)
+}
+assert.match(sliceFunction(clientSource, 'renderEnvironmentSwitcher'), /environmentRenderSignature/)
+
+// Поведенческая проверка помощников: фабрика клиента загружается без браузера
+// через стаб __ModuleLoader__, помощники получают поддельные узлы со
+// счётчиками мутаций.
+let capturedClientDefinition
+globalThis.window = {
+  __ModuleLoader__: {
+    load(definition) {
+      capturedClientDefinition = definition
+    },
+  },
+}
+await import('./lib/client.js')
+delete globalThis.window
+const clientModule = capturedClientDefinition.factory()
+const testables = clientModule.__testables
+assert.equal(typeof testables.setText, 'function')
+
+function fakeElement({ text = '', attributes = {}, styles = {}, classes = [], hidden = false } = {}) {
+  const state = {
+    text,
+    nodeValue: text,
+    attributes: new Map(Object.entries(attributes)),
+    styles: new Map(Object.entries(styles)),
+    classes: new Set(classes),
+    hidden,
+    writes: 0,
+  }
+  const element = {
+    get textContent() { return state.text },
+    set textContent(value) { state.text = value; state.writes += 1 },
+    get nodeValue() { return state.nodeValue },
+    set nodeValue(value) { state.nodeValue = value; state.writes += 1 },
+    getAttribute: name => (state.attributes.has(name) ? state.attributes.get(name) : null),
+    hasAttribute: name => state.attributes.has(name),
+    setAttribute(name, value) { state.attributes.set(name, String(value)); state.writes += 1 },
+    removeAttribute(name) { state.attributes.delete(name); state.writes += 1 },
+    get hidden() { return state.hidden },
+    set hidden(value) { state.hidden = value; state.writes += 1 },
+    classList: {
+      contains: name => state.classes.has(name),
+      toggle(name, force) {
+        state.writes += 1
+        if (force) state.classes.add(name)
+        else state.classes.delete(name)
+      },
+    },
+    style: {
+      getPropertyValue: name => state.styles.get(name) ?? '',
+      setProperty(name, value) { state.styles.set(name, value); state.writes += 1 },
+      removeProperty(name) { state.styles.delete(name); state.writes += 1 },
+    },
+    dataset: new Proxy({}, {
+      get: (_, key) => state.attributes.get(`data-${String(key)}`),
+      set(_, key, value) {
+        state.attributes.set(`data-${String(key)}`, value)
+        state.writes += 1
+        return true
+      },
+    }),
+  }
+  return { element, state }
+}
+
+{
+  const { element, state } = fakeElement({ text: 'Локально' })
+  testables.setText(element, 'Локально')
+  assert.equal(state.writes, 0, 'setText не должен писать то же значение')
+  testables.setText(element, 'Сервер')
+  assert.equal(state.writes, 1)
+  assert.equal(state.text, 'Сервер')
+}
+{
+  const { element, state } = fakeElement({ attributes: { title: 'A' } })
+  testables.setAttr(element, 'title', 'A')
+  assert.equal(state.writes, 0)
+  testables.setAttr(element, 'title', 'B')
+  assert.equal(state.writes, 1)
+  testables.setAttr(element, 'missing', null)
+  assert.equal(state.writes, 1, 'удаление отсутствующего атрибута — не запись')
+  testables.setAttr(element, 'title', null)
+  assert.equal(state.writes, 2)
+  assert.equal(element.hasAttribute('title'), false)
+}
+{
+  const { element, state } = fakeElement()
+  testables.setDataset(element, 'kind', 'local')
+  assert.equal(state.writes, 1)
+  testables.setDataset(element, 'kind', 'local')
+  assert.equal(state.writes, 1, 'setDataset не должен переписывать то же значение')
+}
+{
+  const { element, state } = fakeElement({ classes: ['active'] })
+  testables.setClass(element, 'active', true)
+  assert.equal(state.writes, 0)
+  testables.setClass(element, 'active', false)
+  assert.equal(state.writes, 1)
+}
+{
+  const { element, state } = fakeElement({ hidden: true })
+  testables.setHidden(element, true)
+  assert.equal(state.writes, 0)
+  testables.setHidden(element, false)
+  assert.equal(state.writes, 1)
+}
+{
+  const { element, state } = fakeElement({ styles: { left: '10px' } })
+  testables.setStyleProperty(element, 'left', '10px')
+  assert.equal(state.writes, 0)
+  testables.setStyleProperty(element, 'left', '11px')
+  assert.equal(state.writes, 1)
+  testables.removeStyleProperty(element, 'missing')
+  assert.equal(state.writes, 1, 'удаление отсутствующего свойства — не запись')
+  testables.removeStyleProperty(element, 'left')
+  assert.equal(state.writes, 2)
+}
+{
+  // applyTranslatedNodeValue: null → нет записи; идентичный перевод → нет
+  // записи; реальный перевод сохраняет окружающие пробелы.
+  const { element, state } = fakeElement({ text: '  MEM  ' })
+  testables.applyTranslatedNodeValue(element, null)
+  assert.equal(state.writes, 0)
+  testables.applyTranslatedNodeValue(element, 'MEM')
+  assert.equal(state.writes, 0, 'идентичный перевод не должен писать')
+  testables.applyTranslatedNodeValue(element, 'ОЗУ')
+  assert.equal(state.writes, 1)
+  assert.equal(state.nodeValue, '  ОЗУ  ')
+}
+{
+  globalThis.document = { title: 'Gildra DSH — Локально' }
+  testables.setTitle('Gildra DSH — Локально')
+  assert.equal(globalThis.document.title, 'Gildra DSH — Локально')
+  testables.setTitle('Gildra DSH — Сервер X')
+  assert.equal(globalThis.document.title, 'Gildra DSH — Сервер X')
+  delete globalThis.document
+}
 
 console.log('Gildra UI policy tests passed.')
