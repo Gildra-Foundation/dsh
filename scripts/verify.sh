@@ -33,6 +33,7 @@ node "$ROOT/plugins/gildra-dsh-runtime/test/unit.test.mjs"
 node "$ROOT/plugins/gildra-dsh-runtime/test/workspaces.test.mjs"
 node "$ROOT/plugins/gildra-dsh-runtime/test/leases.test.mjs"
 node "$ROOT/plugins/gildra-dsh-runtime/test/sessions.test.mjs"
+node "$ROOT/plugins/gildra-dsh-runtime/test/api.test.mjs"
 node --check "$ROOT/patches/workspace-files-explorer-index.js"
 node "$ROOT/patches/workspace-files-explorer-index.test.mjs"
 
