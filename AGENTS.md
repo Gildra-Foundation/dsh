@@ -71,6 +71,10 @@ DOM Harness).
   продублированы по многим файлам** — меняешь значение, грепни репозиторий.
 - В `plugins/gildra-dsh-ui-compact/test.mjs` ассерты привязаны к тексту
   `client.js` — рефакторинг клиента требует синхронного обновления ассертов.
+- **`plugins/gildra-dsh-ui-compact/lib/client.js` — generated-артефакт**:
+  правь фрагменты в `plugins/gildra-dsh-ui-compact/src/client/*`, затем
+  пересобери `node scripts/build-ui-client.mjs`; verify.sh гоняет `--check`
+  и упадёт при рассинхроне. Руками lib/client.js не редактируется.
 
 ## Чего не делать
 
