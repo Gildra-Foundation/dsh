@@ -6,11 +6,14 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: read
+
 jobs:
   macos:
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Build app
         run: |
           if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then node -e 'const m=require("./config/kit.json"); if (process.env.GITHUB_REF_NAME !== `v${m.distribution.version}`) throw new Error("Release tag and kit version differ")'; fi
@@ -37,12 +40,13 @@ jobs:
         run: |
           mkdir -p dist/mac/dist
           cp -R config plugins templates patches desktop install scripts dist/mac/
-          cp README.md LICENSE dist/mac/
+          cp README.md CHANGELOG.md CONTRIBUTING.md SECURITY.md LICENSE dist/mac/
+          cp -R docs dist/mac/
           cp -R 'desktop/macos/build/Gildra DSH.app' 'dist/mac/dist/Gildra DSH.app'
           cp 'Install Gildra DSH.command' 'dist/mac/Install Gildra DSH.command'
           cp 'Update Gildra DSH.command' 'dist/mac/Update Gildra DSH.command'
           cd dist/mac && ditto -c -k --sequesterRsrc --keepParent . ../Gildra-DSH-macOS.zip
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: Gildra-DSH-macOS
           path: dist/Gildra-DSH-macOS.zip
@@ -50,7 +54,7 @@ jobs:
   windows:
     runs-on: windows-2025
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Validate and smoke-test installer
         shell: pwsh
         run: |
@@ -79,11 +83,12 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force dist\windows | Out-Null
           Copy-Item config,plugins,templates,patches,install,scripts -Destination dist\windows -Recurse
-          Copy-Item README.md,LICENSE -Destination dist\windows
+          Copy-Item README.md,CHANGELOG.md,CONTRIBUTING.md,SECURITY.md,LICENSE -Destination dist\windows
+          Copy-Item docs -Destination dist\windows -Recurse
           Copy-Item 'Install Gildra DSH.cmd' 'dist\windows\Install Gildra DSH.cmd'
           Copy-Item 'Update Gildra DSH.cmd' 'dist\windows\Update Gildra DSH.cmd'
           Compress-Archive -Path dist\windows\* -DestinationPath dist\Gildra-DSH-Windows.zip
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: Gildra-DSH-Windows
           path: dist/Gildra-DSH-Windows.zip
@@ -91,7 +96,7 @@ jobs:
   linux-server:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Validate server installer
         run: |
           if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then node -e 'const m=require("./config/kit.json"); if (process.env.GITHUB_REF_NAME !== `v${m.distribution.version}`) throw new Error("Release tag and kit version differ")'; fi
@@ -102,9 +107,10 @@ jobs:
         run: |
           mkdir -p dist/linux-server
           cp -R config plugins templates patches install scripts dist/linux-server/
-          cp README.md LICENSE dist/linux-server/
+          cp README.md CHANGELOG.md CONTRIBUTING.md SECURITY.md LICENSE dist/linux-server/
+          cp -R docs dist/linux-server/
           tar -C dist/linux-server -czf dist/Gildra-DSH-Linux-Server.tar.gz .
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: Gildra-DSH-Linux-Server
           path: dist/Gildra-DSH-Linux-Server.tar.gz
@@ -116,7 +122,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           path: artifacts
           merge-multiple: true

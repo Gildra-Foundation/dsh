@@ -1,6 +1,6 @@
 {
   "name": "@gildra/dsh-ui-compact",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Compact UI overrides for the Gildra DeepSeek Harness kit",
   "type": "module",
   "scripts": {

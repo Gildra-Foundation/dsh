@@ -22,6 +22,16 @@ node "$ROOT/plugins/gildra-skill-installer/test.mjs"
 node --check "$ROOT/patches/workspace-files-explorer-index.js"
 node "$ROOT/patches/workspace-files-explorer-index.test.mjs"
 
+for public_file in \
+  README.md CHANGELOG.md CONTRIBUTING.md SECURITY.md LICENSE \
+  docs/architecture.md docs/release-audit.md docs/assets/gildra-coding-desktop.png \
+  .github/pull_request_template.md \
+  .github/ISSUE_TEMPLATE/bug_report.yml \
+  .github/ISSUE_TEMPLATE/feature_request.yml \
+  .github/ISSUE_TEMPLATE/config.yml; do
+  test -s "$ROOT/$public_file"
+done
+
 zsh -n "$ROOT/install/macos-install.command"
 zsh -n "$ROOT/install/dsh-gildra"
 zsh -n "$ROOT/install/Start-GildraDSH.command"
@@ -57,6 +67,11 @@ grep -F 'config\kit.json' "$ROOT/install/windows-install.ps1" >/dev/null
 grep -F 'scripts' "$ROOT/.github/workflows/release.yml" >/dev/null
 grep -F 'SHA256SUMS.txt' "$ROOT/.github/workflows/release.yml" >/dev/null
 grep -F 'scripts/check-upstream-dsh.mjs' "$ROOT/.github/workflows/check-upstream.yml" >/dev/null
+
+if grep -REn 'uses:[[:space:]]+[^[:space:]#]+@v[0-9]+' "$ROOT/.github/workflows"; then
+  echo 'GitHub Actions must be pinned to full commit SHAs.' >&2
+  exit 1
+fi
 
 if grep -Eq 'dsh-(doublecheck|lsp-actions|checkpoint-rewind|auto-review)@|dsh-context-doctor#' \
   "$ROOT/install/macos-install.command" "$ROOT/install/windows-install.ps1"; then

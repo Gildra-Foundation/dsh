@@ -1,0 +1,23 @@
+name: Улучшение
+description: Предложить изменение пользовательского сценария
+title: "[Feature]: "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Какая проблема мешает работе
+      description: Опишите текущий сценарий и точку трения.
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Какой результат нужен
+      description: Опишите ожидаемое поведение без привязки к конкретной реализации.
+    validations:
+      required: true
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Ограничения и совместимость
+      description: Платформы, серверы, плагины или данные, которые важно сохранить.

@@ -3,18 +3,20 @@
  *
  * The upstream browser UI is kept unchanged. This host adapter replaces only
  * its three read-only routes because the upstream DSH fs bridge can stall on
- * Harness 0.1.1-rc.2. Every resolved target must remain inside the real
- * workspace root, including after resolving symbolic links.
+ * Harness 0.1.1-rc.2. The root must already exist in Harness' workspace
+ * registry, and every resolved target must remain inside that canonical root,
+ * including after resolving symbolic links.
  */
 import { readFile, readdir, realpath, stat } from 'node:fs/promises'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 
 export const name = 'workspace-files-explorer'
-export const inject = ['webServer']
+export const inject = ['webServer', 'workspaceRegistry']
 
 const MAX_ENTRIES = 500
 const MAX_BYTES = 262_144
 const MAX_BODY_BYTES = 8_192
+const SERVER_PREVIEW_OVERRIDE = 'GILDRA_DSH_ALLOW_UNAUTHENTICATED_FILE_PREVIEW'
 
 function json(res, status, value) {
   const body = JSON.stringify(value)
@@ -44,10 +46,12 @@ function cwdOf(input) {
     : undefined
 }
 
-async function workspaceTarget(input, requestedPath = undefined) {
+async function workspaceTarget(workspaceRegistry, input, requestedPath = undefined) {
   const rootPath = cwdOf(input)
   if (rootPath === undefined) throw new Error('Не удалось определить рабочую папку')
-  const root = await realpath(rootPath)
+  const workspace = await workspaceRegistry.resolveByPath(rootPath)
+  if (workspace === undefined) throw new Error('Рабочая папка не зарегистрирована')
+  const root = workspace.path
   const target = await realpath(requestedPath ? resolve(requestedPath) : root)
   const fromRoot = relative(root, target)
   if (fromRoot === '..' || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)) {
@@ -56,15 +60,19 @@ async function workspaceTarget(input, requestedPath = undefined) {
   return { root, target }
 }
 
-async function handleRoot(input) {
-  const { target } = await workspaceTarget(input)
+async function handleRoot(workspaceRegistry, input) {
+  const { target } = await workspaceTarget(workspaceRegistry, input)
   const info = await stat(target)
   if (!info.isDirectory()) throw new Error('Рабочий путь не является папкой')
   return { ok: true, path: target }
 }
 
-async function handleList(input) {
-  const { target } = await workspaceTarget(input, typeof input?.path === 'string' ? input.path : undefined)
+async function handleList(workspaceRegistry, input) {
+  const { target } = await workspaceTarget(
+    workspaceRegistry,
+    input,
+    typeof input?.path === 'string' ? input.path : undefined,
+  )
   const info = await stat(target)
   if (!info.isDirectory()) throw new Error('Выбранный путь не является папкой')
   const sourceEntries = await readdir(target, { withFileTypes: true })
@@ -84,9 +92,9 @@ async function handleList(input) {
   return { ok: true, path: target, entries, truncated: sourceEntries.length > MAX_ENTRIES }
 }
 
-async function handleRead(input) {
+async function handleRead(workspaceRegistry, input) {
   if (typeof input?.path !== 'string' || input.path.trim() === '') throw new Error('Не выбран файл')
-  const { target } = await workspaceTarget(input, input.path)
+  const { target } = await workspaceTarget(workspaceRegistry, input, input.path)
   const info = await stat(target)
   if (!info.isFile()) throw new Error('Выбранный путь не является файлом')
   if (info.size > MAX_BYTES) {
@@ -99,11 +107,24 @@ async function handleRead(input) {
   return { ok: true, path: target, content: buffer.toString('utf8'), size: info.size }
 }
 
-function route(path, operation) {
+function filePreviewAvailable() {
+  // workspaceRegistry limits roots but is not authentication: another local
+  // caller can register a directory through Harness' public workspace API.
+  // Managed multi-user servers therefore fail closed before parsing the body.
+  return process.env.GILDRA_DSH_SERVER !== '1' || process.env[SERVER_PREVIEW_OVERRIDE] === '1'
+}
+
+function route(path, operation, available) {
   return {
     kind: 'exact',
     path,
     async handler(req, res) {
+      if (!available) {
+        return json(res, 403, {
+          ok: false,
+          error: 'Предпросмотр файлов отключён на многопользовательском сервере',
+        })
+      }
       if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'method-not-allowed' })
       if (!String(req.headers['content-type'] ?? '').toLowerCase().startsWith('application/json')) {
         return json(res, 415, { ok: false, error: 'content-type-must-be-json' })
@@ -119,11 +140,17 @@ function route(path, operation) {
 }
 
 export function apply(ctx) {
+  const available = filePreviewAvailable()
+  const operations = {
+    root: input => handleRoot(ctx.workspaceRegistry, input),
+    list: input => handleList(ctx.workspaceRegistry, input),
+    read: input => handleRead(ctx.workspaceRegistry, input),
+  }
   ctx.effect(() => {
     const disposers = [
-      ctx.webServer.register(route('/api/wsf-explorer/root', handleRoot)),
-      ctx.webServer.register(route('/api/wsf-explorer/list', handleList)),
-      ctx.webServer.register(route('/api/wsf-explorer/read', handleRead)),
+      ctx.webServer.register(route('/api/wsf-explorer/root', operations.root, available)),
+      ctx.webServer.register(route('/api/wsf-explorer/list', operations.list, available)),
+      ctx.webServer.register(route('/api/wsf-explorer/read', operations.read, available)),
     ]
     return () => disposers.forEach(dispose => dispose())
   }, 'workspace-files-explorer: Gildra read-only routes')

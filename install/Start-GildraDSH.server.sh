@@ -12,5 +12,6 @@ if [[ -f "$KIT_ROOT/config/server.env" ]]; then
     fi
   fi
 fi
-export DSH_PERMISSION_MODE="${GILDRA_DSH_PERMISSION_MODE:-danger-full-access}"
+export GILDRA_DSH_SERVER=1
+export DSH_PERMISSION_MODE="${GILDRA_DSH_PERMISSION_MODE:-workspace-write}"
 exec "$KIT_ROOT/bin/dsh-gildra" web --host 127.0.0.1 --port "${GILDRA_DSH_PORT:-$CONFIGURED_PORT}" --no-open

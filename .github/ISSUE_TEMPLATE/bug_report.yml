@@ -1,0 +1,43 @@
+name: Ошибка
+description: Сообщить о воспроизводимой проблеме Gildra DSH
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: Не публикуйте токены, SSH-ключи, приватный код или историю сессий. Для уязвимостей используйте Security Advisory.
+  - type: input
+    id: version
+    attributes:
+      label: Версия Gildra DSH
+      placeholder: 0.1.15
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Платформа
+      options:
+        - macOS
+        - Windows
+        - Linux-сервер
+        - Другая
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Шаги воспроизведения
+      placeholder: Опишите минимальный путь до ошибки.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Ожидаемый и фактический результат
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Безопасные доказательства
+      description: Скриншоты или очищенные журналы без credentials и приватных данных.

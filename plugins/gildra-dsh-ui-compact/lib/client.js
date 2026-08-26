@@ -9,6 +9,40 @@ window.__ModuleLoader__.load({
       body:has([data-context-doctor] [role="dialog"]) .sysmon {
         display: none !important;
       }
+      .sysmon[data-gildra-collapsed="true"] {
+        top: 12px !important;
+        right: 12px !important;
+        width: 30px !important;
+        min-width: 30px !important;
+        height: 30px !important;
+        min-height: 30px !important;
+        overflow: hidden !important;
+        border-radius: 8px !important;
+      }
+      .sysmon[data-gildra-collapsed="true"] > :not(.sysmon__head),
+      .sysmon[data-gildra-collapsed="true"] .sysmon__head > :not(.sysmon__toggle) {
+        display: none !important;
+      }
+      .sysmon[data-gildra-collapsed="true"] .sysmon__head {
+        position: absolute !important;
+        inset: 0 !important;
+        display: block !important;
+        min-height: 0 !important;
+        padding: 0 !important;
+        border: 0 !important;
+      }
+      .sysmon[data-gildra-collapsed="true"] .sysmon__toggle {
+        position: absolute !important;
+        inset: 0 !important;
+        display: grid !important;
+        width: 30px !important;
+        height: 30px !important;
+        padding: 0 !important;
+        place-items: center !important;
+        color: var(--dsw-alias-state-success-primary, #43c778) !important;
+        font-size: 17px !important;
+        font-weight: 560 !important;
+      }
       .gildra-language-backdrop {
         position: fixed;
         z-index: 8000;
@@ -2432,7 +2466,13 @@ window.__ModuleLoader__.load({
         if (translated) node.nodeValue = node.nodeValue.replace(node.nodeValue.trim(), translated)
       }
       const toggle = root.querySelector('.sysmon__toggle')
-      if (toggle) toggle.setAttribute('title', toggle.textContent?.trim() === '+' ? 'Развернуть' : 'Свернуть')
+      if (toggle) {
+        const collapsed = toggle.textContent?.trim() === '+'
+        root.dataset.gildraCollapsed = String(collapsed)
+        const label = collapsed ? 'Открыть системный монитор' : 'Свернуть системный монитор'
+        toggle.setAttribute('aria-label', label)
+        toggle.setAttribute('title', label)
+      }
     }
 
     function applySshRemoteTranslations() {
