@@ -23,18 +23,18 @@
 Каждый скачиваемый артефакт защищён одним из двух механизмов — и мы явно
 называем, каким именно, вместо общего «всё проверяется»:
 
-| Артефакт | Идентификатор | Проверка целостности |
-| --- | --- | --- |
-| Node.js (5 платформ) | версия в `kit.json` | SHA-256 из `kit.json` |
-| Ollama (Linux) | версия в `kit.json` | SHA-256 из `kit.json` |
-| Исходники DeepSeek Harness | commit SHA в `kit.json` | только TLS + пин коммитом¹ |
-| CodeGraph | commit SHA в `kit.json` | только TLS + пин коммитом¹ |
-| npm-плагины профиля | точные версии | `pnpm-lock.yaml` (integrity) + карантин новых релизов + sentinel-преаудит |
-| GitHub-плагины профиля | commit SHA в спеке | пин коммитом; у части записей lock нет integrity-хеша² |
-| Модель Ollama `nomic-embed-text` | имя (mutable-тег)³ | нет |
-| Language servers | точные top-level версии | транзитивные зависимости не зафиксированы³ |
-| Обновления кита | тег релиза | SHA-256 из `SHA256SUMS.txt` того же релиза |
-| Skills из GitHub | commit SHA (резолвится установщиком) | SHA-256 содержимого показывается пользователю до установки |
+| Артефакт                         | Идентификатор                        | Проверка целостности                                                      |
+| -------------------------------- | ------------------------------------ | ------------------------------------------------------------------------- |
+| Node.js (5 платформ)             | версия в `kit.json`                  | SHA-256 из `kit.json`                                                     |
+| Ollama (Linux)                   | версия в `kit.json`                  | SHA-256 из `kit.json`                                                     |
+| Исходники DeepSeek Harness       | commit SHA в `kit.json`              | только TLS + пин коммитом¹                                                |
+| CodeGraph                        | commit SHA в `kit.json`              | только TLS + пин коммитом¹                                                |
+| npm-плагины профиля              | точные версии                        | `pnpm-lock.yaml` (integrity) + карантин новых релизов + sentinel-преаудит |
+| GitHub-плагины профиля           | commit SHA в спеке                   | пин коммитом; у части записей lock нет integrity-хеша²                    |
+| Модель Ollama `nomic-embed-text` | имя (mutable-тег)³                   | нет                                                                       |
+| Language servers                 | точные top-level версии              | транзитивные зависимости не зафиксированы³                                |
+| Обновления кита                  | тег релиза                           | SHA-256 из `SHA256SUMS.txt` того же релиза                                |
+| Skills из GitHub                 | commit SHA (резолвится установщиком) | SHA-256 содержимого показывается пользователю до установки                |
 
 ¹ GitHub не гарантирует байтовую стабильность автогенерируемых архивов
 (`codeload`), поэтому фиксация их SHA-256 в манифесте ломала бы установки при
@@ -65,7 +65,7 @@
   снять; перехватывается только доказуемо осиротевший (мёртвый PID или
   протухший heartbeat). Cleanup завершает только процессы, зарегистрированные
   за сессией (PID/process group) — не по совпадению подстроки пути.
-- **API Runtime (/gildra/v1/*) слушает только loopback**, мутации требуют
+- **API Runtime (/gildra/v1/\*) слушает только loopback**, мутации требуют
   loopback-Host (защита от DNS rebinding), loopback-Origin из строгого
   allowlist, `application/json` и owner-token сессии; произвольные
   shell-команды через API не выполняются. Audit-лог пишет только
@@ -84,8 +84,17 @@
   одобренные пользователем по точному argv (`approved`). Команды существуют
   только как argv-массивы — `shell: true` не используется нигде; логи
   верификации пишутся в файлы state (0600) без секретов Runtime.
+- **Verification изолирован**: проверки идут в immutable snapshot точного
+  commit (не в mutable writer-дереве) с allowlist-окружением — repository-код
+  не получает process.env Runtime; секреты, явно разрешённые политикой,
+  редактируются из логов. Reviewer подтверждается одноразовой capability
+  (в state — только хэш), CI-статус принимается только структурным evidence с
+  commitSha == HEAD задачи, а human-approval обязателен для CODEOWNERS и
+  protected областей. Командная координация публикует только allowlist-поля —
+  токены, пути и env не покидают машину по построению.
 - **Полная модель надёжности и её ограничения** — в
-  [`docs/runtime-reliability.md`](docs/runtime-reliability.md).
+  [`docs/runtime-reliability.md`](docs/runtime-reliability.md); контракты
+  модульности и команды — в [`docs/modularity.md`](docs/modularity.md).
 
 ## Границы доверия
 

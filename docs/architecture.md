@@ -30,10 +30,12 @@ Gildra Runtime (plugins/gildra-dsh-runtime, локально и на серве�
         ├── Process Manager: процессы, привязанные к сессии
         ├── Port Allocator: порты dev-серверов без конфликтов
         ├── Merge workflow: объединение изменений только через Git
-        ├── Repository Intelligence: профиль репозитория и доверие команд
+        ├── Repository Intelligence: профиль, Module Map и доверие команд
+        ├── Architecture Policy: слои, границы, gates модульности
         ├── Quality Pipeline: verification evidence и Definition of Done
         ├── Review: независимое структурное ревью и diff-анализ
-        ├── Team Claims: логическая координация областей работы
+        ├── Team Claims: path/module/semantic-пересечения работ
+        ├── Team Coordination Provider: обмен сводками между Runtime
         └── версионированный API /gildra/v1/* (loopback)
         │
         ▼
@@ -58,16 +60,16 @@ Gildra Harness Overlay (plugins/gildra-dsh-ui-compact)
 
 Термины ниже не взаимозаменяемы; документация и код используют их строго:
 
-| Термин | Значение |
-| --- | --- |
-| **Environment** | Физический хост исполнения: этот компьютер или SSH-сервер |
-| **Project** | Git-репозиторий/продукт, зарегистрированный в Project Registry |
-| **User** | Человек; на сервере — отдельный Unix-пользователь |
-| **Session** | Один рабочий контекст ИИ/пользователя (write или read) |
-| **Workspace** | Файловая система сессии: отдельный Git worktree + ветка |
-| **Lease** | Эксклюзивное право записи в один workspace (максимум один writer) |
-| **Agent** | ИИ-исполнитель внутри сессии (writer или read-only) |
-| **Task** | Логическая единица работы, связывающая сессии/агентов/воркспейсы |
+| Термин          | Значение                                                          |
+| --------------- | ----------------------------------------------------------------- |
+| **Environment** | Физический хост исполнения: этот компьютер или SSH-сервер         |
+| **Project**     | Git-репозиторий/продукт, зарегистрированный в Project Registry    |
+| **User**        | Человек; на сервере — отдельный Unix-пользователь                 |
+| **Session**     | Один рабочий контекст ИИ/пользователя (write или read)            |
+| **Workspace**   | Файловая система сессии: отдельный Git worktree + ветка           |
+| **Lease**       | Эксклюзивное право записи в один workspace (максимум один writer) |
+| **Agent**       | ИИ-исполнитель внутри сессии (writer или read-only)               |
+| **Task**        | Логическая единица работы, связывающая сессии/агентов/воркспейсы  |
 
 ## 0а. Инварианты изоляции
 
@@ -198,9 +200,13 @@ PROTECTED_BRANCH, PORT_UNAVAILABLE, …), `ids` (валидация и гене�
 `projects`, `leases`, `workspaces`, `sessions`, `processes`, `ports`,
 `tasks` (инженерная модель задач), `journal` (durable-журнал операций),
 `lifecycle` (BOOTING→READY), `migrations` (версии схемы state), `http`
-(guard'ы запроса и идемпотентность), `api` (маршруты `/gildra/v1/*`), а также
-слой AI-качества: `globs`, `repo-intel`, `claims`, `quality`,
-`diff-analyzer`, `review`, `upstream`, `context-builder`.
+(guard'ы запроса и идемпотентность), `api` (composition root + каркас
+маршрутов) и `api-quality-routes`, а также слой AI-качества: `globs`,
+`codeowners`, `repo-intel`, `architecture` (policy + Module Map),
+`import-graph`, `modularity` (анализатор + gates), `claims`, `provenance`,
+`quality`, `diff-analyzer`, `review`, `merge-workflow`, `upstream`,
+`context-builder`, `team` (координация между Runtime). Контракты слоя —
+[`docs/modularity.md`](modularity.md).
 
 Раскладка на диске (per Unix-user):
 

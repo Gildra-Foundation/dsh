@@ -14,19 +14,19 @@ VERIFICATION** — код исправлен, нужен прогон на ре�
 
 ## 0. Перепроверка аудита (этап 1)
 
-| Пункт | Вердикт перепроверки |
-| --- | --- |
-| C1 Windows updater (`-Command`/`$args`) | CONFIRMED → **FIXED** `7c1c515` |
-| C2 Windows installer (нет `$LASTEXITCODE`) | CONFIRMED → **FIXED** `204c28d` |
-| C3 UI render loop | CONFIRMED (уточнение: observer слушает childList+characterData, петлю питали именно text-записи) → **FIXED** `32aac10` |
-| `applyUpdate()` без тестов | CONFIRMED → **FIXED** `f6f7861` (9 сценариев) |
-| Linux installer в CI только `bash -n` | CONFIRMED → **FIXED** `af6f542` |
-| Regex-only UI-тесты | CONFIRMED → **PARTIALLY FIXED** `f7a7174`+`0e0d61b` (поведенческие DOM-тесты добавлены; регекс-инварианты сохранены осознанно) |
+| Пункт                                            | Вердикт перепроверки                                                                                                                                                    |
+| ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| C1 Windows updater (`-Command`/`$args`)          | CONFIRMED → **FIXED** `7c1c515`                                                                                                                                         |
+| C2 Windows installer (нет `$LASTEXITCODE`)       | CONFIRMED → **FIXED** `204c28d`                                                                                                                                         |
+| C3 UI render loop                                | CONFIRMED (уточнение: observer слушает childList+characterData, петлю питали именно text-записи) → **FIXED** `32aac10`                                                  |
+| `applyUpdate()` без тестов                       | CONFIRMED → **FIXED** `f6f7861` (9 сценариев)                                                                                                                           |
+| Linux installer в CI только `bash -n`            | CONFIRMED → **FIXED** `af6f542`                                                                                                                                         |
+| Regex-only UI-тесты                              | CONFIRMED → **PARTIALLY FIXED** `f7a7174`+`0e0d61b` (поведенческие DOM-тесты добавлены; регекс-инварианты сохранены осознанно)                                          |
 | Supply-chain хеши (DSH source/CodeGraph без SHA) | CONFIRMED как факт; фиксация SHA codeload-архивов **REJECTED как метод** (GitHub не гарантирует байт-стабильность) → честная модель доверия задокументирована `4db6afd` |
-| GitHub Actions pinning | **ALREADY FIXED** ещё в кандидате (SHA-пины + guard в verify.sh); guard усилен до запрета любых не-SHA ref `4db6afd` |
-| Installer parity (дрейф трёх установщиков) | CONFIRMED; часть закрыта (`6bd0542` guard, `c44e2b1` runtime/python), унификация — открыта |
-| Параллельный запуск updater | CONFIRMED → **FIXED** `e9f9cea` |
-| SSH reconnect behaviour | **PARTIALLY REJECTED**: фоновое подключение — задокументированная фича README, дефект только в бесконечных быстрых ретраях → backoff `aee1d23` |
+| GitHub Actions pinning                           | **ALREADY FIXED** ещё в кандидате (SHA-пины + guard в verify.sh); guard усилен до запрета любых не-SHA ref `4db6afd`                                                    |
+| Installer parity (дрейф трёх установщиков)       | CONFIRMED; часть закрыта (`6bd0542` guard, `c44e2b1` runtime/python), унификация — открыта                                                                              |
+| Параллельный запуск updater                      | CONFIRMED → **FIXED** `e9f9cea`                                                                                                                                         |
+| SSH reconnect behaviour                          | **PARTIALLY REJECTED**: фоновое подключение — задокументированная фича README, дефект только в бесконечных быстрых ретраях → backoff `aee1d23`                          |
 
 ---
 
@@ -41,16 +41,16 @@ VERIFICATION** — код исправлен, нужен прогон на ре�
 
 ### Оценки: было → стало
 
-| Область | Было | Стало | Комментарий |
-| --- | --- | --- | --- |
-| Документация | 8 | 8,5 | + модель доверия загрузок, живой аудит; личные данные убраны |
-| Архитектура | 7,5 | 8 | client.js стал generated из 20 модулей с детерминированной сборкой |
-| Supply chain / безопасность | 7 | 8 | fd-чтение в патче, commit-пин скиллов, guard не-SHA ref, честная модель доверия |
-| Качество кода | 6,5 | 7,5 | идемпотентный рендер, строгий stop, локи, ESLint-чистота |
-| AI-пригодность | 5,5 | 7,5 | AGENTS/CLAUDE.md + скиллы (были добавлены до этой серии), npm test/lint, generated-клиент |
-| Тестовое покрытие | 4,5 | 7 | applyUpdate 9 сценариев, симлинк-матрица, DOM-поведение, lock; дыры: configure-profile, fleet-sync сбои |
-| Надёжность установки/обновления | 4 | 7,5\* | \*код исправлен и покрыт CI-smoke; звёздочка до прогона на реальной Windows |
-| Производительность (runtime) | 4 | 7,5 | петля устранена (доказано), 500-мс поллинг убран, SSH-backoff; TreeWalker-проходы по мутациям остались |
+| Область                         | Было | Стало | Комментарий                                                                                             |
+| ------------------------------- | ---- | ----- | ------------------------------------------------------------------------------------------------------- |
+| Документация                    | 8    | 8,5   | + модель доверия загрузок, живой аудит; личные данные убраны                                            |
+| Архитектура                     | 7,5  | 8     | client.js стал generated из 20 модулей с детерминированной сборкой                                      |
+| Supply chain / безопасность     | 7    | 8     | fd-чтение в патче, commit-пин скиллов, guard не-SHA ref, честная модель доверия                         |
+| Качество кода                   | 6,5  | 7,5   | идемпотентный рендер, строгий stop, локи, ESLint-чистота                                                |
+| AI-пригодность                  | 5,5  | 7,5   | AGENTS/CLAUDE.md + скиллы (были добавлены до этой серии), npm test/lint, generated-клиент               |
+| Тестовое покрытие               | 4,5  | 7     | applyUpdate 9 сценариев, симлинк-матрица, DOM-поведение, lock; дыры: configure-profile, fleet-sync сбои |
+| Надёжность установки/обновления | 4    | 7,5\* | \*код исправлен и покрыт CI-smoke; звёздочка до прогона на реальной Windows                             |
+| Производительность (runtime)    | 4    | 7,5   | петля устранена (доказано), 500-мс поллинг убран, SSH-backoff; TreeWalker-проходы по мутациям остались  |
 
 ---
 
@@ -250,6 +250,7 @@ Info.plist-версии в репо, dual-цепочка npx, CHANGELOG-разр
 **P0 remaining:** нет.
 
 **P1 remaining:**
+
 1. Квотирование `run()` с `shell: true` (пробел в Windows-пути профиля).
 2. Нотарификация релизного .app либо принудительно-локальная сборка.
 3. Таймаут запуска в macOS-оболочке.
@@ -300,26 +301,26 @@ Linux-джобу с полной установкой end-to-end.
 Крупный архитектурный этап: Gildra DSH → AI engineering control plane с
 изоляцией пользователей/сессий/агентов. Статусы:
 
-| Область | Статус | Детали |
-| --- | --- | --- |
+| Область               | Статус                   | Детали                                                                                                                                        |
+| --------------------- | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | User isolation (Unix) | **DONE (формализовано)** | Инвариант в architecture.md 0а.5 + SECURITY.md; state/workspaces 0700/0600; операционная модель отдельных Unix-пользователей была и сохранена |
-| Worktree isolation | **DONE** | worktree+ветка `session/<user>/<id>` per write-сессия; флагманский интеграционный тест §36 в каталоге с пробелом |
-| Lease | **DONE** | mkdir+owner-token+heartbeat, ACTIVE/STALE/ORPHANED, PID-reuse-защита, конкурентные тесты (8 писателей → 1) |
-| Branch protection | **DONE** | main/master/production/release/* закрыты на уровне Workspace Manager; merge только через workflow |
-| Process isolation | **DONE (MVP)** | реестр за сессией + POSIX process groups; Windows — taskkill /T (задокументированный best-effort, Job Objects — OPEN) |
-| Port isolation | **DONE** | аллокатор под локом, реальная проба bind, stale-переиспользование; конкурентные тесты |
-| Docker namespace | **DONE (env)** | COMPOSE_PROJECT_NAME=gildra_<session> инъектируется; compose-файлы не переписываются |
-| DB isolation | **PARTIAL** | extension point Project Runtime Profile с подстановкой ${…} (POSTGRES_DB и т.п.); готовых адаптеров БД нет — намеренно |
-| Task model | **DONE (минимальная)** | PLANNED→…→MERGED/FAILED, связи sessions/agents/workspaces; UI Task Center — OPEN |
-| Merge workflow | **DONE** | merge-worktree, конфликт никогда не молчит (маркер-проверка), complete/abort, BRANCH_CHECKED_OUT вместо порчи чужого дерева |
-| Recovery | **DONE** | скан orphaned (PID+lease+тишина) и брошенных worktree без автоудаления; Recover/cleanup c подтверждениями; UI-кнопки в панели |
-| API | **DONE** | /gildra/v1/* (loopback, same-origin, owner-token, структурные коды ошибок) |
-| UI identity/panel | **DONE (MVP)** | Проект·Сессия·Ветка·Режим + панель Workspaces (create/merge/cleanup/recover); отдельный полноэкранный Workspace Manager — OPEN |
-| Agent context/guard | **DONE** | systemPrompt-правила + tools-guard опасных git-команд в управляемых воркспейсах + agentContextBlock через API |
-| Selector registry | **DONE (ядро)** | SELECTORS-реестр + контракт-тест счётчиков; словарные translation-roots частично остаются в словарях |
-| Targeted translation | **PARTIAL** | LCA-скоуп мутаций для тяжёлого TreeWalker-скана; кэширование узлов/locale revision — OPEN |
-| shell:true (§39) | **DONE** | corepack/npm через JS-входы node, run() отклоняет .cmd; тесты путей с пробелами на всех платформах |
-| macOS startup timeout | **DONE** | deadline 90 с + хвост журнала + retry (NEEDS macOS VERIFICATION вживую) |
+| Worktree isolation    | **DONE**                 | worktree+ветка `session/<user>/<id>` per write-сессия; флагманский интеграционный тест §36 в каталоге с пробелом                              |
+| Lease                 | **DONE**                 | mkdir+owner-token+heartbeat, ACTIVE/STALE/ORPHANED, PID-reuse-защита, конкурентные тесты (8 писателей → 1)                                    |
+| Branch protection     | **DONE**                 | main/master/production/release/\* закрыты на уровне Workspace Manager; merge только через workflow                                            |
+| Process isolation     | **DONE (MVP)**           | реестр за сессией + POSIX process groups; Windows — taskkill /T (задокументированный best-effort, Job Objects — OPEN)                         |
+| Port isolation        | **DONE**                 | аллокатор под локом, реальная проба bind, stale-переиспользование; конкурентные тесты                                                         |
+| Docker namespace      | **DONE (env)**           | COMPOSE*PROJECT_NAME=gildra*<session> инъектируется; compose-файлы не переписываются                                                          |
+| DB isolation          | **PARTIAL**              | extension point Project Runtime Profile с подстановкой ${…} (POSTGRES_DB и т.п.); готовых адаптеров БД нет — намеренно                        |
+| Task model            | **DONE (минимальная)**   | PLANNED→…→MERGED/FAILED, связи sessions/agents/workspaces; UI Task Center — OPEN                                                              |
+| Merge workflow        | **DONE**                 | merge-worktree, конфликт никогда не молчит (маркер-проверка), complete/abort, BRANCH_CHECKED_OUT вместо порчи чужого дерева                   |
+| Recovery              | **DONE**                 | скан orphaned (PID+lease+тишина) и брошенных worktree без автоудаления; Recover/cleanup c подтверждениями; UI-кнопки в панели                 |
+| API                   | **DONE**                 | /gildra/v1/\* (loopback, same-origin, owner-token, структурные коды ошибок)                                                                   |
+| UI identity/panel     | **DONE (MVP)**           | Проект·Сессия·Ветка·Режим + панель Workspaces (create/merge/cleanup/recover); отдельный полноэкранный Workspace Manager — OPEN                |
+| Agent context/guard   | **DONE**                 | systemPrompt-правила + tools-guard опасных git-команд в управляемых воркспейсах + agentContextBlock через API                                 |
+| Selector registry     | **DONE (ядро)**          | SELECTORS-реестр + контракт-тест счётчиков; словарные translation-roots частично остаются в словарях                                          |
+| Targeted translation  | **PARTIAL**              | LCA-скоуп мутаций для тяжёлого TreeWalker-скана; кэширование узлов/locale revision — OPEN                                                     |
+| shell:true (§39)      | **DONE**                 | corepack/npm через JS-входы node, run() отклоняет .cmd; тесты путей с пробелами на всех платформах                                            |
+| macOS startup timeout | **DONE**                 | deadline 90 с + хвост журнала + retry (NEEDS macOS VERIFICATION вживую)                                                                       |
 
 OPEN (осознанно, приоритезировано): Windows Job Objects; git checkout-guard
 на уровне терминала (сейчас — systemPrompt + tools-guard); полноэкранный
@@ -345,3 +346,14 @@ upstream awareness, delivery PR/CI, Team View. READY_FOR_HUMAN_REVIEW
 вычисляется gate'ом. Закрыты §56 (immutable SHA у merge, MERGE_TARGET_MOVED,
 безопасный refspec fetch) и §57 (repo-лок как runtime-инвариант). Детали —
 docs/ai-quality.md; статус проверок — CI.
+
+## Итерация: Modularity & Team Collaboration (2026-08-27)
+
+Архитектурные gates (циклы/слои/план-vs-факт) с Module Map и Module Change
+Plan; capability-идентичность ревью, provenance-хэши evidence/ack/команд,
+immutable verification snapshot с sanitized env, run identity, доверенное
+CI-evidence, CODEOWNERS-gate; TeamCoordinationProvider (local/git-backed) с
+optimistic-CAS и трёхуровневым overlap до write-фазы; рефакторинг трёх
+подтверждённых hotspot'ов самого Gildra (включая найденный анализатором
+реальный цикл); реальные прогоны агентов зафиксированы в
+docs/ai-quality-eval.md. Детали — docs/modularity.md.

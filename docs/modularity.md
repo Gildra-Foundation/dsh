@@ -26,14 +26,26 @@ Task → Repository Understanding → Module Change Plan → Team Overlap Check
     "layers": [
       { "id": "domain", "patterns": ["src/domain/**"], "mayDependOn": [] },
       { "id": "application", "patterns": ["src/application/**"], "mayDependOn": ["domain"] },
-      { "id": "infrastructure", "patterns": ["src/infrastructure/**"], "mayDependOn": ["application", "domain"] },
+      {
+        "id": "infrastructure",
+        "patterns": ["src/infrastructure/**"],
+        "mayDependOn": ["application", "domain"]
+      },
       { "id": "ui", "patterns": ["src/ui/**"], "mayDependOn": ["application", "domain"] }
     ],
     "modules": [
-      { "id": "auth.service", "patterns": ["src/domain/auth/**"], "publicEntrypoints": ["src/domain/auth/index.js"] }
+      {
+        "id": "auth.service",
+        "patterns": ["src/domain/auth/**"],
+        "publicEntrypoints": ["src/domain/auth/index.js"]
+      }
     ],
     "limits": { "fileLinesWarning": 400, "functionLinesWarning": 80, "moduleGrowthWarning": 200 },
-    "gates": { "NEW_DEPENDENCY_CYCLE": "BLOCK", "CROSS_LAYER_IMPORT": "BLOCK", "OVERSIZED_MODULE_GROWTH": "REVIEW" }
+    "gates": {
+      "NEW_DEPENDENCY_CYCLE": "BLOCK",
+      "CROSS_LAYER_IMPORT": "BLOCK",
+      "OVERSIZED_MODULE_GROWTH": "REVIEW"
+    }
   }
 }
 ```
@@ -55,14 +67,19 @@ Task → Repository Understanding → Module Change Plan → Team Overlap Check
 
 ```json
 {
-  "modules": [{
-    "id": "runtime.sessions",
-    "patterns": ["plugins/gildra-dsh-runtime/lib/sessions.js"],
-    "publicEntrypoints": [],
-    "dependsOn": ["runtime.workspaces", "runtime.leases"],
-    "owners": ["@runtime-team"],
-    "files": 1, "lines": 359, "fanIn": 2, "fanOut": 5
-  }]
+  "modules": [
+    {
+      "id": "runtime.sessions",
+      "patterns": ["plugins/gildra-dsh-runtime/lib/sessions.js"],
+      "publicEntrypoints": [],
+      "dependsOn": ["runtime.workspaces", "runtime.leases"],
+      "owners": ["@runtime-team"],
+      "files": 1,
+      "lines": 359,
+      "fanIn": 2,
+      "fanOut": 5
+    }
+  ]
 }
 ```
 
@@ -89,18 +106,18 @@ Task не переходит в `IMPLEMENTING` без структурирова
 
 Не-LLM сигналы поверх diff и import-графа «до/после»:
 
-| Сигнал | Дефолтный gate |
-| --- | --- |
-| `NEW_DEPENDENCY_CYCLE` | **BLOCK** |
-| `CROSS_LAYER_IMPORT` | **BLOCK** |
-| `DEEP_INTERNAL_IMPORT` (обход publicEntrypoint) | REVIEW |
-| `UNEXPLAINED_PUBLIC_API_CHANGE` | **BLOCK** |
-| `OVERSIZED_MODULE_GROWTH` / `OVERSIZED_FUNCTION_GROWTH` | REVIEW |
-| `NEW_GLOBAL_MUTABLE_STATE` | REVIEW |
-| `DUPLICATED_DOMAIN_LOGIC` | REVIEW |
-| `MIXED_RESPONSIBILITIES` | REVIEW |
-| `UNEXPECTED_MODULE_CHANGE` | REVIEW |
-| `ANALYSIS_INCOMPLETE` (обрезанный diff) | **BLOCK** |
+| Сигнал                                                  | Дефолтный gate |
+| ------------------------------------------------------- | -------------- |
+| `NEW_DEPENDENCY_CYCLE`                                  | **BLOCK**      |
+| `CROSS_LAYER_IMPORT`                                    | **BLOCK**      |
+| `DEEP_INTERNAL_IMPORT` (обход publicEntrypoint)         | REVIEW         |
+| `UNEXPLAINED_PUBLIC_API_CHANGE`                         | **BLOCK**      |
+| `OVERSIZED_MODULE_GROWTH` / `OVERSIZED_FUNCTION_GROWTH` | REVIEW         |
+| `NEW_GLOBAL_MUTABLE_STATE`                              | REVIEW         |
+| `DUPLICATED_DOMAIN_LOGIC`                               | REVIEW         |
+| `MIXED_RESPONSIBILITIES`                                | REVIEW         |
+| `UNEXPECTED_MODULE_CHANGE`                              | REVIEW         |
+| `ANALYSIS_INCOMPLETE` (обрезанный diff)                 | **BLOCK**      |
 
 BLOCK — блокер readiness до устранения; REVIEW — требует acknowledgment
 reviewer'а/человека (fingerprint-привязка, см. ниже). Количество строк само по
@@ -187,3 +204,26 @@ characterization test → smallest extraction → verify → continue. Запр�
 переписывание модуля целиком без нужды, смена публичного API «для красоты»,
 `utils.js`-свалки, абстракции без второго использования, перенос кода без
 тестового доказательства. Имя модуля обязано называть ответственность.
+
+## Известные ограничения (честно)
+
+- **Глубокий semantic-анализ — только JS/TS** (import-граф по фактическим
+  строкам). Другие языки — path-based fallback и адаптеры детекторов; циклов
+  и слоёв для них анализатор не видит.
+- **GitHub Team Provider — git-репозиторий координации**, не GitHub API:
+  комментарии PR, review-requests и статусы читает существующий
+  инструментарий агента; провайдер синхронизирует только task/claim-сводки.
+  Конфликт после лимита повторов требует ручного решения.
+- **«HUMAN»-актор — явный флаг внутри Unix-границы доверия.** Между
+  недоверяющими людьми личность по-прежнему разделяют Unix-пользователи;
+  крипто-подписей approvals нет и не обещается.
+- **Windows process isolation — best-effort** (без Job Objects; см.
+  runtime-reliability): TIMED_OUT_UNTERMINATED — честный статус, а не
+  гарантия завершения.
+- **Human review обязателен** для CODEOWNERS/protected областей и для
+  MEDIUM-волны findings по политике проекта — AI-reviewer его не заменяет.
+- **Порог ухода с JSON-store** (см. runtime-reliability, «Когда JSON-store
+  перестанет подходить») дополняется командными критериями: если понадобится
+  shared team state вне git-провайдера или reconciliation нескольких
+  коллекций станет регулярной болью — рассматривается SQLite, а не
+  дальнейшее превращение JSON-store в самописную СУБД.

@@ -39,20 +39,21 @@ DOM Harness).
 
 ## Индекс скиллов: прочитай перед задачей
 
-| Если задача касается… | Сначала прочитай |
-| --- | --- |
-| Версий/состава плагинов, `config/kit.json`, lock-файла | `.claude/skills/bump-plugin/SKILL.md` |
-| Выпуска, бампа версии дистрибутива, тега | `.claude/skills/release/SKILL.md` |
-| Любых `.ps1`/`.cmd`, Windows-веток в `scripts/*.mjs` | `.claude/skills/powershell-51/SKILL.md` |
-| Файлов в `install/`, корневых лаунчеров | `.claude/skills/installer-parity/SKILL.md` |
-| `plugins/gildra-dsh-ui-compact` (client.js / index.js) | `.claude/skills/client-feature/SKILL.md` |
-| `plugins/gildra-dsh-runtime` (sessions/workspaces/leases) | `docs/runtime-reliability.md` — контракт конкуренции и восстановления |
-| Task/quality-слоя Runtime (tasks/quality/review/claims) | `docs/ai-quality.md` — конвейер качества и Definition of Done |
-| Реализации фичи или багфикса (до написания кода) | `.claude/skills/test-driven-development/SKILL.md` |
-| Любого бага, падающего теста, странного поведения | `.claude/skills/systematic-debugging/SKILL.md` |
-| Плана крупной задачи | `.claude/skills/writing-plans/SKILL.md` |
-| Подготовки изменения к ревью | `.claude/skills/requesting-code-review/SKILL.md` |
-| Заявления «готово» / завершения задачи | `.claude/skills/verification-before-completion/SKILL.md` |
+| Если задача касается…                                             | Сначала прочитай                                                      |
+| ----------------------------------------------------------------- | --------------------------------------------------------------------- |
+| Версий/состава плагинов, `config/kit.json`, lock-файла            | `.claude/skills/bump-plugin/SKILL.md`                                 |
+| Выпуска, бампа версии дистрибутива, тега                          | `.claude/skills/release/SKILL.md`                                     |
+| Любых `.ps1`/`.cmd`, Windows-веток в `scripts/*.mjs`              | `.claude/skills/powershell-51/SKILL.md`                               |
+| Файлов в `install/`, корневых лаунчеров                           | `.claude/skills/installer-parity/SKILL.md`                            |
+| `plugins/gildra-dsh-ui-compact` (client.js / index.js)            | `.claude/skills/client-feature/SKILL.md`                              |
+| `plugins/gildra-dsh-runtime` (sessions/workspaces/leases)         | `docs/runtime-reliability.md` — контракт конкуренции и восстановления |
+| Task/quality-слоя Runtime (tasks/quality/review/claims)           | `docs/ai-quality.md` — конвейер качества и Definition of Done         |
+| Модульности/команды (architecture/modularity/team/merge-workflow) | `docs/modularity.md` — границы, gates, координация Runtime            |
+| Реализации фичи или багфикса (до написания кода)                  | `.claude/skills/test-driven-development/SKILL.md`                     |
+| Любого бага, падающего теста, странного поведения                 | `.claude/skills/systematic-debugging/SKILL.md`                        |
+| Плана крупной задачи                                              | `.claude/skills/writing-plans/SKILL.md`                               |
+| Подготовки изменения к ревью                                      | `.claude/skills/requesting-code-review/SKILL.md`                      |
+| Заявления «готово» / завершения задачи                            | `.claude/skills/verification-before-completion/SKILL.md`              |
 
 Происхождение вендорных скиллов и их пины — `.claude/skills/UPSTREAM.md`.
 
@@ -78,6 +79,9 @@ DOM Harness).
   или записью в store, writer не бывает собственным reviewer, а мутации
   canonical-репозитория (worktree/ветки/CAS) работают только под
   `withRepoLock` — вне scope они падают.
+- **Никаких `utils.js`-свалок**: новый модуль обязан называть свою
+  ответственность (codeowners.js, merge-workflow.js — образцы); Modularity
+  Analyzer блокирует новые циклы и cross-layer импорты в проектах с политикой.
 - **Managed git идёт только через `lib/gitx.js`**: там очищается окружение и
   отключаются hooks недоверенного репозитория. Прямой вызов `git` из других
   модулей Runtime — дыра в этой защите.

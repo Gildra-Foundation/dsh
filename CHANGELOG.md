@@ -4,6 +4,32 @@
 
 ## [Unreleased]
 
+### Modularity & Team Collaboration
+
+- Architecture Policy и машинный Module Map (слои, mayDependOn, публичные
+  входы, лимиты-предупреждения); Modularity Analyzer с контекстными
+  сигналами (новые циклы, cross-layer, God-file-рост, дубли доменной логики,
+  глобальный mutable state, план против факта) и конфигурируемыми gates —
+  BLOCK-коды не гасятся объяснением. Module Change Plan обязателен до
+  IMPLEMENTING.
+- Безопасность конвейера: reviewer-capability вместо строки, evidence и
+  review привязаны к ревизиям постановки/политики, acknowledgment — к
+  отпечатку сигнала (строгие гасит только reviewer/человек), одобрение команд
+  — к definitionHash источника; verification — в immutable snapshot c
+  allowlist-env и redaction секретов; run identity (cancel по runId,
+  TIMED_OUT_UNTERMINATED); CI — только структурное evidence по commitSha;
+  CODEOWNERS-область требует human-approval.
+- Команда: TeamCoordinationProvider (local и git-backed «github») с
+  optimistic-CAS без silent overwrite; path/module/semantic-пересечения по
+  инструментальному графу; решение по overlap фиксируется до write-фазы;
+  Team View показывает задачи других Runtime и архитектурные факты.
+- Рефакторинг самого Gildra по данным анализатора: устранён реальный цикл
+  repo-intel↔architecture (codeowners.js), merge workflow выделен из
+  workspaces (600→353 строк), маршруты качества — из api (500→362).
+- Реальная оценка агентов (scripts/ai-quality-eval.mjs + docs/ai-quality-eval.md):
+  baseline систематически нарушал границу domain, с Gildra-контекстом граница
+  удержана; двух-Runtime E2E и modularity-E2E проходят полный конвейер.
+
 ### AI Engineering Quality Pipeline
 
 - Task стал инженерной единицей: критерии приёмки, ожидаемый scope, work
@@ -83,11 +109,11 @@
   репозиториями, изолированный Git worktree + ветка `session/<user>/<id>` на
   каждую write-сессию, эксклюзивные write-lease с heartbeat и состояниями
   ACTIVE/STALE/ORPHANED, session-scoped процессы (process groups) и порты,
-  env-инъекция (GILDRA_*, PORT, COMPOSE_PROJECT_NAME) и Project Runtime
+  env-инъекция (GILDRA\__, PORT, COMPOSE_PROJECT_NAME) и Project Runtime
   Profile, controlled merge workflow (конфликты никогда не разрешаются
   молча), защита protected-веток на уровне менеджера, crash recovery без
   автоудаления, минимальная модель Task и локальный audit-лог; версионирован-
-  ный API `/gildra/v1/*` со структурными кодами ошибок.
+  ный API `/gildra/v1/_` со структурными кодами ошибок.
 - Оверлей: постоянная идентификация Проект · Сессия · Ветка · Режим и панель
   Workspaces (создание изолированной сессии, Merge, безопасное завершение с
   dry-run-планом, восстановление ORPHANED); реестр upstream-селекторов;
