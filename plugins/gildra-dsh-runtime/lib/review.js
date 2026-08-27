@@ -240,7 +240,11 @@ export function createReviewManager({ store, roots, projects, tasks, workspaces,
       writerSessionId,
       // Ревизии требований на момент запроса: одобрение «той» постановки не
       // распространяется на изменённую (§14).
-      revisions: requirementRevisions({ task, project: await projects.get(task.projectId) }),
+      revisions: requirementRevisions({
+        task,
+        project: await projects.get(task.projectId),
+        profile: repoIntel ? await repoIntel.getProfile(task.projectId).catch(() => undefined) : undefined,
+      }),
       mode,
       status: 'REQUESTED',
       headSha: analysis?.headSha,
@@ -310,7 +314,11 @@ export function createReviewManager({ store, roots, projects, tasks, workspaces,
     }
     const currentHead = task.analysis?.headSha
     const project = await projects.get(task.projectId)
-    const currentRevisions = requirementRevisions({ task, project })
+    const currentRevisions = requirementRevisions({
+      task,
+      project,
+      profile: repoIntel ? await repoIntel.getProfile(task.projectId).catch(() => undefined) : undefined,
+    })
     const isCurrent = row => (!currentHead || row.headSha === currentHead) && revisionsMatch(row.revisions, currentRevisions)
     const standard = latestByMode.get('standard')
     const openBySeverity = {}

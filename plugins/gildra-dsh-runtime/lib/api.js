@@ -70,7 +70,7 @@ export function createRuntime({ env = process.env } = {}) {
   const team = createTeamProvider({ env, roots })
   const capabilities = createCapabilityStore({ store, roots })
   const tasks = createTaskManager({ store, roots, projects, team, repoIntel })
-  const quality = createQualityManager({ store, roots, projects, tasks, workspaces, processes })
+  const quality = createQualityManager({ store, roots, projects, tasks, workspaces, processes, repoIntel })
   const reviews = createReviewManager({ store, roots, projects, tasks, workspaces, sessions, leases, capabilities, repoIntel })
   const upstream = createUpstreamMonitor({ roots, projects, tasks })
   const contextBuilder = createContextBuilder({ projects, tasks, workspaces, sessions, repoIntel, upstream })

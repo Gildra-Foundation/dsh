@@ -256,6 +256,33 @@ const { task, workspace } = await makeTask()
   })
 }
 
+// --- 4г. Полный provenance (§9): план и claims протухают evidence ----------
+{
+  const prov = await makeTask({ title: 'Provenance task' })
+  const run = await quality.runVerification(prov.task.taskId)
+  assert.equal(run.checks.find(check => check.id === 'tests').status, 'PASSED')
+  for (const field of ['taskSpecHash', 'claimsHash', 'overlapDecisionHash', 'baseSha', 'deliveryPolicyHash', 'commandDefinitionsHash', 'codeownersRevision']) {
+    assert.ok(field in run.revisions, `ревизия ${field} обязана записываться`)
+  }
+
+  // Смена Module Change Plan после прогона — evidence отвечает на другой
+  // вопрос.
+  await tasks.setModulePlan(prov.task.taskId, {
+    modulesToChange: [{ module: 'src', reason: 'план изменился после verification' }],
+  })
+  let verdict = await quality.readiness(prov.task.taskId)
+  assert.ok(verdict.blockers.some(blocker => blocker.id === 'STALE_EVIDENCE_REVISION'),
+    `смена плана обязана протушить evidence: ${JSON.stringify(verdict.blockers.map(entry => entry.id))}`)
+
+  // Новый прогон чинит; смена claims снова протухает.
+  await quality.runVerification(prov.task.taskId)
+  assert.ok(!(await quality.readiness(prov.task.taskId)).blockers.some(blocker => blocker.id === 'STALE_EVIDENCE_REVISION'))
+  await tasks.setClaims(prov.task.taskId, ['src/**'])
+  verdict = await quality.readiness(prov.task.taskId)
+  assert.ok(verdict.blockers.some(blocker => blocker.id === 'STALE_EVIDENCE_REVISION'),
+    'смена claims — тоже смена контракта работы')
+}
+
 // --- 5. Таймаут через штатный terminate -----------------------------------
 {
   const slow = await makeTask({ title: 'Timeout task' })

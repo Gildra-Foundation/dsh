@@ -119,7 +119,7 @@ export function qualityPolicyOf(project) {
   }
 }
 
-export function createQualityManager({ store, roots, projects, tasks, workspaces, processes }) {
+export function createQualityManager({ store, roots, projects, tasks, workspaces, processes, repoIntel }) {
   // Политика меняется ТОЛЬКО человеком (§8): writer не ослабляет собственный
   // Definition of Done. verifiedAdmin приходит от слоя, расходовавшего
   // HUMAN_ADMIN-capability; сама модель флагам из body не верит.
@@ -251,9 +251,9 @@ export function createQualityManager({ store, roots, projects, tasks, workspaces
       headSha,
       dirtyAtRun: dirty.length,
       snapshot: { mode: snapshot.mode, ...(snapshot.contentHash ? { contentHash: snapshot.contentHash } : {}) },
-      // Ревизии требований (§14): evidence доказывает соответствие ЭТОЙ
-      // постановке и ЭТОЙ политике; их смена делает прогон STALE.
-      revisions: requirementRevisions({ task, project }),
+      // Ревизии требований (§9/§14): evidence доказывает соответствие ЭТОЙ
+      // постановке, плану, claims и политике; смена любого — STALE.
+      revisions: requirementRevisions({ task, project, profile: repoIntel ? await repoIntel.getProfile(task.projectId).catch(() => undefined) : undefined }),
       status: 'RUNNING',
       checks,
       startedAt: new Date().toISOString(),
@@ -435,7 +435,7 @@ export function createQualityManager({ store, roots, projects, tasks, workspaces
       }
       // §14: изменение критериев/скоупа/политики после прогона делает
       // доказательство недействительным — оно отвечало на другой вопрос.
-      const currentRevisions = requirementRevisions({ task, project })
+      const currentRevisions = requirementRevisions({ task, project, profile: repoIntel ? await repoIntel.getProfile(task.projectId).catch(() => undefined) : undefined })
       if (!revisionsMatch(run.revisions, currentRevisions)) {
         blockers.push({ id: 'STALE_EVIDENCE_REVISION', message: 'Постановка задачи или политика изменились после verification — прогоните проверки заново.' })
       }
