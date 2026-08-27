@@ -13,7 +13,7 @@
 // и тот же lease. Чужой активный lease не удаляется никогда.
 
 import { hostname } from 'node:os'
-import { randomUUID } from 'node:crypto'
+import { randomUUID, timingSafeEqual } from 'node:crypto'
 import { access, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { RuntimeError } from './errors.js'
@@ -35,12 +35,47 @@ function processAlive(pid) {
   }
 }
 
+// Сравнение токенов постоянным временем: токен — capability сессии, и хотя
+// граница безопасности между людьми — Unix-пользователь, дешёвая защита от
+// сравнения по префиксу здесь ничего не стоит.
+function tokensEqual(left, right) {
+  if (typeof left !== 'string' || typeof right !== 'string') return false
+  const leftBuffer = Buffer.from(left, 'utf8')
+  const rightBuffer = Buffer.from(right, 'utf8')
+  if (leftBuffer.length !== rightBuffer.length) return false
+  return timingSafeEqual(leftBuffer, rightBuffer)
+}
+
 export function createLeaseManager({ roots, env = process.env }) {
   const staleMs = timing(env, 'GILDRA_DSH_LEASE_STALE_MS', 90_000)
   const orphanMs = timing(env, 'GILDRA_DSH_LEASE_ORPHAN_MS', 15 * 60_000)
 
   const leasesRoot = join(roots.stateRoot, 'leases')
   const leaseDir = workspaceId => join(leasesRoot, `${assertId(workspaceId, 'workspaceId')}.lease`)
+  // Счётчик поколений живёт ОТДЕЛЬНО от самого lease: он обязан пережить
+  // удаление lease при takeover, иначе номер поколения переиспользовался бы
+  // и fencing терял смысл.
+  const generationPath = workspaceId => join(leasesRoot, `${assertId(workspaceId, 'workspaceId')}.generation.json`)
+
+  async function readGeneration(workspaceId) {
+    try {
+      const value = JSON.parse(await readFile(generationPath(workspaceId), 'utf8'))
+      return Number.isInteger(value?.generation) ? value.generation : 0
+    } catch {
+      return 0
+    }
+  }
+
+  // Инкремент поколения выполняется ТОЛЬКО победителем mkdir-гонки, то есть
+  // уже под взаимным исключением каталога lease.
+  async function nextGeneration(workspaceId) {
+    const generation = (await readGeneration(workspaceId)) + 1
+    const path = generationPath(workspaceId)
+    const temporary = `${path}.${randomUUID()}.tmp`
+    await writeFile(temporary, `${JSON.stringify({ workspaceId, generation })}\n`, { mode: 0o600 })
+    await rename(temporary, path)
+    return generation
+  }
 
   async function readMetaAt(dir) {
     try {
@@ -75,6 +110,7 @@ export function createLeaseManager({ roots, env = process.env }) {
     const state = classify(meta)
     return {
       state,
+      generation: meta?.generation,
       ...(meta ? {
         sessionId: meta.sessionId,
         userId: meta.userId,
@@ -139,6 +175,8 @@ export function createLeaseManager({ roots, env = process.env }) {
     for (let attempt = 0; attempt < 5; attempt++) {
       try {
         await mkdir(dir)
+        // Победитель mkdir — единственный, кто двигает поколение.
+        const generation = await nextGeneration(workspaceId)
         const meta = {
           schemaVersion: 1,
           workspaceId,
@@ -147,13 +185,17 @@ export function createLeaseManager({ roots, env = process.env }) {
           mode,
           pid,
           host,
+          generation,
           ownerToken: generateOwnerToken(),
+          // Момент старта владельца: вместе с pid отличает наш процесс от
+          // чужого, занявшего тот же PID после перезапуска системы.
+          processStartedAt: new Date(Date.now() - Math.round(process.uptime() * 1000)).toISOString(),
           acquiredAt: new Date().toISOString(),
           heartbeatAt: new Date().toISOString(),
         }
         await writeMeta(workspaceId, meta)
-        await appendAudit(roots.stateRoot, 'lease.acquired', { workspaceId, sessionId, userId, pid })
-        return { ownerToken: meta.ownerToken, workspaceId, state: 'ACTIVE' }
+        await appendAudit(roots.stateRoot, 'lease.acquired', { workspaceId, sessionId, userId, pid, generation })
+        return { ownerToken: meta.ownerToken, workspaceId, state: 'ACTIVE', generation }
       } catch (error) {
         if (error?.code !== 'EEXIST') throw error
       }
@@ -184,11 +226,35 @@ export function createLeaseManager({ roots, env = process.env }) {
 
   async function heartbeat(workspaceId, ownerToken) {
     const meta = await readMeta(workspaceId)
-    if (!meta || meta.ownerToken !== ownerToken) {
+    if (!meta || !tokensEqual(meta.ownerToken, ownerToken)) {
       throw new RuntimeError('FOREIGN_OWNER', 'Lease принадлежит другой сессии или уже снят.', { workspaceId })
     }
     await writeMeta(workspaceId, { ...meta, heartbeatAt: new Date().toISOString() })
-    return { state: 'ACTIVE' }
+    return { state: 'ACTIVE', generation: meta.generation }
+  }
+
+  // Fencing: проверка, что предъявитель — ВСЁ ЕЩЁ текущий владелец. Токен
+  // сам по себе закрывает ABA на короткой операции, но длинная destructive-
+  // операция (cleanup, финализация merge) может начаться при живом lease и
+  // дойти до необратимого шага уже после takeover. Поэтому перед последним
+  // шагом поколение перепроверяется — устаревший writer не делает ничего.
+  async function assertFence(workspaceId, { ownerToken, generation } = {}) {
+    const meta = await readMeta(workspaceId)
+    if (!meta || !tokensEqual(meta.ownerToken, ownerToken)) {
+      throw new RuntimeError('FOREIGN_OWNER', 'Операция отклонена: lease принадлежит другой сессии.', { workspaceId })
+    }
+    if (generation !== undefined && meta.generation !== generation) {
+      throw new RuntimeError('FOREIGN_OWNER', 'Операция отклонена: workspace был перехвачен другой сессией.', {
+        workspaceId,
+        expectedGeneration: generation,
+        currentGeneration: meta.generation,
+      })
+    }
+    return { generation: meta.generation }
+  }
+
+  async function currentGeneration(workspaceId) {
+    return (await readMeta(workspaceId))?.generation ?? (await readGeneration(workspaceId))
   }
 
   async function release(workspaceId, ownerToken) {
@@ -198,7 +264,7 @@ export function createLeaseManager({ roots, env = process.env }) {
       await rm(leaseDir(workspaceId), { recursive: true, force: true }).catch(() => {})
       return { released: true }
     }
-    if (meta.ownerToken !== ownerToken) {
+    if (!tokensEqual(meta.ownerToken, ownerToken)) {
       throw new RuntimeError('FOREIGN_OWNER', 'Чужой lease нельзя снять.', { workspaceId, holder: { sessionId: meta.sessionId, userId: meta.userId } })
     }
     await rm(leaseDir(workspaceId), { recursive: true, force: true })
@@ -224,5 +290,15 @@ export function createLeaseManager({ roots, env = process.env }) {
     if (meta) await appendAudit(roots.stateRoot, 'lease.force-released', { workspaceId, sessionId: meta.sessionId, reason })
   }
 
-  return { acquire, release, releaseIfOwner, forceRelease, heartbeat, stateOf, timings: { staleMs, orphanMs } }
+  return {
+    acquire,
+    release,
+    releaseIfOwner,
+    forceRelease,
+    heartbeat,
+    stateOf,
+    assertFence,
+    currentGeneration,
+    timings: { staleMs, orphanMs },
+  }
 }
