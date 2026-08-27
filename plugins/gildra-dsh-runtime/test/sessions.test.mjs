@@ -169,14 +169,15 @@ assert.equal((await processes.listForSession(a.session.sessionId)).length, 0)
   await narrow.releaseForSession('sess-new')
   assert.equal(await probePortFree(31410), true)
 
-  // Диапазон исчерпан → PORT_UNAVAILABLE (отдельный store и диапазон, чтобы
-  // не пересекаться с живыми lease из блока выше).
+  // Диапазон исчерпан → PORT_POOL_EXHAUSTED, а не PORT_UNAVAILABLE: это
+  // проблема ёмкости пула, а не одного порта (отдельный store и диапазон,
+  // чтобы не пересекаться с живыми lease из блока выше).
   const tinyStore = new JsonStore(join(base, 'ports-tiny'))
   await tinyStore.ensureRoot()
   const tiny = createPortAllocator({ store: tinyStore, env: { GILDRA_DSH_PORT_RANGE: '31420-31421' } })
   await tiny.allocate({ sessionId: 'sess-x1' })
   await tiny.allocate({ sessionId: 'sess-x2' })
-  await assert.rejects(tiny.allocate({ sessionId: 'sess-x3' }), (error) => error.code === 'PORT_UNAVAILABLE')
+  await assert.rejects(tiny.allocate({ sessionId: 'sess-x3' }), (error) => error.code === 'PORT_POOL_EXHAUSTED')
 }
 
 // --- Откат неудачного создания сессии -------------------------------------
