@@ -347,12 +347,26 @@
             }
             return
           }
-          const [projects, sessions, workspaces, merges] = await Promise.all([
+          const [projects, sessions, workspaces, merges, team] = await Promise.all([
             runtimeCall('/projects'),
             runtimeCall('/sessions?activeOnly=1'),
             runtimeCall('/workspaces'),
             runtimeCall('/merges/list?activeOnly=1').catch(() => ({ merges: [] })),
+            // Старый Runtime без слоя качества — просто без Team-блока.
+            runtimeCall('/team').catch(() => ({ team: null })),
           ])
+          // Definition of Done по видимым задачам: факты, не «score» (§49).
+          const teamTasks = team.team
+            ? Object.values(team.team.byOwner ?? {}).flat().slice(0, 8)
+            : []
+          const qualityPairs = await Promise.all(teamTasks.map(async task => {
+            try {
+              const verdict = await runtimeCall(`/tasks/quality?taskId=${encodeURIComponent(task.taskId)}`)
+              return [task.taskId, verdict.quality]
+            } catch {
+              return [task.taskId, null]
+            }
+          }))
           runtimeUiState = {
             ...runtimeUiState,
             available: true,
@@ -361,6 +375,8 @@
             sessions: sessions.sessions ?? [],
             workspaces: workspaces.workspaces ?? [],
             merges: merges.merges ?? [],
+            team: team.team,
+            taskQuality: Object.fromEntries(qualityPairs.filter(pair => pair[1])),
           }
         } catch {
           // Runtime недоступен (старый сервер или плагин выключен): панель
@@ -576,6 +592,70 @@
       }
     }
 
+    // --- Team View (§47–§49): факты, не quality score ----------------------
+    // Компактный блок: задачи по людям с Definition of Done, пересечения
+    // областей, ожидающие ревью и CI-падения. Пустая команда — нет блока.
+    function renderTeamGroup(root) {
+      const team = runtimeUiState.team
+      if (!runtimeUiState.available || !team || (team.activeTasks ?? 0) === 0) return
+      const group = environmentGroup('Команда')
+
+      for (const [owner, tasks] of Object.entries(team.byOwner ?? {})) {
+        for (const task of tasks) {
+          const row = document.createElement('div')
+          row.className = 'gildra-workspace-row'
+          row.dataset.state = task.status === 'READY_FOR_HUMAN_REVIEW' ? 'ready' : 'task'
+          const label = document.createElement('span')
+          label.className = 'gildra-workspace-name'
+          label.textContent = `${owner} · ${task.title}`
+          label.title = task.taskId
+          const detail = document.createElement('span')
+          detail.className = 'gildra-workspace-detail'
+          const quality = runtimeUiState.taskQuality[task.taskId]
+          if (task.status === 'READY_FOR_HUMAN_REVIEW') {
+            detail.textContent = '✓ готова к human review'
+          } else if (quality) {
+            // Показываем ФАКТЫ: какие именно ворота не пройдены.
+            const blockers = (quality.blockers ?? []).map(blocker => blocker.id.split(':')[0])
+            const unique = [...new Set(blockers)].slice(0, 3)
+            detail.textContent = quality.ready ? `${task.status} · ворота пройдены` : `${task.status} · ⚠ ${unique.join(', ')}`
+            detail.title = (quality.blockers ?? []).map(blocker => blocker.message).join('\n')
+          } else {
+            detail.textContent = task.status
+          }
+          row.append(label, detail)
+          group.list.appendChild(row)
+        }
+      }
+
+      for (const overlap of team.overlaps ?? []) {
+        const row = document.createElement('div')
+        row.className = 'gildra-workspace-row'
+        row.dataset.state = 'overlap'
+        const label = document.createElement('span')
+        label.className = 'gildra-workspace-name'
+        const [first, second] = overlap.tasks
+        label.textContent = `Пересечение: ${first.owner ?? first.taskId} ↔ ${second.owner ?? second.taskId}`
+        const detail = document.createElement('span')
+        detail.className = 'gildra-workspace-detail'
+        detail.textContent = (overlap.areas ?? []).slice(0, 2).join(', ')
+        detail.title = 'Claims пересекаются: скоординируйтесь, это предупреждение, а не блок.'
+        row.append(label, detail)
+        group.list.appendChild(row)
+      }
+
+      const summary = []
+      if ((team.waitingReview ?? []).length > 0) summary.push(`ждут ревью: ${String(team.waitingReview.length)}`)
+      if ((team.ciFailures ?? []).length > 0) summary.push(`CI падает: ${String(team.ciFailures.length)}`)
+      if (summary.length > 0) {
+        const line = document.createElement('p')
+        line.className = 'gildra-environment-empty'
+        line.textContent = summary.join(' · ')
+        group.list.appendChild(line)
+      }
+      root.appendChild(group.group)
+    }
+
     function renderWorkspacesGroup(root) {
       if (!runtimeUiState.available) return
       const group = environmentGroup('Workspaces')
@@ -716,6 +796,7 @@
       }
       root.appendChild(servers.group)
       renderWorkspacesGroup(root)
+      renderTeamGroup(root)
       window.requestAnimationFrame(syncEnvironmentPlacement)
     }
 

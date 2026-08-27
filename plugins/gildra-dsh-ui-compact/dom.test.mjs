@@ -73,6 +73,38 @@ const RUNTIME_FIXTURES = {
     ok: true,
     workspaces: [{ workspaceId: 'demo--alex--sess-dom1', dirtyFiles: 0, ahead: 1, lease: { state: 'ACTIVE' } }],
   },
+  '/gildra/v1/team': {
+    ok: true,
+    team: {
+      activeTasks: 2,
+      byOwner: {
+        alex: [{ taskId: 'task-dom-a', title: 'Auth service', status: 'REVIEWING' }],
+        peter: [{ taskId: 'task-dom-b', title: 'Token handling', status: 'READY_FOR_HUMAN_REVIEW' }],
+      },
+      agents: [{ agent: 'writer-17', role: 'writer', taskId: 'task-dom-a' }],
+      overlaps: [{
+        tasks: [{ taskId: 'task-dom-a', owner: 'alex' }, { taskId: 'task-dom-b', owner: 'peter' }],
+        areas: ['src/auth/**'],
+      }],
+      waitingReview: ['task-dom-a'],
+      ciFailures: [],
+    },
+  },
+  '/gildra/v1/tasks/quality?taskId=task-dom-a': {
+    ok: true,
+    quality: {
+      taskId: 'task-dom-a',
+      ready: false,
+      blockers: [
+        { id: 'CHECK_FAILED:tests', message: 'Проверка «tests» в статусе FAILED.' },
+        { id: 'REVIEW_MISSING', message: 'Независимое ревью не выполнялось.' },
+      ],
+    },
+  },
+  '/gildra/v1/tasks/quality?taskId=task-dom-b': {
+    ok: true,
+    quality: { taskId: 'task-dom-b', ready: true, blockers: [] },
+  },
 }
 globalThis.fetch = async (url) => {
   const fixture = RUNTIME_FIXTURES[String(url)]
@@ -177,6 +209,23 @@ assert.equal(document.querySelector('.sysmon').dataset.gildraCollapsed, 'true')
   assert.match(conflictRow.textContent, /2 файл/)
   const conflictActions = [...conflictRow.querySelectorAll('button')].map(button => button.textContent)
   assert.deepEqual(conflictActions, ['Завершить merge', 'Отменить'])
+
+  // Team View (§47–§49): факты Definition of Done, а не «quality score».
+  const rows = [...document.querySelectorAll('.gildra-workspace-row')]
+  const taskRow = rows.find(candidate => /Auth service/.test(candidate.textContent))
+  assert.ok(taskRow, 'задача команды должна отображаться')
+  assert.match(taskRow.textContent, /alex · Auth service/)
+  assert.match(taskRow.textContent, /⚠ CHECK_FAILED, REVIEW_MISSING/,
+    'непройденные ворота показываются фактами')
+  const readyRow = rows.find(candidate => /Token handling/.test(candidate.textContent))
+  assert.match(readyRow.textContent, /✓ готова к human review/)
+  assert.doesNotMatch(document.body.textContent, /quality score/i)
+
+  const overlapRow = rows.find(candidate => candidate.dataset.state === 'overlap')
+  assert.ok(overlapRow, 'пересечение claims должно быть видно команде')
+  assert.match(overlapRow.textContent, /alex ↔ peter/)
+  assert.match(overlapRow.textContent, /src\/auth\/\*\*/)
+  assert.match(document.body.textContent, /ждут ревью: 1/)
 }
 
 // 4. Идемпотентность (доказательство отсутствия петли): три повторных

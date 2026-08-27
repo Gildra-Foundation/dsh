@@ -37,6 +37,10 @@
       sessions: [],
       workspaces: [],
       merges: [],
+      // Team View (§47): активные задачи, пересечения, ожидающие ревью.
+      team: null,
+      // Definition of Done по задачам: id → {ready, blockers[]}.
+      taskQuality: {},
       notice: null,
       // Идущие операции per-entity: UI показывает «Создаём…/Сливаем…» и
       // выключает конфликтующие кнопки. Backend-идемпотентность от этого не
