@@ -13,9 +13,15 @@ import { join } from 'node:path'
 import {
   MINIMUM_GIT_VERSION,
   assertMinimumGitVersion,
+  addWorktree,
   classifyGitFailure,
+  deleteBranch,
+  enterRepoMutationScope,
   isTransientConfigFailure,
+  pruneWorktrees,
+  removeWorktree,
   runWithTransientRetry,
+  updateRefCas,
   commitAll,
   fetchOrigin,
   git,
@@ -246,6 +252,38 @@ const base = await mkdtemp(join(tmpdir(), 'gildra git safety '))
     }, { sleep: async () => {} }).catch(() => {})
     assert.equal(calls, 1)
   }
+}
+
+// --- §57: canonical-мутация невозможна без repo-лока ----------------------
+// Инвариант-растяжка: каждый мутирующий помощник ПАДАЕТ вне scope, в который
+// входит только withRepoLock. Новая canonical-мутация, добавленная без лока,
+// не пройдёт ни один тест, который её вызывает.
+{
+  const repo = join(base, 'scope repo')
+  await git(['init', '-b', 'main', repo])
+  await writeFile(join(repo, 'x.txt'), 'x\n')
+  await commitAll(repo, 'initial', { name: 'Seed', email: 'seed@test' })
+  const worktree = join(base, 'scope worktree')
+
+  for (const [name, attempt] of [
+    ['addWorktree', () => addWorktree(repo, worktree, { branch: 'scope-branch', baseRef: 'main' })],
+    ['removeWorktree', () => removeWorktree(repo, worktree)],
+    ['pruneWorktrees', () => pruneWorktrees(repo)],
+    ['deleteBranch', () => deleteBranch(repo, 'scope-branch')],
+    ['updateRefCas', () => updateRefCas(repo, 'main', 'HEAD', 'HEAD')],
+  ]) {
+    await assert.rejects(attempt, error => error.code === 'INTERNAL' && /repo-лока/.test(error.message),
+      `${name} обязан требовать repo-лок (§57)`)
+  }
+
+  // Внутри scope те же вызовы работают.
+  await enterRepoMutationScope({ projectId: 'scope-test' }, async () => {
+    await addWorktree(repo, worktree, { branch: 'scope-branch', baseRef: 'main' })
+    await removeWorktree(repo, worktree)
+    await pruneWorktrees(repo)
+    await deleteBranch(repo, 'scope-branch')
+  })
+  assert.equal(existsSync(worktree), false)
 }
 
 // --- Версия git: floor и разбор -------------------------------------------
