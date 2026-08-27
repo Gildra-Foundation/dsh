@@ -152,22 +152,73 @@ BOOTING → RECOVERING (reconcile state ↔ worktrees ↔ git ↔ processes) →
 ## Git-безопасность
 
 Клонируемый/adopt-репозиторий недоверен. Все managed git-команды идут через
-контролируемое окружение (`gitSafeEnv`): опасные `GIT_*` (`GIT_DIR`,
-`GIT_WORK_TREE`, `GIT_CONFIG*`, `GIT_SSH_COMMAND`, `GIT_ASKPASS`,
-`GIT_TEMPLATE_DIR`, `GIT_HOOKS_PATH`, `GIT_PROXY_COMMAND`, `GIT_EXTERNAL_DIFF`,
-`GIT_PAGER`, …) вычищаются из унаследованного env. Важное уточнение: `GIT_SSH_COMMAND`,
-`GIT_ASKPASS` и `SSH_AUTH_SOCK` СОХРАНЯЮТСЯ — это собственные настройки
-пользователя внутри его же Unix-аккаунта, а не влияние недоверенного
-репозитория; ломать ими аутентификацию незачем, зависания закрывает таймаут.
-Флаги `-c core.hooksPath=<empty> -c core.fsmonitor=false -c protocol.ext.allow=never`
-+ `GIT_TERMINAL_PROMPT=0` не дают репозиторию заставить Runtime выполнить
-произвольный helper/hook. SSH host-verification НЕ ослабляется. Аутентификация
-пользователя (`GIT_SSH`, ssh-agent, git credential helper, настроенные им явно)
-сохраняется — вычищается только «repository-control» слой. Все команды имеют
-таймаут (локальные короче сетевых); fetch — ограниченные retry с backoff, но не
-на auth-ошибку; при таймауте — `GIT_TIMEOUT`, при отсутствии auth —
-`GIT_AUTH_REQUIRED`. Минимальная версия git (worktree стабильны с 2.17)
-проверяется в self-check.
+контролируемое окружение (`gitSafeEnv`). Политика env описывается двумя
+списками БЕЗ пересечений — это точное отражение кода (`gitx.js`), закреплённое
+тестом git-safety:
+
+**REMOVE (вычищается всегда):**
+`GIT_DIR`, `GIT_COMMON_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`,
+`GIT_OBJECT_DIRECTORY`, `GIT_ALTERNATE_OBJECT_DIRECTORIES`, `GIT_CONFIG`,
+`GIT_CONFIG_GLOBAL`, `GIT_CONFIG_SYSTEM`, `GIT_CONFIG_COUNT` (+ все пары
+`GIT_CONFIG_KEY_n`/`GIT_CONFIG_VALUE_n`), `GIT_TEMPLATE_DIR`, `GIT_NAMESPACE`,
+`GIT_ATTR_SOURCE`, `GIT_ATTR_NOSYSTEM` — перенаправление в чужой репозиторий и
+подмена конфигурации; `GIT_EXTERNAL_DIFF`, `GIT_PAGER`, `GIT_EDITOR`,
+`GIT_SEQUENCE_EDITOR`, `GIT_PROXY_COMMAND`, `GIT_ALLOW_PROTOCOL` — исполнение
+произвольной программы.
+
+**PRESERVE (сохраняется намеренно):**
+`GIT_SSH_COMMAND`, `GIT_SSH`, `GIT_ASKPASS`, `SSH_AUTH_SOCK` и credential
+helper из конфига пользователя. Это собственные настройки аутентификации
+внутри его же Unix-аккаунта — доверенная зона, а не влияние недоверенного
+репозитория. Зависания закрывает таймаут, а не ослабление аутентификации;
+SSH host-verification не ослабляется никогда.
+
+Флаги `-c core.hooksPath=<наш пустой каталог> -c core.fsmonitor=false
+-c protocol.ext.allow=never` + `GIT_TERMINAL_PROMPT=0` перебивают repo-config
+(командная строка старше) и не дают репозиторию исполнить hook/helper. Чтение
+диффов идёт с `--no-ext-diff --no-textconv`. Все команды имеют таймаут
+(локальные короче сетевых); при таймауте — `GIT_TIMEOUT`, при отсутствии
+auth — `GIT_AUTH_REQUIRED` (не ретраится). Минимальная версия git проверяется
+в self-check.
+
+## Контракт локов канонического репозитория
+
+| Операция | Лок | Почему |
+| --- | --- | --- |
+| worktree add/remove/prune, создание/удаление веток, CAS-сдвиг ссылки | **`repo-<projectId>` обязателен** | параллельные git-процессы правят одни файлы метаданных; на Windows это гарантированно ломается |
+| merge-коммит и разрешение конфликта в merge-worktree | без repo-лока | git держит собственные per-ref локи; целостность цели добивает проверка первого родителя (`MERGE_TARGET_MOVED`) — сдвинутая во время merge цель откатывает НАШ коммит, чужой сохраняется |
+| `fetch` | свой `fetch-<projectId>`, НЕ repo-лок | сетевая операция до 5 минут; общий лок остановил бы создание сессий. Git сам отказывается двигать ветку, извлечённую в worktree; гонка ref-локов с параллельным worktree add даёт транзиентный отказ — поэтому у fetch retry с backoff |
+| чтение (status/diff/rev-parse/ls-tree) | без лока | не мутирует метаданные |
+
+Инвариант закреплён в Runtime, а не в ревью: `withRepoLock` входит в
+AsyncLocalStorage-scope, и все пять мутирующих git-помощников падают
+`INTERNAL` при вызове вне его (тест git-safety §57). Новая canonical-мутация
+без лока не пройдёт ни один вызывающий её тест.
+
+Refspec fetch задан явно: `+refs/heads/*:refs/heads/*` БЕЗ `--prune`.
+Оба «удобных» варианта дефектны: `clone --bare` не пишет refspec (fetch
+обновлял только FETCH_HEAD — canonical main не двигался вовсе), а зеркальный
+refspec с prune удалял бы локальные session/*-ветки. Порядок захвата локов
+всегда `workspace-<id>` → `repo-<projectId>`, обратного нет — deadlock
+невозможен.
+
+## Когда JSON-store перестанет подходить
+
+Архитектурный guardrail: миграция на встраиваемую БД (например SQLite)
+рассматривается, когда появится ЛЮБОЕ из:
+
+- транзакции через несколько сущностей (сейчас каждая запись атомарна сама
+  по себе, связки собираются идемпотентными шагами + journal);
+- устойчиво высокая частота записи (сотни в секунду), где fsync на файл
+  станет узким местом;
+- сложные выборки/сортировки по полям, а не проход по коллекции;
+- пагинация по большим коллекциям (тысячи задач/прогонов с историей);
+- частые миграции схемы, где «прочитал-переписал каждый файл» дорого;
+- долговременная история verification/review, которую нельзя ротировать.
+
+До этих порогов JSON-файлы с fsync+rename, mkdir-локами и schemaVersion —
+осознанно достаточная модель: она прозрачна, диагностируема (файл можно
+прочитать глазами) и не добавляет зависимость.
 
 ## Известные ограничения (честно)
 
