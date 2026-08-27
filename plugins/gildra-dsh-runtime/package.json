@@ -4,7 +4,7 @@
   "description": "Gildra Runtime: multi-session workspace, lease, process and port orchestration for Gildra DSH",
   "type": "module",
   "scripts": {
-    "test": "node test/unit.test.mjs && node test/workspaces.test.mjs && node test/git-safety.test.mjs && node test/store.test.mjs && node test/crash-recovery.test.mjs && node test/merge.test.mjs && node test/runtime-resources.test.mjs && node test/projects.test.mjs && node test/repo-intel.test.mjs && node test/tasks.test.mjs && node test/quality.test.mjs && node test/review.test.mjs && node test/multiprocess.test.mjs && node test/stress.test.mjs && node test/leases.test.mjs && node test/sessions.test.mjs && node test/api.test.mjs"
+    "test": "node test/unit.test.mjs && node test/workspaces.test.mjs && node test/git-safety.test.mjs && node test/store.test.mjs && node test/crash-recovery.test.mjs && node test/merge.test.mjs && node test/runtime-resources.test.mjs && node test/projects.test.mjs && node test/repo-intel.test.mjs && node test/tasks.test.mjs && node test/quality.test.mjs && node test/review.test.mjs && node test/upstream.test.mjs && node test/context.test.mjs && node test/multiprocess.test.mjs && node test/stress.test.mjs && node test/leases.test.mjs && node test/sessions.test.mjs && node test/api.test.mjs"
   },
   "main": "./lib/index.js",
   "exports": {
