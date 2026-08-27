@@ -210,11 +210,23 @@ const tasks = createTaskManager({ store, roots, projects })
     tasks.acknowledgeSignal(task.taskId, { signal: 'MADE_UP', explanation: 'достаточно длинное объяснение' }),
     /Неизвестный сигнал/,
   )
+  // §15: строгий сигнал не гасится writer'ом — только reviewer/человек.
+  await assert.rejects(
+    tasks.acknowledgeSignal(task.taskId, {
+      signal: 'TEST_WEAKENING',
+      explanation: 'Тест удалён, потому что поведение вынесено в другой набор.',
+    }),
+    error => error.code === 'ACK_REQUIRES_REVIEWER',
+    'writer не принимает собственное ослабление тестов',
+  )
   const acked = await tasks.acknowledgeSignal(task.taskId, {
     signal: 'TEST_WEAKENING',
     explanation: 'Тест удалён, потому что проверяемое поведение вынесено в отдельный набор merge.test.',
+    verifiedActor: { type: 'AI_REVIEWER', id: 'reviewer-4' },
   })
   assert.equal(acked.acknowledgments.length, 1)
+  assert.equal(acked.acknowledgments[0].actorType, 'AI_REVIEWER')
+  assert.equal(typeof acked.acknowledgments[0].fingerprint, 'string', 'объяснение привязано к отпечатку')
   assert.ok(ACKNOWLEDGEABLE_SIGNALS.includes('PROTECTED_AREA_CHANGE'))
 }
 

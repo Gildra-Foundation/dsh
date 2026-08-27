@@ -25,7 +25,7 @@ import { CURRENT_SCHEMA_VERSION } from './migrations.js'
 import { assertCommandArgv } from './repo-intel.js'
 import { dirtyFiles, revParse } from './gitx.js'
 import { ACKNOWLEDGEABLE_SIGNALS } from './tasks.js'
-import { requirementRevisions, revisionsMatch } from './provenance.js'
+import { requirementRevisions, revisionsMatch, signalFingerprint } from './provenance.js'
 
 const VERIFICATIONS = 'verifications'
 const LOG_TAIL_BYTES = 2048
@@ -355,18 +355,30 @@ export function createQualityManager({ store, roots, projects, tasks, workspaces
       facts.push({ kind: 'architecture', id: check.id, status: check.status })
     }
 
-    // Сигналы diff-анализа: каждый либо отсутствует, либо явно объяснён (§37).
+    // Сигналы diff-анализа: каждый либо отсутствует, либо объяснён — причём
+    // объяснение действительно только для ТЕКУЩЕГО отпечатка сигнала (§15):
+    // новое ослабление тестов не прикрывается старой отпиской.
     const signals = task.analysis?.signals ?? []
-    const acknowledged = new Set((task.acknowledgments ?? []).map(entry => entry.signal))
-    for (const signal of new Set(signals.map(entry => entry.kind))) {
-      if (ACKNOWLEDGEABLE_SIGNALS.includes(signal) && !acknowledged.has(signal)) {
-        blockers.push({ id: `SIGNAL_UNACKNOWLEDGED:${signal}`, message: `Сигнал ${signal} не объяснён и не устранён.` })
+    const ackBySignal = new Map((task.acknowledgments ?? []).map(entry => [entry.signal, entry]))
+    for (const kind of new Set(signals.map(entry => entry.kind))) {
+      if (!ACKNOWLEDGEABLE_SIGNALS.includes(kind)) continue
+      const ack = ackBySignal.get(kind)
+      const currentFingerprint = signalFingerprint(kind,
+        signals.filter(entry => entry.kind === kind).map(entry => entry.fingerprint).sort())
+      if (!ack) {
+        blockers.push({ id: `SIGNAL_UNACKNOWLEDGED:${kind}`, message: `Сигнал ${kind} не объяснён и не устранён.` })
+      } else if (ack.fingerprint !== currentFingerprint) {
+        blockers.push({ id: `SIGNAL_ACK_STALE:${kind}`, message: `Объяснение сигнала ${kind} относится к другому содержимому — сигнал изменился, объяснитесь заново.` })
       }
     }
 
-    // Upstream (§23–§25): релевантный сдвиг цели требует явного решения.
-    if (task.upstream?.status === 'UPSTREAM_RELEVANT' && !acknowledged.has('UPSTREAM_RELEVANT')) {
-      blockers.push({ id: 'UPSTREAM_RELEVANT', message: `Цель ушла вперёд и затронула связанные файлы (${String(task.upstream.behind)} коммитов) — обновите базу или объясните, почему это безопасно.` })
+    // Upstream (§23–§25): релевантный сдвиг цели требует явного решения,
+    // привязанного к КОНКРЕТНОМУ targetSha — новый сдвиг требует нового.
+    if (task.upstream?.status === 'UPSTREAM_RELEVANT') {
+      const ack = ackBySignal.get('UPSTREAM_RELEVANT')
+      if (!ack || ack.targetSha !== task.upstream.targetSha) {
+        blockers.push({ id: 'UPSTREAM_RELEVANT', message: `Цель ушла вперёд и затронула связанные файлы (${String(task.upstream.behind)} коммитов) — обновите базу или объясните, почему это безопасно.` })
+      }
     }
 
     // Regression-first для bugfix (§18).

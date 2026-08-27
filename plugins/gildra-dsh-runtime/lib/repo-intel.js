@@ -17,6 +17,7 @@ import { assertSegment } from './ids.js'
 import { git, revParse } from './gitx.js'
 import { appendAudit } from './audit.js'
 import { matchesAny, normalizePath } from './globs.js'
+import { stableHash } from './provenance.js'
 
 const PROFILES = 'repo-profiles'
 // Разумные потолки: профиль — карта, а не полная копия репозитория.
@@ -111,8 +112,11 @@ async function detectPackageManagers({ files }) {
   return { packageManagers: managers }
 }
 
-function commandEntry(id, argv, source) {
-  return { id, argv, source }
+// definition — фактическое содержимое источника команды (§16): для script —
+// его строка, для Makefile — тело таргета. Хэш определения делает одобрение
+// привязанным к содержимому: подменили script — доверие сгорело.
+function commandEntry(id, argv, source, definition) {
+  return { id, argv, source, definitionHash: stableHash(definition ?? argv) }
 }
 
 async function detectCommands({ files, read }) {
@@ -132,16 +136,21 @@ async function detectCommands({ files, read }) {
       const checkId = SCRIPT_TO_CHECK.get(name)
       // `npm test` — каноническая форма; остальное через `run`.
       const argv = name === 'test' ? [runner, 'test'] : [runner, 'run', name]
-      discovered.push(commandEntry(checkId ?? `script:${name}`, argv, 'package.json'))
+      discovered.push(commandEntry(checkId ?? `script:${name}`, argv, 'package.json', scripts[name]))
     }
   }
   if (present.has('Makefile')) {
-    const makefile = await read('Makefile')
-    for (const match of String(makefile ?? '').matchAll(/^([A-Za-z0-9][A-Za-z0-9_.-]*)\s*:(?!=)/gm)) {
+    const makefile = String(await read('Makefile') ?? '')
+    const targetMatches = [...makefile.matchAll(/^([A-Za-z0-9][A-Za-z0-9_.-]*)\s*:(?!=)/gm)]
+    for (let index = 0; index < targetMatches.length; index += 1) {
+      const match = targetMatches[index]
       const target = match[1]
       if (target === 'PHONY' || target.length > 60) continue
       const checkId = SCRIPT_TO_CHECK.get(target)
-      discovered.push(commandEntry(checkId ?? `make:${target}`, ['make', target], 'Makefile'))
+      // Тело таргета — до следующего таргета: его хэш и есть определение.
+      const bodyEnd = index + 1 < targetMatches.length ? targetMatches[index + 1].index : makefile.length
+      const definition = makefile.slice(match.index, bodyEnd).trim()
+      discovered.push(commandEntry(checkId ?? `make:${target}`, ['make', target], 'Makefile', definition))
     }
   }
   if (present.has('go.mod')) discovered.push(commandEntry('test', ['go', 'test', './...'], 'go.mod'))
@@ -271,11 +280,20 @@ export function createRepoIntel({ store, roots, projects }) {
     if (!Array.isArray(commands) || commands.length === 0) {
       throw new RuntimeError('INVALID_INPUT', 'Ожидался непустой список команд для одобрения.')
     }
+    // Одобряется КОНКРЕТНОЕ определение (§16): argv должен существовать в
+    // текущем профиле, и вместе с ним фиксируется definitionHash источника.
+    const profile = await getProfile(projectId)
     const approved = [...(project.approvedCommands ?? [])]
     for (const command of commands) {
       const id = typeof command?.id === 'string' && command.id !== '' ? command.id.slice(0, 60) : 'command'
       const argv = assertCommandArgv(command?.argv)
-      if (!approved.some(entry => argvEquals(entry.argv, argv))) approved.push({ id, argv })
+      const discovered = (profile.commands?.discovered ?? []).find(entry => argvEquals(entry.argv, argv))
+      if (!discovered) {
+        throw new RuntimeError('INVALID_INPUT', `Команда «${argv.join(' ')}» не найдена среди discovered текущего профиля — одобрять нечего.`, { argv })
+      }
+      if (!approved.some(entry => argvEquals(entry.argv, argv) && entry.definitionHash === discovered.definitionHash)) {
+        approved.push({ id, argv, definitionHash: discovered.definitionHash, sourceFile: discovered.source, sourceCommit: profile.commit })
+      }
     }
     if (approved.length > 50) {
       throw new RuntimeError('LIMIT_EXCEEDED', 'Слишком много одобренных команд (максимум 50).')
@@ -287,15 +305,20 @@ export function createRepoIntel({ store, roots, projects }) {
   }
 
   // Итоговый набор исполняемых команд: trusted-policy проекта + одобренные.
-  // Discovered БЕЗ одобрения сюда не попадает никогда.
-  function trustedCommands(project) {
+  // Discovered БЕЗ одобрения сюда не попадает никогда, а одобрение живо
+  // только пока СОДЕРЖИМОЕ определения не изменилось (§16): без профиля или
+  // при несовпадении definitionHash approved-команда снова лишь discovered.
+  function trustedCommands(project, profile) {
     const commands = []
     const policyChecks = project.qualityPolicy?.checks ?? {}
     for (const [id, check] of Object.entries(policyChecks)) {
       if (Array.isArray(check?.argv)) commands.push({ id, argv: check.argv, trust: 'trusted' })
     }
+    const discoveredNow = profile?.commands?.discovered ?? []
     for (const entry of project.approvedCommands ?? []) {
-      if (!commands.some(command => argvEquals(command.argv, entry.argv))) {
+      const stillMatches = discoveredNow.some(candidate =>
+        argvEquals(candidate.argv, entry.argv) && candidate.definitionHash === entry.definitionHash)
+      if (stillMatches && !commands.some(command => argvEquals(command.argv, entry.argv))) {
         commands.push({ id: entry.id, argv: entry.argv, trust: 'approved' })
       }
     }

@@ -8,6 +8,7 @@
 
 import { join } from 'node:path'
 
+import { RuntimeError } from './errors.js'
 import { createLifecycle } from './lifecycle.js'
 import { createJournal } from './journal.js'
 import {
@@ -383,7 +384,21 @@ export function registerRuntimeRoutes(ctx, runtime = createRuntime()) {
     }),
 
     route('/gildra/v1/tasks/acknowledge', {
-      POST: async ({ body }) => ({ payload: { task: await tasks.acknowledgeSignal(body.taskId, body) } }),
+      POST: async ({ body }) => {
+        // Актор проверяется ЗДЕСЬ: capability ревьюера → AI_REVIEWER;
+        // явный human-флаг → HUMAN (внутри Unix-границы доверия);
+        // иначе — writer, которому строгие сигналы гасить нельзя.
+        let verifiedActor
+        if (typeof body.capability === 'string') {
+          verifiedActor = await reviews.actorForCapability(body.taskId, body.capability)
+          if (!verifiedActor) {
+            throw new RuntimeError('WRITER_REVIEWER_CONFLICT', 'Capability не соответствует ни одному review этой задачи.', { taskId: body.taskId })
+          }
+        } else if (body.human === true) {
+          verifiedActor = { type: 'HUMAN', id: body.actorId }
+        }
+        return { payload: { task: await tasks.acknowledgeSignal(body.taskId, { ...body, verifiedActor }) } }
+      },
     }),
 
     route('/gildra/v1/tasks/verify', {

@@ -17,7 +17,7 @@ import { CURRENT_SCHEMA_VERSION } from './migrations.js'
 import { qualityPolicyOf } from './quality.js'
 import { analyzeTaskDiff } from './diff-analyzer.js'
 import { analyzeModularity } from './modularity.js'
-import { requirementRevisions, revisionsMatch } from './provenance.js'
+import { analysisHash, requirementRevisions, revisionsMatch, signalFingerprint } from './provenance.js'
 import { git } from './gitx.js'
 
 const REVIEWS = 'reviews'
@@ -136,7 +136,10 @@ export function createReviewManager({ store, roots, projects, tasks, workspaces,
       filesChanged: analysis.filesChanged,
       insertions: analysis.insertions,
       deletions: analysis.deletions,
-      signals: analysis.signals.map(signal => ({ kind: signal.kind })),
+      // Отпечаток каждого сигнала (§15): acknowledgment привязывается к
+      // конкретному содержимому, а не к имени класса сигнала.
+      signals: analysis.signals.map(signal => ({ kind: signal.kind, fingerprint: signalFingerprint(signal.kind, signal.detail) })),
+      analysisHash: analysisHash(analysis.signals),
       highRisk: analysis.highRisk,
       unexpectedFiles: analysis.scope.unexpectedFiles.slice(0, 20),
       dangerous: analysis.dangerous.slice(0, 20),
@@ -373,5 +376,18 @@ export function createReviewManager({ store, roots, projects, tasks, workspaces,
     return updated
   }
 
-  return { requestReview, submitReview, resolveFinding, getReview, analyzeTask, refreshTaskReviewSummary, buildReviewPacket }
+  // Актор по capability (§15, §33): ищем review задачи, чей хэш совпадает.
+  // Используется API-слоем для строгих acknowledgment'ов.
+  async function actorForCapability(taskId, capability) {
+    const task = await tasks.getTask(taskId)
+    for (const id of task.reviews ?? []) {
+      const row = await store.read(REVIEWS, id)
+      if (row && capabilityMatches(capability, row.capabilityHash)) {
+        return { type: 'AI_REVIEWER', id: row.reviewerAgent, reviewId: row.reviewId }
+      }
+    }
+    return undefined
+  }
+
+  return { requestReview, submitReview, resolveFinding, getReview, analyzeTask, refreshTaskReviewSummary, buildReviewPacket, actorForCapability }
 }

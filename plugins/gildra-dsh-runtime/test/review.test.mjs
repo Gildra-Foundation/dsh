@@ -241,15 +241,32 @@ await assert.rejects(
   verdict = await quality.readiness(task.taskId)
   const unacknowledged = verdict.blockers.filter(blocker => blocker.id.startsWith('SIGNAL_UNACKNOWLEDGED'))
   assert.ok(unacknowledged.length >= 2, `сигналы не должны гаснуть молча: ${JSON.stringify(verdict.blockers)}`)
-  await tasks.acknowledgeSignal(task.taskId, { signal: 'DEPENDENCY_CHANGE', explanation: 'brand-new-dep нужен для парсинга протокола; версия закреплена точно.' })
+  const reviewerActor = { verifiedActor: { type: 'AI_REVIEWER', id: 'reviewer-4' } }
+  await tasks.acknowledgeSignal(task.taskId, { signal: 'DEPENDENCY_CHANGE', explanation: 'brand-new-dep нужен для парсинга протокола; версия закреплена точно.', ...reviewerActor })
   await tasks.acknowledgeSignal(task.taskId, { signal: 'UNEXPECTED_CHANGE', explanation: 'package.json пришлось изменить ради новой зависимости — это и есть её манифест.' })
-  await tasks.acknowledgeSignal(task.taskId, { signal: 'TEST_WEAKENING', explanation: 'Ассерты не потеряны: тест переписан, старый logout-ассерт сохранён, счётчик реагирует на перестановку строк.' })
-  await tasks.acknowledgeSignal(task.taskId, { signal: 'BACKWARD_COMPATIBILITY', explanation: 'login() сохранён как алиас, удаления публичного API нет — сигнал от переписанной строки.' })
+  await tasks.acknowledgeSignal(task.taskId, { signal: 'TEST_WEAKENING', explanation: 'Ассерты не потеряны: тест переписан, старый logout-ассерт сохранён, счётчик реагирует на перестановку строк.', ...reviewerActor })
+  await tasks.acknowledgeSignal(task.taskId, { signal: 'BACKWARD_COMPATIBILITY', explanation: 'login() сохранён как алиас, удаления публичного API нет — сигнал от переписанной строки.', ...reviewerActor })
 
   verdict = await quality.readiness(task.taskId)
   assert.deepEqual(verdict.blockers, [], `после починки, ревью и объяснений задача готова: ${JSON.stringify(verdict.blockers)}`)
   const promoted = await quality.promoteIfReady(task.taskId)
   assert.equal(promoted.status, 'READY_FOR_HUMAN_REVIEW')
+}
+
+// --- 5б. Отпечаток acknowledgment: новое ослабление не прикрыто старым ----
+{
+  // Ещё одно, ДРУГОЕ ослабление тестов: добавляем .skip после того, как
+  // прежний TEST_WEAKENING уже был объяснён ревьюером.
+  await writeFile(join(workspace.path, 'test', 'auth.test.js'), 'it.skip("later", () => {})\nassert(login())\n')
+  await commitAll(workspace.path, 'weaken again', identity)
+  await reviews.analyzeTask(task.taskId)
+  const verdict = await quality.readiness(task.taskId)
+  assert.ok(verdict.blockers.some(blocker => blocker.id === 'SIGNAL_ACK_STALE:TEST_WEAKENING'),
+    `старое объяснение не должно покрывать новое ослабление: ${JSON.stringify(verdict.blockers.map(entry => entry.id))}`)
+  // Откатываем к состоянию до этого блока.
+  await writeFile(join(workspace.path, 'test', 'auth.test.js'), 'assert(login())\nassert(loginRenamed())\nassert(logout())\n')
+  await commitAll(workspace.path, 'restore tests', identity)
+  await reviews.analyzeTask(task.taskId)
 }
 
 // --- 7. APPROVED протухает вместе с headSha -------------------------------

@@ -171,21 +171,46 @@ const intel = createRepoIntel({ store, roots, projects })
 // --- 5. Уровни доверия команд ---------------------------------------------
 {
   const project = await projects.get('demo')
+  const profile = await intel.getProfile('demo')
   // Discovered ≠ исполняемо: без policy и одобрений trusted-набор пуст.
-  assert.deepEqual(intel.trustedCommands(project), [],
+  assert.deepEqual(intel.trustedCommands(project, profile), [],
     'discovered-команды не должны быть исполняемыми без явного одобрения')
 
-  // Одобрение точного argv делает команду approved.
+  // Одобрить можно только существующую discovered-команду (§16).
+  await assert.rejects(intel.approveCommands('demo', [{ id: 'ghost', argv: ['make', 'ghost'] }]),
+    /не найдена среди discovered/)
+
+  // Одобрение фиксирует definitionHash источника.
   await intel.approveCommands('demo', [{ id: 'test', argv: ['pnpm', 'test'] }])
-  const afterApprove = intel.trustedCommands(await projects.get('demo'))
+  const approvedEntry = (await projects.get('demo')).approvedCommands[0]
+  assert.equal(typeof approvedEntry.definitionHash, 'string')
+  assert.equal(approvedEntry.sourceFile, 'package.json')
+  assert.equal(approvedEntry.sourceCommit, profile.commit)
+  const afterApprove = intel.trustedCommands(await projects.get('demo'), profile)
   assert.equal(afterApprove.length, 1)
   assert.equal(afterApprove[0].trust, 'approved')
   assert.deepEqual(afterApprove[0].argv, ['pnpm', 'test'])
 
+  // §16: подмена СОДЕРЖИМОГО script при том же argv сжигает доверие.
+  const pkg = JSON.parse(await (async () => (await import('node:fs/promises')).readFile(join(repo, 'package.json'), 'utf8'))())
+  pkg.scripts.test = 'node totally-different.mjs'
+  await writeFile(join(repo, 'package.json'), JSON.stringify(pkg, null, 2))
+  await commitAll(repo, 'swap test script', { name: 'Seed', email: 'seed@test' })
+  const swappedProfile = await intel.getProfile('demo')
+  const afterSwap = intel.trustedCommands(await projects.get('demo'), swappedProfile)
+  assert.deepEqual(afterSwap, [],
+    'изменённое определение команды обязано вернуть её в discovered')
+  // Повторное одобрение нового определения восстанавливает доверие.
+  await intel.approveCommands('demo', [{ id: 'test', argv: ['pnpm', 'test'] }])
+  assert.equal(intel.trustedCommands(await projects.get('demo'), swappedProfile).length, 1)
+
+  // Без профиля approved-команды не считаются исполняемыми (нечем сверить).
+  assert.deepEqual(intel.trustedCommands(await projects.get('demo')), [])
+
   // Policy проекта — trusted и имеет приоритет при совпадении argv.
   const withPolicy = { ...(await projects.get('demo')), qualityPolicy: { checks: { lint: { argv: ['pnpm', 'run', 'lint'] } } } }
   await store.write('projects', 'demo', withPolicy)
-  const combined = intel.trustedCommands(await projects.get('demo'))
+  const combined = intel.trustedCommands(await projects.get('demo'), swappedProfile)
   assert.equal(combined.length, 2)
   assert.equal(combined.find(command => command.id === 'lint').trust, 'trusted')
 
