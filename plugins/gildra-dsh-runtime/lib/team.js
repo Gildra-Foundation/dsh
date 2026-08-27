@@ -142,6 +142,19 @@ export function createLocalTeamProvider({ dir }) {
 // «кто-то успел раньше»: перечитываем и повторяем; ЕСЛИ revision разошёлся —
 // честный конфликт, никаких silent overwrite.
 export function createGitTeamProvider({ clonePath, remoteUrl, identity = { name: 'Gildra Team', email: 'team@gildra.local' } }) {
+  // §13: ОДИН clone — ОДНА очередь. Все операции (fetch/reset/write/commit/
+  // push/release) сериализуются in-process mutex'ом по clonePath: два
+  // параллельных publish внутри одного Runtime иначе дерутся за index.lock
+  // и портят рабочее дерево координации. Межпроцессную конкуренцию решает
+  // сам git push (non-FF → retry) — общий лок между Runtime не нужен.
+  let queue = Promise.resolve()
+  function serialized(action) {
+    const next = queue.then(action, action)
+    // Очередь не должна навсегда «запоминать» отказ: ошибки уходят caller'у.
+    queue = next.catch(() => {})
+    return next
+  }
+
   let ready
   async function ensureClone() {
     ready ??= (async () => {
@@ -177,6 +190,10 @@ export function createGitTeamProvider({ clonePath, remoteUrl, identity = { name:
   }
 
   async function publish(relative, payload, expectedRevision) {
+    return serialized(() => publishUnsafe(relative, payload, expectedRevision))
+  }
+
+  async function publishUnsafe(relative, payload, expectedRevision) {
     for (let attempt = 1; attempt <= MAX_PUBLISH_RETRIES; attempt += 1) {
       await sync()
       const current = await readJson(relative)
@@ -198,6 +215,10 @@ export function createGitTeamProvider({ clonePath, remoteUrl, identity = { name:
   }
 
   async function listDir(projectId, kind) {
+    return serialized(() => listDirUnsafe(projectId, kind))
+  }
+
+  async function listDirUnsafe(projectId, kind) {
     await sync()
     const root = join(clonePath, 'projects', projectId, kind)
     const rows = []
@@ -215,7 +236,7 @@ export function createGitTeamProvider({ clonePath, remoteUrl, identity = { name:
     publishTaskStatus: (summary, opts) => publish(taskFile(summary.projectId, summary.taskId), summary, opts?.expectedRevision),
     publishDelivery: (summary, opts) => publish(taskFile(summary.projectId, summary.taskId), summary, opts?.expectedRevision),
     publishClaim: (summary, opts) => publish(taskFile(summary.projectId, summary.taskId), summary, opts?.expectedRevision),
-    releaseClaim: async (projectId, taskId) => {
+    releaseClaim: (projectId, taskId) => serialized(async () => {
       for (let attempt = 1; attempt <= MAX_PUBLISH_RETRIES; attempt += 1) {
         await sync()
         const relative = taskFile(projectId, taskId)
@@ -225,7 +246,7 @@ export function createGitTeamProvider({ clonePath, remoteUrl, identity = { name:
         if (!push.failed) return { released: true }
       }
       throw conflictError({ projectId, taskId })
-    },
+    }),
     listProjectTasks: projectId => listDir(projectId, 'tasks'),
     listProjectClaims: async projectId => (await listDir(projectId, 'tasks')).filter(row => (row.claims ?? []).length > 0),
   }
