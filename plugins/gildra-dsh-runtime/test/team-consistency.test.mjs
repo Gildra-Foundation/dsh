@@ -6,7 +6,7 @@
 //      payload;
 //   2. publish + release одновременно не повреждают clone;
 //   3. две публикации одной задачи с разной revision: CAS честно решает.
-// Часть 2 (strict/best-effort/fingerprint) добавляется следующим коммитом.
+// Часть 2: режимы синхронизации (§12) и teamSync-состояние (§15).
 
 import assert from 'node:assert/strict'
 import { existsSync } from 'node:fs'
@@ -95,5 +95,76 @@ const summaryOf = index => sanitizeTaskSummary({
   assert.equal(conflict.length, 1, 'вторая получает честный TEAM_STATE_CONFLICT')
 }
 
+// --- Часть 2: strict / best-effort ------------------------------------------
+{
+  const { runtimeRoots } = await import('../lib/paths.js')
+  const { JsonStore } = await import('../lib/store.js')
+  const { createProjectRegistry } = await import('../lib/projects.js')
+  const { createTaskManager } = await import('../lib/tasks.js')
+  const { createQualityManager } = await import('../lib/quality.js')
+  const { createWorkspaceManager } = await import('../lib/workspaces.js')
+  const { createProcessManager } = await import('../lib/processes.js')
+  const { commitAll } = await import('../lib/gitx.js')
+
+  const repo = join(base, 'project-repo')
+  await git(['init', '-b', 'main', repo])
+  await writeFile(join(repo, 'app.js'), 'export const x = 1\n')
+  await commitAll(repo, 'init', { name: 'S', email: 's@t' })
+
+  const roots = runtimeRoots({ GILDRA_DSH_STATE_DIR: join(base, 'state') })
+  const store2 = new JsonStore(roots.stateRoot)
+  await store2.ensureRoot()
+  const projects = createProjectRegistry({ store: store2, roots })
+  await projects.register({ projectId: 'demo', path: repo })
+  const workspaces = createWorkspaceManager({ store: store2, roots, projects, env: {} })
+  const processes = createProcessManager({ store: store2, roots })
+
+  // Провайдер, который ПАДАЕТ: недоступный remote.
+  const deadProvider = createGitTeamProvider({ clonePath: join(base, 'dead-clone'), remoteUrl: join(base, 'missing-origin.git') })
+  const tasks = createTaskManager({ store: store2, roots, projects, team: deadProvider })
+  const quality = createQualityManager({ store: store2, roots, projects, tasks, workspaces, processes })
+  const adminSetPolicy = (id, policy) => quality.setPolicy(id, policy, { verifiedAdmin: { actorId: 'test-admin' } })
+
+  async function makeTask(label) {
+    const workspace = await workspaces.createWorkspace({ projectId: 'demo', userId: 'alex', sessionId: `s-${label}` })
+    const { task } = await tasks.createTask({ projectId: 'demo', title: label, owner: 'alex' })
+    await tasks.attachWorkspace(task.taskId, {
+      workspaceId: workspace.workspaceId, sessionId: workspace.sessionId,
+      branch: workspace.branch, baseSha: workspace.baseSha,
+    })
+    await tasks.setModulePlan(task.taskId, { modulesToChange: [{ module: '(root)', reason: 'правка app.js' }] })
+    return task
+  }
+
+  // strict: провайдер мёртв → IMPLEMENTING не начинается, состояние честное.
+  await adminSetPolicy('demo', { required: ['review'], checks: {}, team: { mode: 'strict' } })
+  const strictTask = await makeTask('strict')
+  await assert.rejects(
+    tasks.transition(strictTask.taskId, 'IMPLEMENTING'),
+    error => ['TEAM_SYNC_DEGRADED', 'TEAM_SYNC_REQUIRED'].includes(error.code),
+    'strict-режим не работает fail-open',
+  )
+  const strictState = await tasks.teamSyncState('demo')
+  assert.equal(strictState.status, 'DEGRADED', 'сбой синхронизации виден в состоянии')
+  assert.equal(typeof strictState.lastError, 'string')
+
+  // best-effort: работа продолжается, но статус DEGRADED зафиксирован.
+  await adminSetPolicy('demo', { required: ['review'], checks: {}, team: { mode: 'best-effort' } })
+  const softTask = await makeTask('soft')
+  const started = await tasks.transition(softTask.taskId, 'IMPLEMENTING')
+  assert.equal(started.status, 'IMPLEMENTING', 'best-effort продолжает работу при сбое провайдера')
+  assert.equal((await tasks.teamSyncState('demo')).status, 'DEGRADED')
+
+  // strict без провайдера вовсе → TEAM_SYNC_REQUIRED.
+  const noTeamTasks = createTaskManager({ store: store2, roots, projects })
+  const bare = await makeTask('bare')
+  await adminSetPolicy('demo', { required: ['review'], checks: {}, team: { mode: 'strict' } })
+  await assert.rejects(
+    noTeamTasks.transition(bare.taskId, 'IMPLEMENTING'),
+    error => error.code === 'TEAM_SYNC_REQUIRED',
+  )
+  assert.equal((await noTeamTasks.teamSyncState('demo')).status, 'DISABLED')
+}
+
 await rm(base, { recursive: true, force: true })
-console.log('Gildra Runtime team consistency (serialization) tests passed.')
+console.log('Gildra Runtime team consistency tests passed.')

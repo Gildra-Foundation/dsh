@@ -108,6 +108,9 @@ export function qualityPolicyOf(project) {
         ? raw.reviewGate.blocking.map(String)
         : [...DEFAULT_REVIEW_GATE.blocking],
     },
+    team: {
+      mode: ['solo', 'best-effort', 'strict'].includes(raw.team?.mode) ? raw.team.mode : 'best-effort',
+    },
     delivery: {
       requirePullRequest: raw.delivery?.requirePullRequest === true,
       requirePushedBranch: raw.delivery?.requirePushedBranch === true,
@@ -146,6 +149,7 @@ export function createQualityManager({ store, roots, projects, tasks, workspaces
       qualityPolicy: {
         ...(required ? { required } : {}),
         checks,
+        ...(policy.team ? { team: policy.team } : {}),
         ...(policy.delivery ? { delivery: policy.delivery } : {}),
         ...(policy.verification ? { verification: policy.verification } : {}),
         ...(policy.architecture ? { architecture: policy.architecture } : {}),

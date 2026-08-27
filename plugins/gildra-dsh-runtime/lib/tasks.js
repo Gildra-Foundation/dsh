@@ -79,18 +79,39 @@ function actor(raw) {
 
 export const OVERLAP_DECISIONS = Object.freeze(['COORDINATE', 'CONTINUE', 'WAIT', 'TRANSFER_OWNERSHIP'])
 
+const TEAM_SYNC = 'team-sync'
+
 export function createTaskManager({ store, roots, projects, team, repoIntel }) {
-  // Best-effort публикация в командную координацию: недоступный провайдер не
-  // роняет локальную операцию, но факт фиксируется в notice задачи.
+  // Реальное состояние синхронизации (§15): UI не имеет права показывать
+  // claims «актуальными», если последняя публикация провалилась.
+  async function recordTeamSync(projectId, patch) {
+    const current = (await store.read(TEAM_SYNC, projectId)) ?? { schemaVersion: CURRENT_SCHEMA_VERSION, projectId }
+    const next = { ...current, ...patch, provider: team?.backend, updatedAt: new Date().toISOString() }
+    await store.write(TEAM_SYNC, projectId, next)
+    return next
+  }
+
+  async function teamSyncState(projectId) {
+    if (!team) return { status: 'DISABLED', provider: undefined }
+    return (await store.read(TEAM_SYNC, projectId)) ?? { status: 'HEALTHY', provider: team.backend }
+  }
+
+  // Публикация в командную координацию. Возвращает исход, а решение —
+  // best-effort или strict — принимает вызывающий по team-политике (§12).
   async function publishToTeam(record) {
-    if (!team) return
+    if (!team) return { ok: true, disabled: true }
     try {
       const summary = sanitizeTaskSummary(record)
-      const existing = (await team.listProjectTasks(record.projectId).catch(() => []))
+      const existing = (await team.listProjectTasks(record.projectId))
         .find(entry => entry.taskId === record.taskId)
-      await team.publishTaskSummary(summary, { expectedRevision: existing?.revision ?? 0 })
+      const published = await team.publishTaskSummary(summary, { expectedRevision: existing?.revision ?? 0 })
+      await recordTeamSync(record.projectId, { status: 'HEALTHY', lastRevision: published.revision, lastSuccessAt: new Date().toISOString(), lastError: undefined })
+      return { ok: true, revision: published.revision }
     } catch (error) {
+      const status = error?.code === 'TEAM_STATE_CONFLICT' ? 'CONFLICT' : 'DEGRADED'
+      await recordTeamSync(record.projectId, { status, lastError: String(error?.code ?? error).slice(0, 120) })
       await appendAudit(roots.stateRoot, 'team.publish.failed', { taskId: record.taskId, code: error?.code ?? 'ERROR' })
+      return { ok: false, status, error }
     }
   }
   async function getTask(taskId) {
@@ -234,13 +255,36 @@ export function createTaskManager({ store, roots, projects, team, repoIntel }) {
     // module/semantic — включая другие Runtime) вычисляются, и при их наличии
     // требуется ЯВНОЕ зафиксированное решение — молча игнорировать нельзя.
     if (status === 'IMPLEMENTING' && record.workspaceId) {
-      await publishToTeam(record)
-      const plannedModules = [
+      const project = await projects.get(record.projectId)
+      const teamMode = project.qualityPolicy?.team?.mode ?? (team ? 'best-effort' : 'solo')
+      const sync = await publishToTeam(record)
+      // §12 strict: без успешной публикации claims и живого чтения командного
+      // состояния write-фаза не начинается — молчаливый fail-open запрещён.
+      if (teamMode === 'strict') {
+        if (!team) {
+          throw new RuntimeError('TEAM_SYNC_REQUIRED', 'Проект в strict-режиме командной синхронизации, но Team Provider не настроен.', { taskId })
+        }
+        if (!sync.ok) {
+          throw new RuntimeError(sync.status === 'CONFLICT' ? 'TEAM_STATE_CONFLICT' : 'TEAM_SYNC_DEGRADED', 'Команду не удалось синхронизировать — в strict-режиме работа не начинается, пока claims не опубликованы и не прочитано актуальное состояние.', { taskId, status: sync.status })
+        }
+      }
+      let plannedModules = [
         ...(record.modulePlan?.modulesToChange ?? []).map(entry => entry.module),
         ...(record.modulePlan?.newModules ?? []).map(entry => entry.id),
       ]
-      const overlaps = await overlapsFor(record.projectId, { claims: record.claims ?? [], modules: plannedModules, excludeTaskId: taskId })
-      const semantic = await semanticOverlapsFor(record.projectId, { modules: plannedModules, excludeTaskId: taskId })
+      let overlaps
+      let semantic
+      try {
+        overlaps = await overlapsFor(record.projectId, { claims: record.claims ?? [], modules: plannedModules, excludeTaskId: taskId })
+        semantic = await semanticOverlapsFor(record.projectId, { modules: plannedModules, excludeTaskId: taskId })
+      } catch (error) {
+        if (teamMode === 'strict') {
+          await recordTeamSync(record.projectId, { status: 'DEGRADED', lastError: String(error?.code ?? error).slice(0, 120) })
+          throw new RuntimeError('TEAM_SYNC_DEGRADED', 'Не удалось прочитать командные claims — в strict-режиме это блокирует начало работы.', { taskId })
+        }
+        overlaps = []
+        semantic = []
+      }
       if ((overlaps.length > 0 || semantic.length > 0) && !record.overlapDecision) {
         throw new RuntimeError('OVERLAP_DECISION_REQUIRED', 'Работа пересекается с активными задачами команды — зафиксируйте решение (COORDINATE/CONTINUE/WAIT/TRANSFER_OWNERSHIP) прежде чем писать код.', {
           taskId, overlaps, semantic,
@@ -602,6 +646,7 @@ export function createTaskManager({ store, roots, projects, team, repoIntel }) {
     overlapsFor,
     semanticOverlapsFor,
     teamOverview,
+    teamSyncState,
     saveTask,
   }
 }
