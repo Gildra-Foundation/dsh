@@ -30,6 +30,7 @@ import { createWorkspaceManager } from './workspaces.js'
 import { createSessionManager } from './sessions.js'
 import { createTaskManager } from './tasks.js'
 import { createRepoIntel } from './repo-intel.js'
+import { createTeamProvider } from './team.js'
 import { createQualityManager } from './quality.js'
 import { createReviewManager } from './review.js'
 import { createUpstreamMonitor } from './upstream.js'
@@ -63,16 +64,17 @@ export function createRuntime({ env = process.env } = {}) {
   const journal = createJournal({ roots })
   const workspaces = createWorkspaceManager({ store, roots, projects, leases, processes, journal, env })
   const sessions = createSessionManager({ store, roots, projects, workspaces, leases, processes, ports, journal, env })
-  const tasks = createTaskManager({ store, roots, projects })
-  // Слой AI-качества (docs/ai-quality.md): profile → задача → verification →
-  // независимое ревью → readiness. Всё поверх тех же store/processes/git.
+  // Слой AI-качества (docs/ai-quality.md, docs/modularity.md): порядок
+  // создания отражает зависимости — intel и team нужны задачам для overlap.
   const repoIntel = createRepoIntel({ store, roots, projects })
+  const team = createTeamProvider({ env, roots })
+  const tasks = createTaskManager({ store, roots, projects, team, repoIntel })
   const quality = createQualityManager({ store, roots, projects, tasks, workspaces, processes })
   const reviews = createReviewManager({ store, roots, projects, tasks, workspaces, repoIntel })
   const upstream = createUpstreamMonitor({ roots, projects, tasks })
   const contextBuilder = createContextBuilder({ projects, tasks, workspaces, sessions, repoIntel, upstream })
   const lifecycle = createLifecycle({ roots, store, sessions, projects })
-  return { roots, store, projects, leases, processes, ports, workspaces, sessions, tasks, repoIntel, quality, reviews, upstream, contextBuilder, lifecycle }
+  return { roots, store, projects, leases, processes, ports, workspaces, sessions, tasks, repoIntel, team, quality, reviews, upstream, contextBuilder, lifecycle }
 }
 
 export function registerRuntimeRoutes(ctx, runtime = createRuntime()) {
@@ -375,6 +377,14 @@ export function registerRuntimeRoutes(ctx, runtime = createRuntime()) {
       },
     }),
 
+    route('/gildra/v1/repo/module-map', {
+      GET: async ({ query }) => ({ payload: { moduleMap: await repoIntel.getModuleMap(query.get('projectId') ?? '', { refresh: query.get('refresh') === '1' }) } }),
+    }),
+
+    route('/gildra/v1/tasks/overlap-decision', {
+      POST: async ({ body }) => ({ payload: { task: await tasks.recordOverlapDecision(body.taskId, body) } }),
+    }),
+
     route('/gildra/v1/tasks/module-plan', {
       POST: async ({ body }) => ({ payload: { task: await tasks.setModulePlan(body.taskId, body.plan ?? body) } }),
     }),
@@ -464,7 +474,12 @@ export function registerRuntimeRoutes(ctx, runtime = createRuntime()) {
     }),
 
     route('/gildra/v1/team', {
-      GET: async ({ query }) => ({ payload: { team: await tasks.teamOverview(query.get('projectId') ?? undefined) } }),
+      GET: async ({ query }) => ({
+        payload: {
+          team: await tasks.teamOverview(query.get('projectId') ?? undefined),
+          provider: runtime.team?.backend,
+        },
+      }),
     }),
 
     route('/gildra/v1/recovery/scan', {

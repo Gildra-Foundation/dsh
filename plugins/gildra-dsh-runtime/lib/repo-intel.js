@@ -18,6 +18,7 @@ import { git, revParse } from './gitx.js'
 import { appendAudit } from './audit.js'
 import { matchesAny, normalizePath } from './globs.js'
 import { stableHash } from './provenance.js'
+import { buildModuleMap } from './architecture.js'
 
 const PROFILES = 'repo-profiles'
 // Разумные потолки: профиль — карта, а не полная копия репозитория.
@@ -325,5 +326,38 @@ export function createRepoIntel({ store, roots, projects }) {
     return commands
   }
 
-  return { getProfile, approveCommands, trustedCommands, checkIds: CHECK_IDS }
+  // Machine-readable Module Map (§5): строится инструментами из tree+imports,
+  // кэшируется по commit и хэшу архитектурной политики.
+  async function getModuleMap(projectId, { refresh = false } = {}) {
+    const project = await projects.get(projectId)
+    const profile = await getProfile(projectId)
+    const architecture = project.qualityPolicy?.architecture
+    const cacheKey = `${profile.commit}:${stableHash(architecture ?? null)}`
+    const cached = await store.read('module-maps', projectId)
+    if (cached && cached.cacheKey === cacheKey && !refresh) return cached
+    const { files } = await (async () => {
+      const { stdout } = await git(['-C', project.canonicalRepoPath, 'ls-tree', '-r', '--name-only', profile.commit])
+      return { files: stdout.split('\n').filter(Boolean).map(normalizePath) }
+    })()
+    const map = await buildModuleMap({
+      files,
+      read: makeRead(project.canonicalRepoPath, profile.commit),
+      policy: architecture,
+      ownersRules: profile.owners?.rules ?? [],
+    })
+    const record = {
+      schemaVersion: CURRENT_SCHEMA_VERSION,
+      projectId,
+      cacheKey,
+      commit: profile.commit,
+      builtAt: new Date().toISOString(),
+      modules: map.modules,
+      // Map → сериализуемый вид для durable-кэша.
+      moduleEdges: Object.fromEntries([...map.moduleEdges].map(([from, targets]) => [from, [...targets].sort()])),
+    }
+    await store.write('module-maps', projectId, record)
+    return record
+  }
+
+  return { getProfile, getModuleMap, approveCommands, trustedCommands, checkIds: CHECK_IDS }
 }

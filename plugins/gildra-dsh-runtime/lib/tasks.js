@@ -15,7 +15,8 @@ import { RuntimeError } from './errors.js'
 import { assertId, generateId } from './ids.js'
 import { appendAudit } from './audit.js'
 import { CURRENT_SCHEMA_VERSION } from './migrations.js'
-import { detectOverlaps, normalizeClaims } from './claims.js'
+import { detectOverlaps, detectSemanticOverlaps, normalizeClaims } from './claims.js'
+import { sanitizeTaskSummary } from './team.js'
 import { signalFingerprint } from './provenance.js'
 
 const TASKS = 'tasks'
@@ -76,7 +77,22 @@ function actor(raw) {
   return raw === undefined || raw === null ? undefined : String(raw).slice(0, 100)
 }
 
-export function createTaskManager({ store, roots, projects }) {
+export const OVERLAP_DECISIONS = Object.freeze(['COORDINATE', 'CONTINUE', 'WAIT', 'TRANSFER_OWNERSHIP'])
+
+export function createTaskManager({ store, roots, projects, team, repoIntel }) {
+  // Best-effort публикация в командную координацию: недоступный провайдер не
+  // роняет локальную операцию, но факт фиксируется в notice задачи.
+  async function publishToTeam(record) {
+    if (!team) return
+    try {
+      const summary = sanitizeTaskSummary(record)
+      const existing = (await team.listProjectTasks(record.projectId).catch(() => []))
+        .find(entry => entry.taskId === record.taskId)
+      await team.publishTaskSummary(summary, { expectedRevision: existing?.revision ?? 0 })
+    } catch (error) {
+      await appendAudit(roots.stateRoot, 'team.publish.failed', { taskId: record.taskId, code: error?.code ?? 'ERROR' })
+    }
+  }
   async function getTask(taskId) {
     const record = await store.read(TASKS, assertId(taskId, 'taskId'))
     if (!record) throw new RuntimeError('TASK_NOT_FOUND', `Задача «${taskId}» не найдена.`, { taskId })
@@ -96,12 +112,43 @@ export function createTaskManager({ store, roots, projects }) {
     return rows
   }
 
-  // Пересечение claims/файлов кандидата с чужими активными задачами проекта.
-  async function overlapsFor(projectId, { claims = [], files = [], excludeTaskId } = {}) {
-    const others = (await listTasks({ projectId, activeOnly: true }))
+  // Чужие активные задачи: локальные + командные (другие Runtime через
+  // провайдера). Дедупликация по taskId — свои публикации не «чужие».
+  async function foreignTasks(projectId, excludeTaskId) {
+    const local = (await listTasks({ projectId, activeOnly: true }))
       .filter(record => record.taskId !== excludeTaskId)
-      .map(record => ({ taskId: record.taskId, owner: record.owner, claims: record.claims ?? [] }))
-    return detectOverlaps({ claims, files }, others)
+      .map(record => ({
+        taskId: record.taskId,
+        owner: record.owner,
+        claims: record.claims ?? [],
+        affectedModules: record.analysis?.modularity?.changedModules ?? [],
+      }))
+    const localIds = new Set([...local.map(entry => entry.taskId), excludeTaskId])
+    const remote = team
+      ? (await team.listProjectTasks(projectId).catch(() => []))
+        .filter(entry => !localIds.has(entry.taskId) && ACTIVE_TASK_STATUSES.includes(entry.status))
+        .map(entry => ({ ...entry, remote: true }))
+      : []
+    return [...local, ...remote]
+  }
+
+  // Пересечение claims/файлов/модулей кандидата с чужими активными задачами —
+  // включая задачи ДРУГИХ Runtime (§27): path + module уровни.
+  async function overlapsFor(projectId, { claims = [], files = [], modules = [], excludeTaskId } = {}) {
+    return detectOverlaps({ claims, files, modules }, await foreignTasks(projectId, excludeTaskId))
+  }
+
+  // Семантический уровень (§27): по рёбрам module-графа проекта.
+  async function semanticOverlapsFor(projectId, { modules = [], excludeTaskId } = {}) {
+    if (!repoIntel || modules.length === 0) return []
+    const map = await repoIntel.getModuleMap(projectId).catch(() => undefined)
+    if (!map) return []
+    const moduleEdges = new Map(Object.entries(map.moduleEdges ?? {}).map(([from, targets]) => [from, new Set(targets)]))
+    return detectSemanticOverlaps({
+      myModules: modules,
+      others: await foreignTasks(projectId, excludeTaskId),
+      moduleEdges,
+    })
   }
 
   async function createTask({ projectId, title, kind = 'feature', baseBranch, owner, acceptanceCriteria, expectedAreas, claims, confirmExclusiveOverlap = false }) {
@@ -183,6 +230,23 @@ export function createTaskManager({ store, roots, projects }) {
     if (status === 'IMPLEMENTING' && record.workspaceId && !record.modulePlan) {
       throw new RuntimeError('MODULE_PLAN_REQUIRED', 'Перед реализацией зафиксируйте Module Change Plan: какие модули меняются и почему (POST /gildra/v1/tasks/module-plan).', { taskId })
     }
+    // §28: до write-фазы claims публикуются команде, пересечения (path/
+    // module/semantic — включая другие Runtime) вычисляются, и при их наличии
+    // требуется ЯВНОЕ зафиксированное решение — молча игнорировать нельзя.
+    if (status === 'IMPLEMENTING' && record.workspaceId) {
+      await publishToTeam(record)
+      const plannedModules = [
+        ...(record.modulePlan?.modulesToChange ?? []).map(entry => entry.module),
+        ...(record.modulePlan?.newModules ?? []).map(entry => entry.id),
+      ]
+      const overlaps = await overlapsFor(record.projectId, { claims: record.claims ?? [], modules: plannedModules, excludeTaskId: taskId })
+      const semantic = await semanticOverlapsFor(record.projectId, { modules: plannedModules, excludeTaskId: taskId })
+      if ((overlaps.length > 0 || semantic.length > 0) && !record.overlapDecision) {
+        throw new RuntimeError('OVERLAP_DECISION_REQUIRED', 'Работа пересекается с активными задачами команды — зафиксируйте решение (COORDINATE/CONTINUE/WAIT/TRANSFER_OWNERSHIP) прежде чем писать код.', {
+          taskId, overlaps, semantic,
+        })
+      }
+    }
     // Возврат в работу очищает причины прошлой остановки.
     if (status === 'IMPLEMENTING' || status === 'FIXING_REVIEW') {
       delete record.blockReason
@@ -191,6 +255,7 @@ export function createTaskManager({ store, roots, projects }) {
     record.status = status
     const updated = await saveTask(record)
     await appendAudit(roots.stateRoot, 'task.transition', { taskId, status, ...(failureKind ? { failureKind } : {}) })
+    await publishToTeam(updated)
     return updated
   }
 
@@ -287,6 +352,22 @@ export function createTaskManager({ store, roots, projects }) {
     }
     const updated = await saveTask(record)
     await appendAudit(roots.stateRoot, 'task.module-plan', { taskId, modules: normalizedChanges.length, newModules: normalizedNew.length })
+    return updated
+  }
+
+  // §28: явная фиксация решения по пересечению.
+  async function recordOverlapDecision(taskId, { decision, note }) {
+    const record = await getTask(taskId)
+    if (!OVERLAP_DECISIONS.includes(decision)) {
+      throw new RuntimeError('INVALID_INPUT', `Решение по пересечению: ${OVERLAP_DECISIONS.join('/')}.`, { allowed: OVERLAP_DECISIONS })
+    }
+    record.overlapDecision = {
+      decision,
+      ...(note ? { note: String(note).slice(0, 500) } : {}),
+      createdAt: new Date().toISOString(),
+    }
+    const updated = await saveTask(record)
+    await appendAudit(roots.stateRoot, 'task.overlap-decision', { taskId, decision })
     return updated
   }
 
@@ -448,6 +529,15 @@ export function createTaskManager({ store, roots, projects }) {
   // ожидающие ревью и CI-падения — данные для Team View.
   async function teamOverview(projectId) {
     const active = await listTasks({ projectId, activeOnly: true })
+    // Команда — это не только этот Runtime: подмешиваем задачи других
+    // участников из провайдера (§34), без секретов по построению.
+    const localIds = new Set(active.map(task => task.taskId))
+    const remote = team && projectId
+      ? (await team.listProjectTasks(projectId).catch(() => []))
+        .filter(entry => !localIds.has(entry.taskId) && ACTIVE_TASK_STATUSES.includes(entry.status))
+        .map(entry => ({ ...entry, remote: true }))
+      : []
+    active.push(...remote)
     const byOwner = {}
     for (const task of active) {
       const owner = task.owner ?? '(без владельца)'
@@ -498,7 +588,9 @@ export function createTaskManager({ store, roots, projects }) {
     recordDelivery,
     recordCiEvidence,
     recordHumanApproval,
+    recordOverlapDecision,
     overlapsFor,
+    semanticOverlapsFor,
     teamOverview,
     saveTask,
   }

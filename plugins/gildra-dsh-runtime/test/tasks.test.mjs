@@ -22,6 +22,7 @@ import { runtimeRoots } from '../lib/paths.js'
 import { JsonStore } from '../lib/store.js'
 import { createProjectRegistry } from '../lib/projects.js'
 import { createTaskManager, ACKNOWLEDGEABLE_SIGNALS, TASK_STATUSES } from '../lib/tasks.js'
+import { createLocalTeamProvider, sanitizeTaskSummary } from '../lib/team.js'
 import { extractImports, normalizeClaims, relatedByImports, resolveImport } from '../lib/claims.js'
 
 const base = await mkdtemp(join(tmpdir(), 'gildra tasks '))
@@ -99,6 +100,59 @@ const tasks = createTaskManager({ store, roots, projects })
   // Задача без workspace (чистое планирование) план не требует.
   const { task: paper } = await tasks.createTask({ projectId: 'demo', title: 'Paper task', owner: 'alex' })
   await tasks.transition(paper.taskId, 'IMPLEMENTING')
+}
+
+// --- 3в. Team overlap gate до implementation (§27–§28) ---------------------
+{
+  // Второй «Runtime» (Peter) публикует свою задачу через общий провайдер.
+  const shared = createLocalTeamProvider({ dir: join(base, 'team-shared') })
+  await shared.publishTaskSummary(sanitizeTaskSummary({
+    projectId: 'demo', taskId: 'task-peter-remote', title: 'Auth token', owner: 'peter',
+    status: 'IMPLEMENTING',
+    claims: [{ type: 'PATH', area: 'src/shared-auth/**', mode: 'CLAIMED' }],
+    analysis: { modularity: { changedModules: ['auth.service'] } },
+  }))
+
+  const teamTasks = createTaskManager({ store, roots, projects, team: shared })
+  const { task, overlaps } = await teamTasks.createTask({
+    projectId: 'demo', title: 'Our auth work', owner: 'alex',
+    claims: ['src/shared-auth/token.js'],
+  })
+  assert.ok(overlaps.some(entry => entry.taskId === 'task-peter-remote'),
+    'пересечение с задачей ДРУГОГО Runtime видно уже при создании')
+
+  await teamTasks.attachWorkspace(task.taskId, {
+    workspaceId: 'ws-team', sessionId: 'sess-team', branch: 'session/alex/team', baseSha: 'c'.repeat(40),
+  })
+  await teamTasks.setModulePlan(task.taskId, {
+    modulesToChange: [{ module: 'auth.service', reason: 'меняем выдачу токена' }],
+  })
+  // §28: с незафиксированным решением write-фаза не начинается.
+  await assert.rejects(
+    teamTasks.transition(task.taskId, 'IMPLEMENTING'),
+    error => error.code === 'OVERLAP_DECISION_REQUIRED'
+      && error.details.overlaps.some(entry => entry.taskId === 'task-peter-remote'),
+    'пересечение с чужим Runtime нельзя проигнорировать молча',
+  )
+  // MODULE-уровень: чужие affectedModules пересеклись с нашим планом.
+  const moduleOverlaps = await teamTasks.overlapsFor('demo', { modules: ['auth.service'], excludeTaskId: task.taskId })
+  assert.ok(moduleOverlaps.some(entry => entry.kind === 'MODULE' && entry.taskId === 'task-peter-remote'))
+
+  await assert.rejects(teamTasks.recordOverlapDecision(task.taskId, { decision: 'SHRUG' }), /Решение по пересечению/)
+  await teamTasks.recordOverlapDecision(task.taskId, { decision: 'COORDINATE', note: 'Согласовано с Peter в чате: он не трогает выдачу.' })
+  const started = await teamTasks.transition(task.taskId, 'IMPLEMENTING')
+  assert.equal(started.status, 'IMPLEMENTING')
+  assert.equal(started.overlapDecision.decision, 'COORDINATE')
+
+  // Наша задача опубликована команде (виден статус и claims, без секретов).
+  const published = (await shared.listProjectTasks('demo')).find(entry => entry.taskId === task.taskId)
+  assert.ok(published, 'transition публикует сводку задачи')
+  assert.equal(published.status, 'IMPLEMENTING')
+  assert.ok(!JSON.stringify(published).includes('ws-team'), 'workspace id/пути не публикуются')
+
+  // Merged team view: чужая задача видна в обзоре.
+  const overview = await teamTasks.teamOverview('demo')
+  assert.ok(Object.values(overview.byOwner).flat().some(entry => entry.taskId === 'task-peter-remote'))
 }
 
 // --- 4. Dirty precondition (§39) ------------------------------------------
