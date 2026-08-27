@@ -6,6 +6,7 @@
 // защищённые ветки только через merge, ничего не удаляется при live
 // lease/dirty/процессах без явного подтверждения.
 
+import { createHash } from 'node:crypto'
 import { access, mkdir, readFile, realpath, rm } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { RuntimeError } from './errors.js'
@@ -152,39 +153,92 @@ export function createWorkspaceManager({ store, roots, projects, leases, process
 
   // Dry-run: объясняет, почему workspace нельзя удалить, кодами — UI
   // показывает причины и запрашивает подтверждения по каждой.
+  //
+  // planToken — отпечаток фактического состояния (блокеры + поколение lease +
+  // HEAD ветки). Execute обязан предъявить его: если между preview и удалением
+  // состояние изменилось (появились изменения, ожил процесс, workspace
+  // перехватили), токен не совпадёт и разрушительный шаг не выполнится.
   async function cleanupPlan(id) {
     const record = await getRecord(id)
     const project = await projects.get(record.projectId)
     const reasons = []
+    let leaseGeneration
     if (leases) {
       const lease = await leases.stateOf(id)
+      leaseGeneration = lease.generation
       if (lease.state === 'ACTIVE') reasons.push({ code: 'WORKSPACE_LOCKED', message: 'Активный write-lease другой сессии.' })
     }
     if (processes) {
       const live = await processes.listForSession(record.sessionId, { aliveOnly: true })
       if (live.length > 0) reasons.push({ code: 'LIVE_PROCESSES', message: `Живые процессы сессии: ${String(live.length)}.` })
     }
+    let dirtyCount = 0
     if (await pathExists(record.path)) {
       const dirty = await dirtyFiles(record.path)
+      dirtyCount = dirty.length
       if (dirty.length > 0) reasons.push({ code: 'WORKSPACE_DIRTY', message: `Незакоммиченные изменения: ${String(dirty.length)} файл(ов).` })
     }
+    let branchHead
     if (await branchExists(project.canonicalRepoPath, record.branch)) {
+      branchHead = await revParse(project.canonicalRepoPath, record.branch)
       const merged = await isMergedInto(project.canonicalRepoPath, record.branch, project.defaultBranch)
       if (!merged) reasons.push({ code: 'BRANCH_NOT_MERGED', message: `Ветка «${record.branch}» не влита в «${project.defaultBranch}».` })
     }
-    return { workspaceId: id, removable: reasons.length === 0, reasons }
+    const planToken = createHash('sha256').update(JSON.stringify({
+      id,
+      blockers: reasons.map(reason => reason.code).sort(),
+      leaseGeneration: leaseGeneration ?? null,
+      dirtyCount,
+      branchHead: branchHead ?? null,
+    })).digest('hex').slice(0, 32)
+    return {
+      workspaceId: id,
+      removable: reasons.length === 0,
+      reasons,
+      blockers: reasons.map(reason => reason.code),
+      planToken,
+      leaseGeneration,
+    }
   }
 
-  async function cleanupWorkspace(id, { confirmDirty = false, confirmUnmerged = false, ownerToken } = {}) {
+  async function cleanupWorkspace(id, options = {}) {
+    // Разрушительная часть целиком под локом workspace: между проверкой
+    // блокеров и удалением никто не должен успеть изменить состояние
+    // (create↔cleanup, cleanup↔cleanup, появление изменений).
+    return store.withLock(`workspace-${id.replaceAll('--', '-')}`, () => cleanupWorkspaceLocked(id, options), { timeoutMs: 60_000 })
+  }
+
+  async function cleanupWorkspaceLocked(id, { confirmDirty = false, confirmUnmerged = false, ownerToken, expectedPlanToken } = {}) {
     const record = await getRecord(id)
     const project = await projects.get(record.projectId)
     const plan = await cleanupPlan(id)
+    // Повторная валидация плана под локом (TOCTOU): если вызывающий видел
+    // другой план, удалять нельзя — состояние успело измениться.
+    if (expectedPlanToken !== undefined && expectedPlanToken !== plan.planToken) {
+      throw new RuntimeError('WORKSPACE_BUSY', 'Состояние workspace изменилось после предпросмотра плана. Повторите проверку.', {
+        workspaceId: id,
+        blockers: plan.blockers,
+      })
+    }
+    // Fencing: предъявленный токен должен быть токеном ТЕКУЩЕГО поколения
+    // lease — «воскресший» writer со старым токеном ничего не удалит.
+    if (ownerToken && leases) {
+      const lease = await leases.stateOf(id)
+      if (lease.state !== 'FREE') {
+        await leases.assertFence(id, { ownerToken, generation: lease.generation })
+      }
+    }
+    // Сначала ПРОВЕРЯЕМ все блокеры и только потом мутируем: отклонённый
+    // cleanup не должен оставлять следов. Раньше снятие собственного lease
+    // происходило до проверки dirty/unmerged, и неудачная попытка молча
+    // разблокировала workspace, ломая последующий план.
+    const ownsLease = Boolean(ownerToken && leases
+      && (await leases.stateOf(id)).state !== 'FREE'
+      && (await leases.assertFence(id, { ownerToken }).then(() => true, () => false)))
     for (const reason of plan.reasons) {
       if (reason.code === 'WORKSPACE_LOCKED') {
         // Свой lease можно снять токеном; чужой активный — нельзя никогда.
-        if (!(ownerToken && await leases.releaseIfOwner(id, ownerToken))) {
-          throw new RuntimeError('WORKSPACE_LOCKED', reason.message, { workspaceId: id })
-        }
+        if (!ownsLease) throw new RuntimeError('WORKSPACE_LOCKED', reason.message, { workspaceId: id })
       } else if (reason.code === 'LIVE_PROCESSES') {
         throw new RuntimeError('LIVE_PROCESSES', reason.message, { workspaceId: id })
       } else if (reason.code === 'WORKSPACE_DIRTY' && !confirmDirty) {
@@ -193,6 +247,8 @@ export function createWorkspaceManager({ store, roots, projects, leases, process
         throw new RuntimeError('WORKSPACE_DIRTY', `${reason.message} Подтвердите удаление явно (confirmUnmerged).`, { workspaceId: id, branchNotMerged: true })
       }
     }
+    // Все предусловия выполнены — с этого места операция мутирует состояние.
+    if (ownsLease) await leases.releaseIfOwner(id, ownerToken)
 
     if (await pathExists(record.path)) {
       await removeWorktree(project.canonicalRepoPath, record.path, { force: confirmDirty })
