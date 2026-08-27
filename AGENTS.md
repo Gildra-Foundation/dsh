@@ -47,6 +47,7 @@ DOM Harness).
 | Файлов в `install/`, корневых лаунчеров | `.claude/skills/installer-parity/SKILL.md` |
 | `plugins/gildra-dsh-ui-compact` (client.js / index.js) | `.claude/skills/client-feature/SKILL.md` |
 | `plugins/gildra-dsh-runtime` (sessions/workspaces/leases) | `docs/runtime-reliability.md` — контракт конкуренции и восстановления |
+| Task/quality-слоя Runtime (tasks/quality/review/claims) | `docs/ai-quality.md` — конвейер качества и Definition of Done |
 | Реализации фичи или багфикса (до написания кода) | `.claude/skills/test-driven-development/SKILL.md` |
 | Любого бага, падающего теста, странного поведения | `.claude/skills/systematic-debugging/SKILL.md` |
 | Плана крупной задачи | `.claude/skills/writing-plans/SKILL.md` |
@@ -72,6 +73,11 @@ DOM Harness).
   продублированы по многим файлам** — меняешь значение, грепни репозиторий.
 - В `plugins/gildra-dsh-ui-compact/test.mjs` ассерты привязаны к тексту
   `client.js` — рефакторинг клиента требует синхронного обновления ассертов.
+- **`READY_FOR_HUMAN_REVIEW` вычисляется, а не назначается**: единственный
+  путь — quality-gate (`promoteIfReady`); статус нельзя выставить транзишеном
+  или записью в store, writer не бывает собственным reviewer, а мутации
+  canonical-репозитория (worktree/ветки/CAS) работают только под
+  `withRepoLock` — вне scope они падают.
 - **Managed git идёт только через `lib/gitx.js`**: там очищается окружение и
   отключаются hooks недоверенного репозитория. Прямой вызов `git` из других
   модулей Runtime — дыра в этой защите.

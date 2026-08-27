@@ -30,6 +30,10 @@ Gildra Runtime (plugins/gildra-dsh-runtime, локально и на серве�
         ├── Process Manager: процессы, привязанные к сессии
         ├── Port Allocator: порты dev-серверов без конфликтов
         ├── Merge workflow: объединение изменений только через Git
+        ├── Repository Intelligence: профиль репозитория и доверие команд
+        ├── Quality Pipeline: verification evidence и Definition of Done
+        ├── Review: независимое структурное ревью и diff-анализ
+        ├── Team Claims: логическая координация областей работы
         └── версионированный API /gildra/v1/* (loopback)
         │
         ▼
@@ -95,10 +99,20 @@ Gildra Harness Overlay (plugins/gildra-dsh-ui-compact)
 ## 0б. Основной workflow
 
 ```text
-Task → Plan → Isolated Workspace (worktree + branch + lease)
-     → Agents (1 writer + N read-only, либо parallel writers в отдельных worktree)
-     → Changes → Tests → Review → Merge (controlled) → Cleanup
+Task (criteria + expected scope + claims)
+     → Repository Understanding (профиль, доверенные команды)
+     → Isolated Workspace (worktree + branch + lease, immutable baseSha)
+     → Writer (1 writer + N read-only, либо parallel writers в отдельных worktree)
+     → Verification (evidence: exit code + логи, привязка к HEAD)
+     → Independent Review (reviewer ≠ writer; adversarial для high-risk)
+     → Fix findings → Re-Verification → Upstream check
+     → READY_FOR_HUMAN_REVIEW (вычисляется gate'ом, не назначается)
+     → PR / Merge (controlled) → Cleanup
 ```
+
+Слой AI-качества описан в [`docs/ai-quality.md`](ai-quality.md): Repository
+Intelligence, Quality Policy, Definition of Done, структурное ревью, work
+claims, upstream awareness и delivery.
 
 ## 1. Gildra Kit Manifest
 
@@ -182,9 +196,11 @@ PROTECTED_BRANCH, PORT_UNAVAILABLE, …), `ids` (валидация и гене�
 идентификаторов, санитизация веток), `store` (durable state), `audit`,
 `gitx` (bare/canonical репозитории, worktree, fetch-lock, merge),
 `projects`, `leases`, `workspaces`, `sessions`, `processes`, `ports`,
-`tasks`, `journal` (durable-журнал операций), `lifecycle` (BOOTING→READY),
-`migrations` (версии схемы state), `http` (guard'ы запроса и идемпотентность),
-`api` (маршруты `/gildra/v1/*`).
+`tasks` (инженерная модель задач), `journal` (durable-журнал операций),
+`lifecycle` (BOOTING→READY), `migrations` (версии схемы state), `http`
+(guard'ы запроса и идемпотентность), `api` (маршруты `/gildra/v1/*`), а также
+слой AI-качества: `globs`, `repo-intel`, `claims`, `quality`,
+`diff-analyzer`, `review`, `upstream`, `context-builder`.
 
 Раскладка на диске (per Unix-user):
 

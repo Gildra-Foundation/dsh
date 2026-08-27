@@ -4,6 +4,43 @@
 
 ## [Unreleased]
 
+### AI Engineering Quality Pipeline
+
+- Task стал инженерной единицей: критерии приёмки, ожидаемый scope, work
+  claims (SHARED/CLAIMED/EXCLUSIVE) с обнаружением пересечений, provenance
+  (owner/writer/reviewer), delivery-состояние PR/CI c ограниченной петлёй
+  auto-fix и honest failureKind вместо одного FAILED.
+- Repository Intelligence: профиль репозитория из закоммиченного состояния
+  (языки, менеджеры, команды, policy-файлы, CI, generated, ADR, CODEOWNERS)
+  с тремя уровнями доверия команд — discovered никогда не исполняется без
+  явного одобрения; команды только argv, без shell.
+- Verification Evidence и Definition of Done: прогоны через Process Manager с
+  exit code и хвостом лога, привязка доказательства к HEAD и чистому дереву,
+  NOT_CONFIGURED вместо тихого PASSED; READY_FOR_HUMAN_REVIEW вычисляется
+  gate'ом и недостижим иначе. Regression-first для багфиксов: доказательство —
+  два реальных прогона (упавший → зелёный) либо явный MANUAL_REPRO_ONLY.
+- Независимое структурное ревью: writer ≠ reviewer, findings с severity и
+  категориями, консистентный вердикт (APPROVED с открытым BLOCKER/HIGH
+  невозможен), пунктная проверка критериев, adversarial-проход для high-risk
+  изменений; diff-анализ без LLM ловит ослабление тестов, новые зависимости,
+  опасные паттерны, выход за scope, protected-области и ручные правки
+  generated — каждый сигнал требует объяснения.
+- Upstream awareness: релевантность сдвига цели относительно immutable
+  baseSha (areas ∪ файлы ∪ import-соседи), рекомендация вместо автоматического
+  rebase. Task Context Builder собирает компактный контекст (policy и ADR —
+  путями, без дампа README и истории).
+- Закрыт §56: источник merge закреплён SHA при старте, сдвиг target во время
+  merge даёт MERGE_TARGET_MOVED с сохранением чужих коммитов (без guard'а —
+  тихая потеря содержимого, доказано экспериментом); fetch переведён на явный
+  refspec без prune (прежний вариант либо не двигал ветки вовсе, либо с prune
+  удалял session-ветки). Инвариант §57: canonical-мутация вне repo-лока падает.
+- UI: блок «Команда» — задачи по людям с фактами Definition of Done,
+  пересечения claims, ожидающие ревью и CI-падения; без «quality score».
+- Пресеты: персона writer-дисциплины в engineering, усиленный reviewer,
+  новый adversarial-review. Документация: docs/ai-quality.md; в
+  runtime-reliability — контракт локов, однозначная политика git env и
+  пороги ухода с JSON-store. Флагманский E2E §62 проходит весь конвейер.
+
 ### Надёжность Gildra Runtime под конкуренцией и отказами
 
 - Managed-git выполняется в контролируемом окружении: переменные, способные

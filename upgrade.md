@@ -335,3 +335,13 @@ LFS/submodules (задокументированное MVP-ограничени�
 каждого. Windows-семантика проверена кодом + CI-smoke на windows-2025
 (powershell.exe 5.1); живой Windows-цикл обновления не запускался — см.
 «Needs real Windows verification».
+
+## Итерация: AI Engineering Quality Pipeline (2026-08-27)
+
+Слой качества поверх Runtime: Task с критериями/scope/claims, Repository
+Intelligence с уровнями доверия команд, verification evidence с привязкой к
+HEAD, независимое ревью (writer ≠ reviewer, adversarial для high-risk),
+upstream awareness, delivery PR/CI, Team View. READY_FOR_HUMAN_REVIEW
+вычисляется gate'ом. Закрыты §56 (immutable SHA у merge, MERGE_TARGET_MOVED,
+безопасный refspec fetch) и §57 (repo-лок как runtime-инвариант). Детали —
+docs/ai-quality.md; статус проверок — CI.
