@@ -32,6 +32,9 @@ export const ERROR_CODES = Object.freeze({
   GIT_UNAVAILABLE: 503,
   GIT_AUTH_REQUIRED: 502,
   GIT_TIMEOUT: 504,
+  // Транзиентный сбой доступа к файлам репозитория (в основном Windows):
+  // повтор уместен, поэтому 503, а не 502.
+  GIT_TRANSIENT: 503,
   UNSUPPORTED_GIT_VERSION: 503,
   PROJECT_DEGRADED: 409,
   PROJECT_IN_USE: 409,

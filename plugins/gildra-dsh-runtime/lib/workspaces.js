@@ -33,6 +33,7 @@ import {
 
 const WORKSPACES = 'workspaces'
 const MERGES = 'merges'
+const REPO_LOCK_TIMEOUT_MS = 60_000
 
 function limit(env, name, fallback) {
   const value = Number(env[name])
@@ -58,6 +59,24 @@ export function createWorkspaceManager({ store, roots, projects, leases, process
     const record = await store.read(WORKSPACES, id)
     if (!record) throw new RuntimeError('WORKSPACE_NOT_FOUND', `Workspace «${id}» не найден.`, { workspaceId: id })
     return record
+  }
+
+  // ЕДИНСТВЕННАЯ точка сериализации мутаций канонического репозитория:
+  // worktree add/remove/prune, создание и удаление веток, перемещение целевой
+  // ветки merge. Раньше этот лок держал только create, а cleanup работал под
+  // локом workspace-<id>, merge — вообще без лока, поэтому два git-процесса
+  // одновременно правили метаданные одного репозитория. На POSIX это обычно
+  // сходило с рук (lock-файлы + атомарный rename), на Windows соседний git
+  // умирал на чтении config — что и поймал стресс-тест в CI.
+  //
+  // Порядок захвата всегда workspace-<id> → repo-<projectId> и никогда
+  // обратный, поэтому взаимная блокировка невозможна.
+  //
+  // Таймаут щедрый (60 с, как у cleanup): под локом идут операции с диском и
+  // git, и на медленной машине с десятками сессий очередь должна ждать, а не
+  // отказывать. Очередь всё же конечна — это осознанный предсказуемый отказ.
+  function withRepoLock(projectId, action) {
+    return store.withLock(`repo-${projectId}`, action, { timeoutMs: REPO_LOCK_TIMEOUT_MS })
   }
 
   async function listRecords(filter = {}) {
@@ -103,9 +122,7 @@ export function createWorkspaceManager({ store, roots, projects, leases, process
     const { baseRef: resolvedBase, baseSha } = await projects.resolveBaseRef(project, baseRef)
     await mkdir(dirname(path), { recursive: true, mode: 0o700 })
 
-    // Создание ветки и worktree сериализовано на репозиторий: параллельные
-    // сессии не гоняются за одним именем ветки.
-    await store.withLock(`repo-${projectId}`, async () => {
+    await withRepoLock(projectId, async () => {
       if (await branchExists(project.canonicalRepoPath, targetBranch)) {
         throw new RuntimeError('WORKSPACE_EXISTS', `Ветка «${targetBranch}» уже существует.`, { branch: targetBranch })
       }
@@ -250,17 +267,19 @@ export function createWorkspaceManager({ store, roots, projects, leases, process
     // Все предусловия выполнены — с этого места операция мутирует состояние.
     if (ownsLease) await leases.releaseIfOwner(id, ownerToken)
 
-    if (await pathExists(record.path)) {
-      await removeWorktree(project.canonicalRepoPath, record.path, { force: confirmDirty })
-      await rm(record.path, { recursive: true, force: true }).catch(() => {})
-    }
-    await pruneWorktrees(project.canonicalRepoPath)
-    if (await branchExists(project.canonicalRepoPath, record.branch)) {
-      const merged = await isMergedInto(project.canonicalRepoPath, record.branch, project.defaultBranch)
-      if (merged || confirmUnmerged) {
-        await deleteBranch(project.canonicalRepoPath, record.branch, { force: !merged })
+    await withRepoLock(record.projectId, async () => {
+      if (await pathExists(record.path)) {
+        await removeWorktree(project.canonicalRepoPath, record.path, { force: confirmDirty })
+        await rm(record.path, { recursive: true, force: true }).catch(() => {})
       }
-    }
+      await pruneWorktrees(project.canonicalRepoPath)
+      if (await branchExists(project.canonicalRepoPath, record.branch)) {
+        const merged = await isMergedInto(project.canonicalRepoPath, record.branch, project.defaultBranch)
+        if (merged || confirmUnmerged) {
+          await deleteBranch(project.canonicalRepoPath, record.branch, { force: !merged })
+        }
+      }
+    })
     if (leases) await leases.forceRelease(id, { reason: 'workspace-cleanup' })
     await store.delete(WORKSPACES, id)
     await appendAudit(roots.stateRoot, 'workspace.deleted', { workspaceId: id, projectId: record.projectId })
@@ -346,7 +365,7 @@ export function createWorkspaceManager({ store, roots, projects, leases, process
 
     try {
       await mkdir(dirname(path), { recursive: true, mode: 0o700 })
-      await addWorktree(project.canonicalRepoPath, path, { branch: target, existingBranch: true })
+      await withRepoLock(project.projectId, () => addWorktree(project.canonicalRepoPath, path, { branch: target, existingBranch: true }))
       record = { ...record, status: 'MERGING' }
       await store.write(MERGES, mergeId, record)
       await operation?.advance('MERGING', { path })
@@ -431,12 +450,14 @@ export function createWorkspaceManager({ store, roots, projects, leases, process
   async function abortMerge(mergeId) {
     const record = await getMerge(mergeId)
     const project = await projects.get(record.projectId)
-    if (await pathExists(record.path)) {
-      await abortMergeIn(record.path)
-      await removeWorktree(project.canonicalRepoPath, record.path, { force: true }).catch(() => {})
-      await rm(record.path, { recursive: true, force: true }).catch(() => {})
-    }
-    await pruneWorktrees(project.canonicalRepoPath)
+    if (await pathExists(record.path)) await abortMergeIn(record.path)
+    await withRepoLock(record.projectId, async () => {
+      if (await pathExists(record.path)) {
+        await removeWorktree(project.canonicalRepoPath, record.path, { force: true }).catch(() => {})
+        await rm(record.path, { recursive: true, force: true }).catch(() => {})
+      }
+      await pruneWorktrees(project.canonicalRepoPath)
+    })
     const aborted = { ...record, status: 'ABORTED', abortedAt: new Date().toISOString() }
     await store.write(MERGES, mergeId, aborted)
     if (journal && record.operationId) await journal.forget(record.operationId)
@@ -458,9 +479,11 @@ export function createWorkspaceManager({ store, roots, projects, leases, process
   }
 
   async function finalizeMergeWorktree(project, record) {
-    await removeWorktree(project.canonicalRepoPath, record.path).catch(() => {})
-    await rm(record.path, { recursive: true, force: true }).catch(() => {})
-    await pruneWorktrees(project.canonicalRepoPath)
+    await withRepoLock(record.projectId, async () => {
+      await removeWorktree(project.canonicalRepoPath, record.path).catch(() => {})
+      await rm(record.path, { recursive: true, force: true }).catch(() => {})
+      await pruneWorktrees(project.canonicalRepoPath)
+    })
   }
 
   async function adoptExistingWorktrees(projectId) {

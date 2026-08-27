@@ -186,6 +186,32 @@ const RACE_PAIRS = 8
   assert.equal(settled.filter(entry => entry.status === 'rejected').length, 0,
     `операции в гонке create↔cleanup завершились ошибкой: ${reasons(settled).join(' | ')}`)
 
+  // Мутации канонического репозитория обязаны быть взаимно исключающими.
+  // Проверяем это наблюдаемо: держим лок репозитория снаружи и убеждаемся,
+  // что cleanup не проходит, пока лок занят, и проходит сразу после его
+  // освобождения. Без этого create и cleanup правили бы метаданные одного
+  // репозитория параллельно (на Windows это убивало соседний git-процесс).
+  {
+    const victim = await workspaces.createWorkspace({ projectId: 'demo', userId: 'race', sessionId: 'lockcheck' })
+    let settled = false
+    let holding = true
+    // Лок держим до тех пор, пока внешний флаг не снят: сам cleanup стартует
+    // снаружи withLock, иначе он ждал бы лок, который держит его же вызов.
+    const held = store.withLock('repo-demo', () => waitUntil(() => !holding, 'освобождение repo-demo'))
+    const pending = workspaces.cleanupWorkspace(victim.workspaceId).then(() => { settled = true })
+
+    await delay(400)
+    assert.equal(settled, false,
+      'cleanup изменил репозиторий, пока лок repo-demo держал кто-то другой')
+    assert.equal(existsSync(victim.path), true,
+      'worktree удалён в обход лока репозитория')
+
+    holding = false
+    await held
+    await pending
+    assert.equal(existsSync(victim.path), false, 'cleanup не отработал после освобождения лока')
+  }
+
   // Сторона «есть запись → есть каталог»: проверяем ВСЕ записи проекта,
   // включая созданные предыдущим сценарием.
   const records = await workspaces.listRecords({ projectId: 'demo' })

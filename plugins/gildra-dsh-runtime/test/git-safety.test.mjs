@@ -14,6 +14,8 @@ import {
   MINIMUM_GIT_VERSION,
   assertMinimumGitVersion,
   classifyGitFailure,
+  isTransientConfigFailure,
+  runWithTransientRetry,
   commitAll,
   fetchOrigin,
   git,
@@ -193,6 +195,57 @@ const base = await mkdtemp(join(tmpdir(), 'gildra git safety '))
   assert.equal(generic.code, 'GIT_FAILED')
   // Сообщение не должно тащить в себе весь вывод: только последняя строка.
   assert.match(generic.message, /not a git repository/)
+}
+
+// --- Windows: sharing violation на config распознаётся как транзиентный ----
+// Регрессия на реальный отказ Windows-джобы CI: параллельные git-процессы на
+// одном репозитории убивали друг друга на чтении config. Повтор безопасен
+// только потому, что git падает ДО выполнения команды.
+{
+  const configError = { stderr: 'fatal: unknown error occurred while reading the configuration files\n' }
+  assert.equal(isTransientConfigFailure(configError), true)
+  assert.equal(classifyGitFailure(configError, ['worktree', 'add']).code, 'GIT_TRANSIENT')
+
+  // Убитая по таймауту команда МОГЛА успеть поработать — она не транзиентная,
+  // иначе автоповтор выполнил бы разрушительный шаг дважды.
+  assert.equal(isTransientConfigFailure({ ...configError, killed: true }), false)
+  assert.equal(isTransientConfigFailure({ stderr: 'fatal: not a git repository' }), false)
+
+  // Транзиентный сбой повторяется и в итоге проходит.
+  {
+    const delays = []
+    let calls = 0
+    const value = await runWithTransientRetry(() => {
+      calls += 1
+      if (calls < 3) return Promise.reject(configError)
+      return Promise.resolve('ok')
+    }, { sleep: async ms => { delays.push(ms) } })
+    assert.equal(value, 'ok')
+    assert.equal(calls, 3, 'должно быть ровно две неудачи и одна успешная попытка')
+    assert.deepEqual(delays, [50, 100], 'пауза между попытками обязана расти')
+  }
+
+  // Повторы ограничены: бесконечно долбиться в стену нельзя.
+  {
+    let calls = 0
+    const thrown = await runWithTransientRetry(() => {
+      calls += 1
+      return Promise.reject(configError)
+    }, { sleep: async () => {} }).catch(error => error)
+    assert.equal(thrown, configError)
+    assert.equal(calls, 4, 'по умолчанию 4 попытки, дальше — честная ошибка')
+  }
+
+  // Нетранзиентная ошибка не повторяется вообще.
+  {
+    let calls = 0
+    const fatal = { stderr: 'fatal: not a git repository' }
+    await runWithTransientRetry(() => {
+      calls += 1
+      return Promise.reject(fatal)
+    }, { sleep: async () => {} }).catch(() => {})
+    assert.equal(calls, 1)
+  }
 }
 
 // --- Версия git: floor и разбор -------------------------------------------

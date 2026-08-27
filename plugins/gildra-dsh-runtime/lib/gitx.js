@@ -84,6 +84,26 @@ export function hardeningArgs() {
   ]
 }
 
+// Windows открывает файлы без share-delete, поэтому пока один git-процесс
+// заменяет config репозитория (запись во временный файл + rename), соседний
+// процесс, читающий тот же config, получает sharing violation и умирает с
+// «fatal: unknown error occurred while reading the configuration files».
+// Собственной сериализации мутаций мало: конфликтовать может и чужой git,
+// и индексатор, и антивирус — на Windows это норма жизни, а не наш дефект.
+//
+// Важное свойство: git падает на этапе ЧТЕНИЯ конфигурации, то есть до начала
+// самой команды. Поэтому именно этот класс ошибок (и только он) повторяется
+// автоматически даже для разрушительных операций — повтор не может выполнить
+// половину работы дважды.
+const TRANSIENT_CONFIG_READ = /unknown error occurred while reading the configuration files/i
+const TRANSIENT_ATTEMPTS = 4
+const TRANSIENT_BACKOFF_MS = 50
+
+export function isTransientConfigFailure(error) {
+  if (error?.killed) return false
+  return TRANSIENT_CONFIG_READ.test(`${String(error?.stderr ?? '')}\n${String(error?.stdout ?? '')}`)
+}
+
 export function classifyGitFailure(error, args) {
   const output = `${String(error?.stderr ?? '')}\n${String(error?.stdout ?? '')}`
   if (error?.killed || error?.signal === 'SIGTERM') {
@@ -94,22 +114,43 @@ export function classifyGitFailure(error, args) {
   if (/Authentication failed|could not read Username|could not read Password|Permission denied \(publickey\)|terminal prompts disabled|Invalid username or password/i.test(output)) {
     return new RuntimeError('GIT_AUTH_REQUIRED', 'Git требует аутентификацию: настройте доступ (ssh-ключ или credential helper) и повторите.', {})
   }
+  if (isTransientConfigFailure(error)) {
+    return new RuntimeError('GIT_TRANSIENT', 'Git не смог прочитать конфигурацию репозитория (параллельный доступ к файлам). Повторите операцию.', {
+      args: args.slice(0, 6),
+    })
+  }
   const detail = output.split(/\r?\n/).map(line => line.trim()).filter(Boolean).at(-1) ?? ''
   return new RuntimeError('GIT_FAILED', detail ? `git ${args[0] ?? ''}: ${detail.slice(0, 400)}` : `git ${args[0] ?? ''} завершился с ошибкой.`, {
     args: args.slice(0, 6),
   })
 }
 
+// Политика повтора вынесена отдельно, чтобы её можно было проверить тестом
+// без подмены git в PATH: она решает только «повторять или отдать ошибку».
+export async function runWithTransientRetry(run, { attempts = TRANSIENT_ATTEMPTS, sleep } = {}) {
+  const pause = sleep ?? (ms => new Promise(resolve => setTimeout(resolve, ms)))
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await run(attempt)
+    } catch (error) {
+      // Повтор безопасен именно здесь и больше нигде: git не дошёл до самой
+      // команды, поэтому не изменил ни одного байта репозитория.
+      if (attempt >= attempts || !isTransientConfigFailure(error)) throw error
+      await pause(TRANSIENT_BACKOFF_MS * attempt)
+    }
+  }
+}
+
 export async function git(args, options = {}) {
   const fullArgs = [...hardeningArgs(), ...args]
   try {
-    return await execFileAsync('git', fullArgs, {
+    return await runWithTransientRetry(() => execFileAsync('git', fullArgs, {
       cwd: options.cwd,
       env: gitSafeEnv(process.env, options.env),
       timeout: options.timeoutMs ?? LOCAL_TIMEOUT_MS,
       maxBuffer: 8 * 1024 * 1024,
       windowsHide: true,
-    })
+    }), { attempts: options.transientAttempts, sleep: options.sleep })
   } catch (error) {
     if (error?.code === 'ENOENT') {
       throw new RuntimeError('GIT_UNAVAILABLE', 'Git не найден. Установите Git и повторите попытку.')
