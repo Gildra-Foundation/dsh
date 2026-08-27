@@ -26,13 +26,20 @@ function makeCtx() {
   }
 }
 
-function requestFor({ method = 'GET', url = '/', body, origin, contentType = 'application/json' } = {}) {
+// UI всегда шлёт loopback Origin и Host — так же делает и тест. Отсутствие
+// заголовков проверяется отдельными негативными кейсами.
+function requestFor({
+  method = 'GET', url = '/', body, origin = 'http://127.0.0.1:3080',
+  host = '127.0.0.1:3080', contentType = 'application/json', idempotencyKey,
+} = {}) {
   const chunks = body === undefined ? [] : [Buffer.from(JSON.stringify(body))]
   return {
     method,
     url,
     headers: {
+      ...(host ? { host } : {}),
       ...(origin ? { origin } : {}),
+      ...(idempotencyKey ? { 'idempotency-key': idempotencyKey } : {}),
       ...(method === 'GET' ? {} : { 'content-type': contentType }),
     },
     async *[Symbol.asyncIterator]() {
@@ -71,6 +78,19 @@ const ctx = makeCtx()
 registerRuntimeRoutes(ctx, runtime)
 const routeOf = path => ctx.routes.get(path)
 
+// Мутации не принимаются, пока Runtime не завершил первичное восстановление.
+{
+  const early = await call(routeOf('/gildra/v1/projects'), requestFor({
+    method: 'POST', body: { projectId: 'early', path: '/tmp' },
+  }))
+  assert.equal(early.status, 503)
+  assert.equal(early.body.error.code, 'RUNTIME_NOT_READY')
+  const health = await call(routeOf('/gildra/v1/health'), requestFor({}))
+  assert.equal(health.body.health.ready, false, 'health доступен до готовности')
+}
+await runtime.lifecycle.boot()
+assert.equal(runtime.lifecycle.state, 'READY')
+
 // Проект.
 const seed = join(base, 'seed')
 await git(['init', '-b', 'main', seed])
@@ -104,13 +124,32 @@ await git(['-C', canonical, 'config', 'core.autocrlf', 'false'])
   assert.equal(foreign.status, 403)
   assert.equal(foreign.body.error.code, 'UNAUTHORIZED_SESSION')
 
+  // Мутация без Origin приходит не из браузера-UI: тоже отклоняется.
+  const noOrigin = await call(routeOf('/gildra/v1/projects'), requestFor({
+    method: 'POST', origin: null, body: { projectId: 'x', path: canonical },
+  }))
+  assert.equal(noOrigin.status, 403)
+
+  // DNS rebinding: чужой Host при loopback-origin.
+  const rebind = await call(routeOf('/gildra/v1/projects'), requestFor({
+    method: 'POST', host: 'evil.example', body: { projectId: 'x', path: canonical },
+  }))
+  assert.equal(rebind.status, 403)
+
+  // Гигантское поле отклоняется до попадания в state.
+  const huge = await call(routeOf('/gildra/v1/tasks'), requestFor({
+    method: 'POST', body: { projectId: 'demo', title: 'x'.repeat(5000) },
+  }))
+  assert.equal(huge.status, 400)
+  assert.equal(huge.body.error.code, 'INVALID_INPUT')
+
   const notJson = await call(routeOf('/gildra/v1/projects'), requestFor({
     method: 'POST',
     contentType: 'text/plain',
     body: { projectId: 'x', path: canonical },
   }))
   assert.equal(notJson.status, 415)
-  assert.equal(notJson.body.error.code, 'INVALID_INPUT')
+  assert.equal(notJson.body.error.code, 'UNSUPPORTED_MEDIA_TYPE')
 
   const badMethod = await call(routeOf('/gildra/v1/workspaces'), requestFor({ method: 'DELETE' }))
   assert.equal(badMethod.status, 405)
@@ -234,6 +273,63 @@ let ownerToken
 
   const after = await call(routeOf('/gildra/v1/workspaces'), requestFor({ url: '/gildra/v1/workspaces?projectId=demo' }))
   assert.equal(after.body.workspaces.length, 0)
+}
+
+// --- Идемпотентность мутаций (§11) ----------------------------------------
+{
+  // Повтор POST с тем же Idempotency-Key не создаёт вторую сессию.
+  const key = 'client-retry-1'
+  const first = await call(routeOf('/gildra/v1/sessions'), requestFor({
+    method: 'POST', idempotencyKey: key, body: { projectId: 'demo', userId: 'alex' },
+  }))
+  assert.equal(first.status, 201)
+  const retry = await call(routeOf('/gildra/v1/sessions'), requestFor({
+    method: 'POST', idempotencyKey: key, body: { projectId: 'demo', userId: 'alex' },
+  }))
+  assert.equal(retry.status, 201)
+  assert.equal(retry.body.session.sessionId, first.body.session.sessionId,
+    'повтор с тем же ключом возвращает ту же сессию, а не создаёт дубль')
+
+  const listed = await call(routeOf('/gildra/v1/sessions'), requestFor({ url: '/gildra/v1/sessions?activeOnly=1' }))
+  const duplicates = listed.body.sessions.filter(record => record.userId === 'alex' && record.status === 'ACTIVE')
+  assert.equal(duplicates.length, 1, 'в состоянии ровно одна активная сессия')
+
+  // Другой ключ — уже новая сессия.
+  const other = await call(routeOf('/gildra/v1/sessions'), requestFor({
+    method: 'POST', idempotencyKey: 'client-retry-2', body: { projectId: 'demo', userId: 'alex' },
+  }))
+  assert.notEqual(other.body.session.sessionId, first.body.session.sessionId)
+
+  for (const created of [first, other]) {
+    await call(routeOf('/gildra/v1/sessions/cleanup'), requestFor({
+      method: 'POST',
+      body: { sessionId: created.body.session.sessionId, ownerToken: created.body.ownerToken, confirmUnmerged: true },
+    }))
+  }
+}
+
+// --- Возможности, health и диагностика ------------------------------------
+{
+  const capabilities = await call(routeOf('/gildra/v1/capabilities'), requestFor({}))
+  assert.equal(capabilities.body.apiVersion, 1)
+  assert.ok(capabilities.body.runtimeVersion >= 1)
+  assert.equal(capabilities.body.features.fencing, true)
+  assert.equal(capabilities.body.features.idempotency, true)
+
+  const health = await call(routeOf('/gildra/v1/health'), requestFor({}))
+  assert.equal(health.body.health.ready, true)
+  assert.equal(health.body.health.runtime, 'READY')
+
+  const diagnostics = await call(routeOf('/gildra/v1/diagnostics'), requestFor({}))
+  assert.equal(diagnostics.body.diagnostics.state, 'READY')
+  assert.ok(diagnostics.body.diagnostics.selfCheck.ok, 'self-check проходит')
+  assert.ok(Array.isArray(diagnostics.body.diagnostics.unfinishedOperations))
+  assert.deepEqual(diagnostics.body.diagnostics.corruptions, [])
+
+  // Секреты не утекают ни в один read-only ответ.
+  const serialized = JSON.stringify([capabilities.body, health.body, diagnostics.body])
+  assert.doesNotMatch(serialized, /ownerToken/i)
+  assert.doesNotMatch(serialized, /[0-9a-f]{48}/)
 }
 
 await rm(base, { recursive: true, force: true })

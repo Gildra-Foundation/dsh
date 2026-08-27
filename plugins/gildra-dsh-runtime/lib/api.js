@@ -8,7 +8,14 @@
 
 import { join } from 'node:path'
 
-import { asRuntimeError } from './errors.js'
+import { createLifecycle } from './lifecycle.js'
+import {
+  assertMutationRequest,
+  createIdempotencyCache,
+  errorResponse,
+  jsonResponse,
+  readJsonBody,
+} from './http.js'
 import { JsonStore } from './store.js'
 import { runtimeRoots } from './paths.js'
 import { appendAudit } from './audit.js'
@@ -23,51 +30,9 @@ import { createTaskManager } from './tasks.js'
 import { agentContextBlock, renderRuntimeProfile, sessionEnvironment } from './runtime-env.js'
 
 export const API_VERSION = 1
-
-const MAX_BODY_BYTES = 64 * 1024
-
-export function jsonResponse(res, status, value) {
-  const body = JSON.stringify(value)
-  res.writeHead(status, {
-    'content-type': 'application/json; charset=utf-8',
-    'cache-control': 'no-store',
-    'content-length': Buffer.byteLength(body),
-  })
-  res.end(body)
-}
-
-export function errorResponse(res, error) {
-  const runtimeError = asRuntimeError(error)
-  jsonResponse(res, runtimeError.status, { ok: false, error: runtimeError.toJSON() })
-}
-
-export async function readJsonBody(req) {
-  const chunks = []
-  let size = 0
-  for await (const chunk of req) {
-    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
-    size += buffer.length
-    if (size > MAX_BODY_BYTES) throw asRuntimeError(new Error('Тело запроса слишком большое.'))
-    chunks.push(buffer)
-  }
-  if (chunks.length === 0) return {}
-  try {
-    return JSON.parse(Buffer.concat(chunks).toString('utf8'))
-  } catch {
-    throw asRuntimeError(new Error('Некорректный JSON в запросе.'))
-  }
-}
-
-export function sameOriginRequest(req) {
-  const origin = req.headers.origin
-  if (!origin) return true
-  try {
-    const url = new URL(origin)
-    return ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)
-  } catch {
-    return false
-  }
-}
+// Версия реализации Runtime отдельно от версии API: UI понимает
+// совместимость, даже когда контракт не менялся, а поведение — да.
+export const RUNTIME_VERSION = 2
 
 function queryOf(req) {
   return new URL(req.url ?? '/', 'http://127.0.0.1').searchParams
@@ -90,14 +55,18 @@ export function createRuntime({ env = process.env } = {}) {
   const workspaces = createWorkspaceManager({ store, roots, projects, leases, processes, env })
   const sessions = createSessionManager({ store, roots, projects, workspaces, leases, processes, ports, env })
   const tasks = createTaskManager({ store, roots, projects })
-  return { roots, store, projects, leases, processes, ports, workspaces, sessions, tasks }
+  const lifecycle = createLifecycle({ roots, store, sessions, projects })
+  return { roots, store, projects, leases, processes, ports, workspaces, sessions, tasks, lifecycle }
 }
 
 export function registerRuntimeRoutes(ctx, runtime = createRuntime()) {
-  const { projects, leases, processes, ports, workspaces, sessions, tasks } = runtime
+  const { store, projects, leases, processes, ports, workspaces, sessions, tasks, lifecycle } = runtime
+  const idempotency = createIdempotencyCache()
 
   // Единый каркас маршрута: guard'ы + структурные ошибки в одном месте.
-  function route(path, methods) {
+  // mutating: требует loopback-origin, JSON и готовности Runtime.
+  // idempotent: повтор с тем же Idempotency-Key возвращает первый результат.
+  function route(path, methods, { mutating = true } = {}) {
     return ctx.webServer.register({
       kind: 'exact',
       path,
@@ -108,18 +77,21 @@ export function registerRuntimeRoutes(ctx, runtime = createRuntime()) {
           return
         }
         try {
-          if (req.method !== 'GET' && req.method !== 'HEAD') {
-            if (!sameOriginRequest(req)) {
-              jsonResponse(res, 403, { ok: false, error: { code: 'UNAUTHORIZED_SESSION', message: 'Операция разрешена только из приложения Gildra DSH.' } })
-              return
-            }
-            if (!String(req.headers['content-type'] ?? '').toLowerCase().startsWith('application/json')) {
-              jsonResponse(res, 415, { ok: false, error: { code: 'INVALID_INPUT', message: 'Тело запроса должно иметь тип application/json.' } })
-              return
-            }
+          const isRead = req.method === 'GET' || req.method === 'HEAD'
+          let body = {}
+          if (!isRead) {
+            assertMutationRequest(req)
+            // Мутации не принимаются, пока не завершено первичное
+            // сверение state с диском: иначе решение принималось бы по
+            // заведомо неполной картине.
+            lifecycle?.assertReady()
+            body = await readJsonBody(req)
           }
-          const body = req.method === 'GET' || req.method === 'HEAD' ? {} : await readJsonBody(req)
-          const result = await handlerFor({ req, body, query: queryOf(req) })
+          const key = isRead ? undefined : idempotency.keyOf(req, path)
+          const cached = idempotency.get(key)
+          const result = cached
+            ? await cached
+            : await idempotency.remember(key, handlerFor({ req, body, query: queryOf(req) }))
           jsonResponse(res, result?.statusCode ?? 200, { ok: true, ...result?.payload })
         } catch (error) {
           errorResponse(res, error)
@@ -156,7 +128,85 @@ export function registerRuntimeRoutes(ctx, runtime = createRuntime()) {
 
   const disposers = [
     route('/gildra/v1/runtime', {
-      GET: async () => ({ payload: { runtime: { apiVersion: API_VERSION, metrics: await operationalMetrics() } } }),
+      GET: async () => ({ payload: { runtime: { apiVersion: API_VERSION, runtimeVersion: RUNTIME_VERSION, state: lifecycle?.state, metrics: await operationalMetrics() } } }),
+    }),
+
+    // Health доступен всегда, даже пока Runtime восстанавливается: именно по
+    // нему клиент отличает «ещё не готов» от «сломан».
+    route('/gildra/v1/health', {
+      GET: async () => {
+        const snapshot = lifecycle?.snapshot() ?? { state: 'READY' }
+        return {
+          payload: {
+            health: {
+              runtime: snapshot.state,
+              ready: snapshot.state === 'READY',
+              apiVersion: API_VERSION,
+              runtimeVersion: RUNTIME_VERSION,
+              ...(snapshot.error ? { error: snapshot.error } : {}),
+            },
+          },
+        }
+      },
+    }),
+
+    // Возможности объявляются явно: overlay не должен угадывать их по
+    // наличию отдельных маршрутов и ломаться при рассинхроне версий.
+    route('/gildra/v1/capabilities', {
+      GET: async () => ({
+        payload: {
+          apiVersion: API_VERSION,
+          runtimeVersion: RUNTIME_VERSION,
+          features: {
+            workspaces: true,
+            sessions: true,
+            leases: true,
+            fencing: true,
+            merges: true,
+            tasks: true,
+            ports: true,
+            processes: true,
+            recovery: true,
+            idempotency: true,
+            diagnostics: true,
+          },
+        },
+      }),
+    }),
+
+    // Диагностика — только чтение и без секретов: ни owner-token, ни env.
+    route('/gildra/v1/diagnostics', {
+      GET: async () => {
+        const snapshot = lifecycle?.snapshot() ?? {}
+        const openOperations = await sessions.operations.listOpen()
+        return {
+          payload: {
+            diagnostics: {
+              apiVersion: API_VERSION,
+              runtimeVersion: RUNTIME_VERSION,
+              state: snapshot.state,
+              startedAt: snapshot.startedAt,
+              git: snapshot.git,
+              metrics: await operationalMetrics(),
+              projects: (await projects.list()).map(project => ({
+                projectId: project.projectId,
+                defaultBranch: project.defaultBranch,
+                origin: project.origin?.type,
+              })),
+              unfinishedOperations: openOperations.map(operation => ({
+                operationId: operation.operationId,
+                type: operation.type,
+                phase: operation.phase,
+                startedAt: operation.startedAt,
+              })),
+              corruptions: typeof store.corruptions === 'function'
+                ? store.corruptions().map(entry => ({ collection: entry.collection, id: entry.id, critical: entry.critical }))
+                : [],
+              selfCheck: await lifecycle?.selfCheck(),
+            },
+          },
+        }
+      },
     }),
 
     route('/gildra/v1/projects', {
