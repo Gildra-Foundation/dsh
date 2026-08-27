@@ -301,6 +301,69 @@ const { task, workspace } = await makeTask()
   assert.equal(existsSync(target.workspace.path), true, 'отмена не удаляет workspace (§69)')
 }
 
+// --- 6б. Run identity (§19): single-active, cancel по runId, latest-guard --
+{
+  const target = await makeTask({ title: 'Run identity' })
+  await quality.setPolicy('demo', {
+    required: ['tests', 'review'],
+    checks: { slow: { argv: ['node', '-e', 'setTimeout(() => {}, 12000)'], timeoutMs: 20000 }, quick: { argv: ['node', '-e', 'console.log("q")'] } },
+    verification: { allowParallel: true },
+  })
+
+  // Два параллельных прогона (политика разрешила); cancel одного не трогает
+  // другой.
+  const runA = quality.runVerification(target.task.taskId, { checkIds: ['slow'] })
+  const deadline = Date.now() + 10_000
+  let runAId
+  for (;;) {
+    for (const id of await store.list('verifications')) {
+      const row = await store.read('verifications', id)
+      if (row?.taskId === target.task.taskId && row.status === 'RUNNING') runAId = row.runId
+    }
+    if (runAId && (await processes.listForSession(target.workspace.sessionId)).some(record => record.runId === runAId)) break
+    if (Date.now() > deadline) throw new Error('runA не стартовал')
+    await new Promise(resolveTimer => setTimeout(resolveTimer, 25))
+  }
+  const runB = await quality.runVerification(target.task.taskId, { checkIds: ['quick'] })
+  assert.equal(runB.checks[0].status, 'PASSED', 'параллельный прогон живёт своей жизнью')
+  await quality.cancelVerification(runAId)
+  const finishedA = await runA
+  assert.equal(finishedA.status, 'CANCELLED')
+  // Latest-guard: runB (новее по startedAt) не затёрт финишем runA.
+  assert.equal((await tasks.getTask(target.task.taskId)).latestVerificationId, runB.runId,
+    'более старый прогон не должен перетирать latestVerificationId нового')
+  // Процесс runA убит, процессов runB не осталось (он завершился сам).
+  assert.deepEqual(await processes.listForSession(target.workspace.sessionId), [])
+
+  // Single-active по умолчанию.
+  await quality.setPolicy('demo', {
+    required: ['tests', 'review'],
+    checks: { slow: { argv: ['node', '-e', 'setTimeout(() => {}, 12000)'], timeoutMs: 20000 } },
+  })
+  const first = quality.runVerification(target.task.taskId, { checkIds: ['slow'] })
+  let firstId
+  const deadline2 = Date.now() + 10_000
+  for (;;) {
+    for (const id of await store.list('verifications')) {
+      const row = await store.read('verifications', id)
+      if (row?.taskId === target.task.taskId && row.status === 'RUNNING') firstId = row.runId
+    }
+    if (firstId) break
+    if (Date.now() > deadline2) throw new Error('first не стартовал')
+    await new Promise(resolveTimer => setTimeout(resolveTimer, 25))
+  }
+  await assert.rejects(quality.runVerification(target.task.taskId, { checkIds: ['slow'] }),
+    error => error.code === 'VERIFICATION_ACTIVE',
+    'без allowParallel второй прогон отклоняется')
+  await quality.cancelVerification(firstId)
+  await first
+  // Восстановление политики.
+  await quality.setPolicy('demo', {
+    required: ['tests', 'review'],
+    checks: { tests: { argv: ['node', '-e', 'console.log("ok")'] } },
+  })
+}
+
 // --- 7. Regression-first bugfix (§18) -------------------------------------
 {
   const bug = await makeTask({ title: 'Bug', kind: 'bugfix' })

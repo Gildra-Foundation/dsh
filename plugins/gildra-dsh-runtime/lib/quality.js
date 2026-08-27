@@ -100,6 +100,7 @@ export function qualityPolicyOf(project) {
         ? raw.verification.allowedSecrets.map(String).filter(name => /^[A-Z][A-Z0-9_]{1,60}$/.test(name)).slice(0, 20)
         : [],
       allowUncommitted: raw.verification?.allowUncommitted === true,
+      allowParallel: raw.verification?.allowParallel === true,
     },
     reviewGate: {
       blocking: Array.isArray(raw.reviewGate?.blocking) && raw.reviewGate.blocking.length > 0
@@ -186,6 +187,18 @@ export function createQualityManager({ store, roots, projects, tasks, workspaces
       })
     }
     const runId = generateId('verify')
+    // §19: один активный прогон на задачу, если политика явно не разрешила
+    // параллель. Проверка и запись RUNNING — под коротким локом задачи.
+    await store.withLock(`verify-${taskId.slice(0, 50)}`, async () => {
+      if (!policy.verification.allowParallel) {
+        for (const id of await store.list(VERIFICATIONS)) {
+          const row = await store.read(VERIFICATIONS, id)
+          if (row?.taskId === taskId && (row.status === 'RUNNING' || row.status === 'CANCELLING')) {
+            throw new RuntimeError('VERIFICATION_ACTIVE', 'У задачи уже идёт verification-прогон: дождитесь его, отмените по runId или разрешите параллель политикой.', { taskId, runId: row.runId })
+          }
+        }
+      }
+    }, { timeoutMs: 15_000 })
     const logDir = join(roots.stateRoot, 'logs', 'verify')
     await mkdir(logDir, { recursive: true, mode: 0o700 })
 
@@ -255,6 +268,7 @@ export function createQualityManager({ store, roots, projects, tasks, workspaces
           cwd: snapshotPath,
           env: verificationEnv,
           role: 'verify',
+          meta: { runId, checkId: id },
           logPath,
           timeoutMs: configured.timeoutMs,
         }, configured.argv[0], configured.argv.slice(1))
@@ -265,7 +279,9 @@ export function createQualityManager({ store, roots, projects, tasks, workspaces
       checks.push({
         id,
         argv: configured.argv,
-        status: outcome.timedOut ? 'TIMED_OUT' : outcome.exitCode === 0 ? 'PASSED' : 'FAILED',
+        status: outcome.unterminated
+          ? 'TIMED_OUT_UNTERMINATED'
+          : outcome.timedOut ? 'TIMED_OUT' : outcome.exitCode === 0 ? 'PASSED' : 'FAILED',
         exitCode: outcome.exitCode,
         durationMs: Date.now() - startedAt,
         logPath,
@@ -278,15 +294,31 @@ export function createQualityManager({ store, roots, projects, tasks, workspaces
       await workspaces.removeVerificationSnapshot(task.projectId, snapshotPath).catch(() => {})
     }
 
+    // Отмена могла прийти во время ПОСЛЕДНЕГО check'а: перечитываем статус.
+    const cancelledNow = cancelled || (await store.read(VERIFICATIONS, runId))?.status === 'CANCELLING'
+    if (cancelledNow) {
+      for (const check of checks) {
+        // Убитый отменой процесс — это CANCELLED, а не «провал» команды.
+        if (check.status === 'FAILED' && check.exitCode === null) check.status = 'CANCELLED'
+      }
+    }
     const finished = {
       ...run,
       checks,
-      status: cancelled ? 'CANCELLED' : 'COMPLETED',
+      status: cancelledNow ? 'CANCELLED' : 'COMPLETED',
       finishedAt: new Date().toISOString(),
     }
     await store.write(VERIFICATIONS, runId, finished)
-    // Свежайший прогон — на задаче: readiness смотрит сюда.
-    await tasks.saveTask({ ...(await tasks.getTask(taskId)), latestVerificationId: runId })
+    // Свежайший прогон — на задаче. Под локом и с проверкой старшинства:
+    // более СТАРЫЙ прогон, финишировавший позже, не затирает результат
+    // нового (§19).
+    await store.withLock(`verify-${taskId.slice(0, 50)}`, async () => {
+      const current = await tasks.getTask(taskId)
+      const existing = current.latestVerificationId ? await store.read(VERIFICATIONS, current.latestVerificationId) : undefined
+      if (!existing || Date.parse(finished.startedAt) >= Date.parse(existing.startedAt)) {
+        await tasks.saveTask({ ...current, latestVerificationId: runId })
+      }
+    }, { timeoutMs: 15_000 })
     await appendAudit(roots.stateRoot, 'task.verified', {
       taskId,
       runId,
@@ -307,7 +339,9 @@ export function createQualityManager({ store, roots, projects, tasks, workspaces
     const workspace = await workspaces.getRecord(run.workspaceId).catch(() => undefined)
     if (workspace) {
       const records = await processes.listForSession(workspace.sessionId)
-      for (const record of records.filter(entry => entry.role === 'verify')) {
+      // §19: отмена бьёт ТОЛЬКО процессы этого runId — параллельный прогон
+      // той же задачи/сессии не задевается.
+      for (const record of records.filter(entry => entry.runId === runId)) {
         await processes.terminate(record)
       }
     }

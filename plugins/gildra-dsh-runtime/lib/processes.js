@@ -285,7 +285,7 @@ export function createProcessManager({ store, roots, env = process.env, backend 
     return rows
   }
 
-  async function spawnInSession({ sessionId, workspaceId, cwd, env: childEnv, role = 'task', stdio, onExit }, command, args = []) {
+  async function spawnInSession({ sessionId, workspaceId, cwd, env: childEnv, role = 'task', stdio, onExit, meta }, command, args = []) {
     // Лимит (§35) проверяется под локом сессии: два параллельных spawn иначе
     // прошли бы проверку одновременно и вместе перевалили бы за лимит.
     return store.withLock(sessionLock(sessionId), async () => {
@@ -341,6 +341,11 @@ export function createProcessManager({ store, roots, env = process.env, backend 
         // значения и в state/audit не пишутся.
         command: basename(command),
         role,
+        // Идентичность запуска (§19): verification-процесс принадлежит
+        // конкретному runId/checkId, а не «роли вообще» — cancel одного
+        // прогона не имеет права трогать процессы другого.
+        ...(meta?.runId ? { runId: String(meta.runId) } : {}),
+        ...(meta?.checkId ? { checkId: String(meta.checkId) } : {}),
         cwd,
         startedAt: new Date().toISOString(),
       }
@@ -419,7 +424,7 @@ export function createProcessManager({ store, roots, env = process.env, backend 
   // stdout+stderr пишутся в лог-файл (state не раздувается), возвращается
   // фактический exit code; по таймауту процесс завершается штатным terminate
   // (TERM → KILL group), а не голым kill по PID.
-  async function runManaged({ sessionId, workspaceId, cwd, env: childEnv, role = 'verify', logPath, timeoutMs = 600_000 }, command, args = []) {
+  async function runManaged({ sessionId, workspaceId, cwd, env: childEnv, role = 'verify', logPath, timeoutMs = 600_000, meta }, command, args = []) {
     const logHandle = logPath ? await open(logPath, 'w', 0o600) : undefined
     let settleExit
     const exitPromise = new Promise(resolve => { settleExit = resolve })
@@ -431,6 +436,7 @@ export function createProcessManager({ store, roots, env = process.env, backend 
         cwd,
         env: childEnv,
         role,
+        meta,
         stdio: logHandle ? ['ignore', logHandle.fd, logHandle.fd] : 'ignore',
         onExit: (code, signal) => settleExit({ code, signal }),
       }, command, args)
@@ -439,18 +445,25 @@ export function createProcessManager({ store, roots, env = process.env, backend 
       throw error
     }
     let timedOut = false
+    let unterminated = false
     const timer = setTimeout(() => {
       timedOut = true
       void (async () => {
         const record = await store.read(PROCESSES, spawned.procId)
-        if (record) await terminate(record)
-        // Запись могла уже исчезнуть (гонка с exit) — тогда завершать нечего.
+        if (!record) return
+        const outcome = await terminate(record)
+        // Процесс пережил TERM→KILL (uninterruptible sleep и т.п.): честно
+        // сообщаем TIMED_OUT_UNTERMINATED, а не висим на exitPromise вечно.
+        if (outcome.alive) {
+          unterminated = true
+          settleExit({ code: null, signal: 'UNKILLABLE' })
+        }
       })().catch(() => {})
     }, Math.max(1, timeoutMs))
     const { code, signal } = await exitPromise
     clearTimeout(timer)
     await logHandle?.close().catch(() => {})
-    return { procId: spawned.procId, pid: spawned.pid, exitCode: code, signal, timedOut, logPath }
+    return { procId: spawned.procId, pid: spawned.pid, exitCode: code, signal, timedOut, unterminated, logPath }
   }
 
   return {
