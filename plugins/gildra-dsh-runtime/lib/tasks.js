@@ -456,6 +456,11 @@ export function createTaskManager({ store, roots, projects, team, repoIntel }) {
   // readiness по commitSha).
   async function recordCiEvidence(taskId, evidence) {
     const record = await getTask(taskId)
+    // §7: наличие полей в JSON — не доверие. Evidence принимается только от
+    // слоя, проверившего TRUSTED_INTEGRATION-capability предъявителя.
+    if (evidence?.verifiedIntegration?.provider === undefined) {
+      throw new RuntimeError('CAPABILITY_REQUIRED', 'CI-evidence принимается только от доверенной интеграции (TRUSTED_INTEGRATION capability): поля source/workflowRunId сами по себе ничего не доказывают.', { taskId })
+    }
     const commitSha = typeof evidence?.commitSha === 'string' ? evidence.commitSha : ''
     const conclusion = String(evidence?.conclusion ?? '')
     if (!/^[0-9a-f]{40}$/.test(commitSha)) {
@@ -480,7 +485,8 @@ export function createTaskManager({ store, roots, projects, team, repoIntel }) {
       workflowRunId: String(evidence.workflowRunId),
       ...(evidence.checkSuiteId ? { checkSuiteId: String(evidence.checkSuiteId).slice(0, 60) } : {}),
       ...(evidence.repository ? { repository: String(evidence.repository).slice(0, 200) } : {}),
-      source: String(evidence.source ?? 'github-integration').slice(0, 60),
+      provider: String(evidence.verifiedIntegration.provider).slice(0, 60),
+      verifiedBy: `${String(evidence.verifiedIntegration.provider).slice(0, 60)}-integration`,
       verifiedAt: new Date().toISOString(),
     }
     if (conclusion !== 'success') {

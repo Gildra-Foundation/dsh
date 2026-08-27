@@ -244,7 +244,7 @@ await tasks.recordCiEvidence(taskA.taskId, {
   commitSha: (await tasks.getTask(taskA.taskId)).analysis.headSha,
   conclusion: 'success',
   workflowRunId: 'wf-e2e-1',
-  source: 'github-integration',
+  verifiedIntegration: { provider: 'github' },
 })
 const finalVerdict = await quality.readiness(taskA.taskId)
 assert.deepEqual(finalVerdict.blockers, [], `Definition of Done: ${JSON.stringify(finalVerdict.blockers)}`)

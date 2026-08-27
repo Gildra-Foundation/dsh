@@ -291,30 +291,38 @@ const tasks = createTaskManager({ store, roots, projects })
 
   // Произвольный статус из body не принимается вовсе (§32).
   await assert.rejects(tasks.recordDelivery(task.taskId, { ciStatus: 'PASSED' }), /ci-evidence/)
-  await assert.rejects(tasks.recordCiEvidence(task.taskId, { conclusion: 'success' }), /commitSha/)
+  // §7: без доверенной интеграции evidence не принимается вообще — поля
+  // source/workflowRunId сами ничего не доказывают.
   await assert.rejects(
-    tasks.recordCiEvidence(task.taskId, { commitSha: 'f'.repeat(40), conclusion: 'success' }),
+    tasks.recordCiEvidence(task.taskId, { commitSha: 'f'.repeat(40), conclusion: 'success', workflowRunId: 'wf', source: 'github' }),
+    error => error.code === 'CAPABILITY_REQUIRED',
+  )
+  const viaIntegration = { verifiedIntegration: { provider: 'github' } }
+  await assert.rejects(tasks.recordCiEvidence(task.taskId, { conclusion: 'success', ...viaIntegration }), /commitSha/)
+  await assert.rejects(
+    tasks.recordCiEvidence(task.taskId, { commitSha: 'f'.repeat(40), conclusion: 'success', ...viaIntegration }),
     /workflowRunId/,
     'evidence без идентификатора workflow-run не принимается',
   )
 
   const sha = 'f'.repeat(40)
   for (let attempt = 1; attempt <= 3; attempt += 1) {
-    const after = await tasks.recordCiEvidence(task.taskId, { commitSha: sha, conclusion: 'failure', workflowRunId: `run-${String(attempt)}` })
+    const after = await tasks.recordCiEvidence(task.taskId, { commitSha: sha, conclusion: 'failure', workflowRunId: `run-${String(attempt)}`, ...viaIntegration })
     assert.equal(after.failureKind, 'CI')
     assert.equal(after.status === 'BLOCKED', false, `попытка ${String(attempt)} ещё в лимите`)
   }
-  const exhausted = await tasks.recordCiEvidence(task.taskId, { commitSha: sha, conclusion: 'failure', workflowRunId: 'run-4' })
+  const exhausted = await tasks.recordCiEvidence(task.taskId, { commitSha: sha, conclusion: 'failure', workflowRunId: 'run-4', ...viaIntegration })
   assert.equal(exhausted.status, 'BLOCKED', 'после лимита CI-починок задача останавливается и ждёт человека')
   assert.match(exhausted.blockReason, /CI/)
 
   // Evidence чужого коммита отклоняется, когда HEAD задачи известен.
   await tasks.saveTask({ ...(await tasks.getTask(task.taskId)), analysis: { headSha: 'a'.repeat(40), signals: [] } })
   await assert.rejects(
-    tasks.recordCiEvidence(task.taskId, { commitSha: 'b'.repeat(40), conclusion: 'success', workflowRunId: 'run-x' }),
+    tasks.recordCiEvidence(task.taskId, { commitSha: 'b'.repeat(40), conclusion: 'success', workflowRunId: 'run-x', ...viaIntegration }),
     error => error.code === 'CI_EVIDENCE_MISMATCH',
   )
-  const green = await tasks.recordCiEvidence(task.taskId, { commitSha: 'a'.repeat(40), conclusion: 'success', workflowRunId: 'run-y', checkSuiteId: 'cs-1' })
+  const green = await tasks.recordCiEvidence(task.taskId, { commitSha: 'a'.repeat(40), conclusion: 'success', workflowRunId: 'run-y', checkSuiteId: 'cs-1', ...viaIntegration })
+  assert.equal(green.delivery.ci.verifiedBy, 'github-integration')
   assert.equal(green.delivery.ci.conclusion, 'success')
   assert.equal(green.delivery.ci.workflowRunId, 'run-y')
 

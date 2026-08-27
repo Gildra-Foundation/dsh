@@ -121,10 +121,26 @@ export function registerQualityRoutes(route, { projects, workspaces, tasks, repo
     POST: async ({ body }) => ({ payload: { task: await tasks.recordDelivery(body.taskId, body) } }),
   }),
 
-  // CI-факты — только структурным evidence (§32); произвольный статус из
-  // body отклоняется на уровне модели.
+  // CI-факты — только от доверенной интеграции (§7 плана authority):
+  // многоразовая TRUSTED_INTEGRATION-capability выдаётся при настройке
+  // интеграции интерактивным каналом; JSON-поля сами ничего не доказывают.
   route('/gildra/v1/tasks/ci-evidence', {
-    POST: async ({ body }) => ({ payload: { task: await tasks.recordCiEvidence(body.taskId, body) } }),
+    POST: async ({ body }) => {
+      const task = await tasks.getTask(body.taskId)
+      const integration = await capabilities.verify(body.capability, {
+        role: 'TRUSTED_INTEGRATION',
+        scope: 'ci-evidence',
+        projectId: task.projectId,
+      })
+      return {
+        payload: {
+          task: await tasks.recordCiEvidence(body.taskId, {
+            ...body,
+            verifiedIntegration: { provider: integration.entityId ?? 'github' },
+          }),
+        },
+      }
+    },
   }),
 
   route('/gildra/v1/tasks/human-approval', {

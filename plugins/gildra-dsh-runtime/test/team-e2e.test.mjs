@@ -263,7 +263,7 @@ async function driveToReady(rt, task, ws, reviewerName) {
   }
   const head = (await rt.tasks.getTask(task.taskId)).analysis.headSha
   // §40.17: CI-evidence привязано к commit SHA.
-  await rt.tasks.recordCiEvidence(task.taskId, { commitSha: head, conclusion: 'success', workflowRunId: `wf-${task.taskId}` })
+  await rt.tasks.recordCiEvidence(task.taskId, { commitSha: head, conclusion: 'success', workflowRunId: `wf-${task.taskId}`, verifiedIntegration: { provider: 'github' } })
   // §40.18: CODEOWNERS-область (src/domain) требует человека — у Peter её
   // может не быть; approve фиксируем при необходимости.
   const verdictBefore = await rt.quality.readiness(task.taskId)

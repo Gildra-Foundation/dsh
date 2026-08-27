@@ -320,7 +320,7 @@ await assert.rejects(
 
   const headNow = (await tasks.getTask(task.taskId)).analysis.headSha
   await tasks.recordDelivery(task.taskId, { mode: 'PR', prUrl: 'https://github.com/acme/x/pull/5', prNumber: 5, branchPushed: true })
-  await tasks.recordCiEvidence(task.taskId, { commitSha: headNow, conclusion: 'success', workflowRunId: 'wf-1' })
+  await tasks.recordCiEvidence(task.taskId, { commitSha: headNow, conclusion: 'success', workflowRunId: 'wf-1', verifiedIntegration: { provider: 'github' } })
   // §6: слово «human» не работает — нужна одноразовая capability из
   // интерактивного канала (здесь его роль играет прямой issue).
   await assert.rejects(

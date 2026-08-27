@@ -472,15 +472,24 @@ let ownerToken
   }))
   assert.equal(forgedCi.status, 400)
   const headNow = run.body.run.headSha
+  // §7: без TRUSTED_INTEGRATION-capability даже идеальный payload — отказ.
+  const forgedCiRun = await call(routeOf('/gildra/v1/tasks/ci-evidence'), requestFor({
+    method: 'POST', body: { taskId: flowTask.taskId, commitSha: headNow, conclusion: 'success', workflowRunId: 'wf-9', source: 'github' },
+  }))
+  assert.equal(forgedCiRun.status, 403)
+  const integrationCap = await runtime.capabilities.issue({
+    role: 'TRUSTED_INTEGRATION', scope: 'ci-evidence', entityId: 'github', projectId: 'demo', oneTime: false, ttlMs: 60 * 60_000,
+  })
   const wrongSha = await call(routeOf('/gildra/v1/tasks/ci-evidence'), requestFor({
-    method: 'POST', body: { taskId: flowTask.taskId, commitSha: '1'.repeat(40), conclusion: 'success', workflowRunId: 'wf-9' },
+    method: 'POST', body: { taskId: flowTask.taskId, capability: integrationCap.capability, commitSha: '1'.repeat(40), conclusion: 'success', workflowRunId: 'wf-9' },
   }))
   assert.equal(wrongSha.status, 409)
   assert.equal(wrongSha.body.error.code, 'CI_EVIDENCE_MISMATCH')
   const goodCi = await call(routeOf('/gildra/v1/tasks/ci-evidence'), requestFor({
-    method: 'POST', body: { taskId: flowTask.taskId, commitSha: headNow, conclusion: 'success', workflowRunId: 'wf-10' },
+    method: 'POST', body: { taskId: flowTask.taskId, capability: integrationCap.capability, commitSha: headNow, conclusion: 'success', workflowRunId: 'wf-10' },
   }))
   assert.equal(goodCi.body.task.delivery.ci.conclusion, 'success')
+  assert.equal(goodCi.body.task.delivery.ci.verifiedBy, 'github-integration')
   const upstreamCheck = await call(routeOf('/gildra/v1/tasks/upstream'), requestFor({
     method: 'POST', body: { taskId: flowTask.taskId },
   }))
