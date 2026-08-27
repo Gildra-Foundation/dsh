@@ -6,16 +6,17 @@
 // (limitations: submodules/LFS не поддерживаются гарантированно, shallow не
 // используется) — честно, вместо тихой полу-поддержки.
 
-import { access } from 'node:fs/promises'
-import { basename, resolve } from 'node:path'
+import { access, realpath, stat } from 'node:fs/promises'
+import { basename, resolve, sep } from 'node:path'
 import { RuntimeError } from './errors.js'
 import { DEFAULT_PROTECTED_BRANCHES, assertBranchName, assertSegment, sanitizeSegment } from './ids.js'
 import { repoPath } from './paths.js'
 import {
+  checkRepositoryIntegrity,
   cloneBare,
   detectDefaultBranch,
   fetchOrigin,
-  isGitRepository,
+  repositoryKind,
   revParse,
 } from './gitx.js'
 import { appendAudit } from './audit.js'
@@ -44,6 +45,58 @@ function cloneUrl(raw) {
     throw new RuntimeError('INVALID_INPUT', 'Поддерживаются только чистые HTTPS-ссылки GitHub, GitLab и Bitbucket.')
   }
   return parsed.href
+}
+
+// Безопасное принятие существующего репозитория (§14). Отказ здесь всегда
+// лучше молчаливого принятия: canonical-репозиторий станет общим ресурсом
+// для всех сессий проекта.
+export async function validateAdoptedRepository(rawPath) {
+  if (typeof rawPath !== 'string' || rawPath.trim() === '') {
+    throw new RuntimeError('INVALID_INPUT', 'Не указан путь к репозиторию.')
+  }
+  if (rawPath.includes('\0')) {
+    throw new RuntimeError('INVALID_INPUT', 'Путь содержит недопустимый символ.')
+  }
+  const requested = resolve(rawPath)
+  // Канонизируем через realpath: дальше работаем с реальным путём, а не с
+  // цепочкой симлинков, которую можно подменить.
+  let canonical
+  try {
+    canonical = await realpath(requested)
+  } catch {
+    throw new RuntimeError('INVALID_INPUT', 'Путь не существует.', { path: requested })
+  }
+  let info
+  try {
+    info = await stat(canonical)
+  } catch {
+    throw new RuntimeError('INVALID_INPUT', 'Путь недоступен.', { path: canonical })
+  }
+  if (!info.isDirectory()) {
+    throw new RuntimeError('INVALID_INPUT', 'Путь должен указывать на каталог репозитория.', { path: canonical })
+  }
+  const kind = await repositoryKind(canonical)
+  if (!kind) {
+    throw new RuntimeError('INVALID_INPUT', 'Указанный путь не является Git-репозиторием.', { path: canonical })
+  }
+  // Служебный каталог чужого worktree (.git-файл-ссылка или .git/worktrees/*)
+  // выглядит как репозиторий, но принимать его нельзя: мы начали бы двигать
+  // ветки под чужим рабочим деревом.
+  if (basename(canonical) === '.git' || canonical.includes(`${sep}.git${sep}`)) {
+    throw new RuntimeError('INVALID_INPUT', 'Нельзя принять служебный каталог .git: укажите корень репозитория.', { path: canonical })
+  }
+  if (!kind.bare) {
+    // Не-bare репозиторий пригоден, только если это его собственный корень:
+    // подкаталог отдал бы нам верхний репозиторий неожиданно для пользователя.
+    const topLevel = kind.topLevel ? await realpath(kind.topLevel).catch(() => kind.topLevel) : undefined
+    if (!topLevel || topLevel !== canonical) {
+      throw new RuntimeError('INVALID_INPUT', 'Укажите корень репозитория, а не его подкаталог.', { path: canonical, repositoryRoot: topLevel })
+    }
+    // Не-bare canonical означает, что у репозитория есть рабочее дерево:
+    // ветку, извлечённую в нём, Runtime двигать не станет (BRANCH_CHECKED_OUT),
+    // поэтому предупреждаем об этом честно записью в проекте.
+  }
+  return canonical
 }
 
 export function createProjectRegistry({ store, roots }) {
@@ -83,10 +136,10 @@ export function createProjectRegistry({ store, roots }) {
     let canonicalRepoPath
     let origin
     if (hasPath) {
-      canonicalRepoPath = resolve(input.path)
-      if (!(await pathExists(canonicalRepoPath)) || !(await isGitRepository(canonicalRepoPath))) {
-        throw new RuntimeError('INVALID_INPUT', 'Указанный путь не является Git-репозиторием.', { path: canonicalRepoPath })
-      }
+      // Adopt локального пути — самая рискованная поверхность реестра (§14):
+      // путь приходит снаружи, а репозиторий недоверенный. Проверяем всё, что
+      // можно проверить, ДО того как он станет canonical для чужих сессий.
+      canonicalRepoPath = await validateAdoptedRepository(input.path)
       origin = { type: 'local' }
     } else {
       const url = cloneUrl(input.repoUrl)
@@ -123,6 +176,38 @@ export function createProjectRegistry({ store, roots }) {
     return record
   }
 
+  // Проверка целостности canonical-репозитория (§15). Не запускается на
+  // каждый запрос: только вручную, после подозрительной ошибки и при
+  // восстановлении. Повреждённый проект помечается, но НИЧЕГО не удаляется.
+  async function checkHealth(projectId) {
+    const project = await get(projectId)
+    const result = await checkRepositoryIntegrity(project.canonicalRepoPath)
+    const health = result.healthy ? 'healthy' : 'degraded'
+    if (project.health !== health) {
+      await store.write(PROJECTS, projectId, {
+        ...project,
+        health,
+        ...(result.healthy ? {} : { healthProblems: result.problems }),
+        healthCheckedAt: new Date().toISOString(),
+      })
+      await appendAudit(roots.stateRoot, 'project.health', { projectId, health })
+    }
+    return { projectId, health, ...(result.healthy ? {} : { problems: result.problems }) }
+  }
+
+  // Новые write-сессии не создаются для повреждённого проекта, пока
+  // пользователь не разберётся: иначе поверх битого репозитория появятся
+  // новые worktree.
+  function assertUsable(project) {
+    if (project.health === 'degraded') {
+      throw new RuntimeError('PROJECT_DEGRADED', `Репозиторий проекта «${project.projectId}» повреждён: создание новых сессий приостановлено до восстановления.`, {
+        projectId: project.projectId,
+        problems: project.healthProblems?.slice(0, 5),
+      })
+    }
+    return project
+  }
+
   async function unregister(projectId) {
     // Только метаданные: canonical-репозиторий и worktree никогда не
     // удаляются этой операцией.
@@ -140,6 +225,9 @@ export function createProjectRegistry({ store, roots }) {
     return { fetched: true }
   }
 
+  // База сессии закрепляется НЕИЗМЕНЯЕМЫМ коммитом (§16): ветка может уехать
+  // между резолвом и созданием worktree, и тогда две сессии, попросившие одну
+  // «main», стартовали бы с разных состояний.
   async function resolveBaseRef(project, requestedBaseRef) {
     const candidate = typeof requestedBaseRef === 'string' && requestedBaseRef !== ''
       ? requestedBaseRef
@@ -151,5 +239,5 @@ export function createProjectRegistry({ store, roots }) {
     return { baseRef: candidate, baseSha: sha }
   }
 
-  return { get, list, register, unregister, fetchProject, resolveBaseRef }
+  return { get, list, register, unregister, fetchProject, resolveBaseRef, checkHealth, assertUsable }
 }

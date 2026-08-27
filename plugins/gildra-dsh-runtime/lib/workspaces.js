@@ -73,7 +73,7 @@ export function createWorkspaceManager({ store, roots, projects, leases, process
   }
 
   async function createWorkspace({ projectId, userId, sessionId, baseRef, branch, mode = 'write' }) {
-    const project = await projects.get(projectId)
+    const project = projects.assertUsable ? projects.assertUsable(await projects.get(projectId)) : await projects.get(projectId)
     assertSegment(userId, 'userId')
     assertSegment(sessionId, 'sessionId')
     if (mode !== 'write' && mode !== 'read') {
@@ -278,7 +278,7 @@ export function createWorkspaceManager({ store, roots, projects, leases, process
   // последним шагом; при падении на любом шаге target остаётся нетронутым, а
   // конфликтные маркеры сохраняются для ревью.
   async function startMerge({ projectId, sourceBranch, targetBranch, policy = {} }) {
-    const project = await projects.get(projectId)
+    const project = projects.assertUsable ? projects.assertUsable(await projects.get(projectId)) : await projects.get(projectId)
     if (!(await branchExists(project.canonicalRepoPath, sourceBranch))) {
       throw new RuntimeError('INVALID_INPUT', `Ветка-источник «${sourceBranch}» не найдена.`, { sourceBranch })
     }
@@ -474,7 +474,7 @@ export function createWorkspaceManager({ store, roots, projects, leases, process
         return path
       }
     }
-    const project = await projects.get(projectId)
+    const project = projects.assertUsable ? projects.assertUsable(await projects.get(projectId)) : await projects.get(projectId)
     const known = new Set(await Promise.all(
       (await listRecords({ projectId })).map(record => canonicalPath(record.path)),
     ))
