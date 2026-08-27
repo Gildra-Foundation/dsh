@@ -267,6 +267,7 @@ export class JsonStore {
             /* reap уже исчез */
           }
         }
+        let reaped = false
         if (reaping) {
           try {
             let livePid = null
@@ -279,6 +280,7 @@ export class JsonStore {
               const stale = `${lockPath}.stale-${randomUUID()}`
               await rename(lockPath, stale)
               await rm(stale, { recursive: true, force: true }).catch(() => {})
+              reaped = true
             }
           } catch {
             // Лок уже исчез или сменил владельца — просто повторяем цикл.
@@ -286,6 +288,17 @@ export class JsonStore {
             await rm(reap, { recursive: true, force: true }).catch(() => {})
           }
         }
+        // Ветка мёртвого владельца ОБЯЗАНА подчиняться тем же дедлайну и
+        // паузе, что и обычное ожидание. Раньше она делала `continue` в обход
+        // обеих проверок: при заклинившем перехвате (например брошенный
+        // reap-каталог после SIGKILL жнеца или EPERM на rename в Windows)
+        // цикл крутился на 100% CPU и игнорировал timeoutMs.
+        if (Date.now() >= deadline) {
+          throw new RuntimeError('WORKSPACE_BUSY', `Операция «${name}» занята другим процессом.`, { lock: name, ownerPid })
+        }
+        // Успешный перехват освободил путь — повторяем сразу; проигравший
+        // гонку за reap-мьютекс ждёт, чтобы не жечь CPU.
+        if (!reaped) await new Promise(resolveTimer => setTimeout(resolveTimer, LOCK_RETRY_MS))
         continue
       }
       if (Date.now() >= deadline) {

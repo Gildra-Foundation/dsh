@@ -6,6 +6,7 @@
 // только при process.platform !== 'win32'.
 
 import assert from 'node:assert/strict'
+import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, readdir, rm, stat, utimes, writeFile } from 'node:fs/promises'
@@ -302,5 +303,39 @@ const backdate = async (path, ms) => {
 }
 
 await rm(base, { recursive: true, force: true })
+
+// --- withLock: ветка мёртвого владельца соблюдает дедлайн (регрессия) ----
+// Сценарий из стресс-теста: жнеца убили SIGKILL, его reap-каталог остался.
+// Раньше ветка мёртвого владельца делала `continue` в обход проверки дедлайна
+// и паузы — вызов не возвращался по timeoutMs и крутил CPU в тугом цикле.
+{
+  const root = await mkdtemp(join(tmpdir(), 'gildra-lock-deadline-'))
+  const store = new JsonStore(root)
+  await store.ensureRoot()
+
+  const deadChild = spawn(process.execPath, ['-e', 'process.exit(0)'], { stdio: 'ignore' })
+  const deadPid = deadChild.pid
+  await new Promise(resolveExit => deadChild.on('exit', resolveExit))
+
+  const lockPath = join(root, 'locks', 'stuck.lock')
+  await mkdir(lockPath, { recursive: true })
+  await writeFile(join(lockPath, 'meta.json'), JSON.stringify({ pid: deadPid }))
+  // Осиротевший reap-мьютекс: свежий, поэтому 30-секундный порог «брошенного»
+  // ещё не сработает и перехват будет проваливаться на каждой итерации.
+  await mkdir(`${lockPath}.reap`, { recursive: true })
+
+  const startedAt = Date.now()
+  let thrown
+  try {
+    await store.withLock('stuck', async () => 'не должно выполниться', { timeoutMs: 300 })
+  } catch (error) {
+    thrown = error
+  }
+  const elapsed = Date.now() - startedAt
+  assert.equal(thrown?.code, 'WORKSPACE_BUSY', 'заклинивший перехват обязан завершиться по таймауту')
+  assert.ok(elapsed < 3000, `таймаут 300 мс должен соблюдаться, а ожидание заняло ${String(elapsed)} мс`)
+
+  await rm(root, { recursive: true, force: true })
+}
 
 console.log('Gildra Runtime store tests passed.')
