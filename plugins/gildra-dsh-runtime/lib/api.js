@@ -28,12 +28,18 @@ import { createPortAllocator } from './ports.js'
 import { createWorkspaceManager } from './workspaces.js'
 import { createSessionManager } from './sessions.js'
 import { createTaskManager } from './tasks.js'
+import { createRepoIntel } from './repo-intel.js'
+import { createQualityManager } from './quality.js'
+import { createReviewManager } from './review.js'
+import { createUpstreamMonitor } from './upstream.js'
+import { createContextBuilder } from './context-builder.js'
+import { dirtyFiles } from './gitx.js'
 import { agentContextBlock, renderRuntimeProfile, sessionEnvironment } from './runtime-env.js'
 
 export const API_VERSION = 1
 // Версия реализации Runtime отдельно от версии API: UI понимает
 // совместимость, даже когда контракт не менялся, а поведение — да.
-export const RUNTIME_VERSION = 2
+export const RUNTIME_VERSION = 3
 
 function queryOf(req) {
   return new URL(req.url ?? '/', 'http://127.0.0.1').searchParams
@@ -57,12 +63,19 @@ export function createRuntime({ env = process.env } = {}) {
   const workspaces = createWorkspaceManager({ store, roots, projects, leases, processes, journal, env })
   const sessions = createSessionManager({ store, roots, projects, workspaces, leases, processes, ports, journal, env })
   const tasks = createTaskManager({ store, roots, projects })
+  // Слой AI-качества (docs/ai-quality.md): profile → задача → verification →
+  // независимое ревью → readiness. Всё поверх тех же store/processes/git.
+  const repoIntel = createRepoIntel({ store, roots, projects })
+  const quality = createQualityManager({ store, roots, projects, tasks, workspaces, processes })
+  const reviews = createReviewManager({ store, roots, projects, tasks, workspaces, repoIntel })
+  const upstream = createUpstreamMonitor({ roots, projects, tasks })
+  const contextBuilder = createContextBuilder({ projects, tasks, workspaces, sessions, repoIntel, upstream })
   const lifecycle = createLifecycle({ roots, store, sessions, projects })
-  return { roots, store, projects, leases, processes, ports, workspaces, sessions, tasks, lifecycle }
+  return { roots, store, projects, leases, processes, ports, workspaces, sessions, tasks, repoIntel, quality, reviews, upstream, contextBuilder, lifecycle }
 }
 
 export function registerRuntimeRoutes(ctx, runtime = createRuntime()) {
-  const { store, projects, leases, processes, ports, workspaces, sessions, tasks, lifecycle } = runtime
+  const { store, projects, leases, processes, ports, workspaces, sessions, tasks, repoIntel, quality, reviews, upstream, contextBuilder, lifecycle } = runtime
   const idempotency = createIdempotencyCache()
 
   // Единый каркас маршрута: guard'ы + структурные ошибки в одном месте.
@@ -166,6 +179,11 @@ export function registerRuntimeRoutes(ctx, runtime = createRuntime()) {
             fencing: true,
             merges: true,
             tasks: true,
+            repositoryIntelligence: true,
+            qualityPipeline: true,
+            reviews: true,
+            teamClaims: true,
+            upstreamAwareness: true,
             ports: true,
             processes: true,
             recovery: true,
@@ -319,6 +337,100 @@ export function registerRuntimeRoutes(ctx, runtime = createRuntime()) {
         if (body.status !== undefined) await tasks.transition(body.taskId, body.status, body)
         return { payload: { task: await tasks.updateTask(body.taskId, body) } }
       },
+    }),
+
+    // --- Слой AI-качества (§65): repository intelligence, quality, review --
+
+    route('/gildra/v1/repo/profile', {
+      GET: async ({ query }) => ({ payload: { profile: await repoIntel.getProfile(query.get('projectId') ?? '', { refresh: query.get('refresh') === '1' }) } }),
+    }),
+
+    route('/gildra/v1/repo/commands/approve', {
+      POST: async ({ body }) => ({ payload: { approved: await repoIntel.approveCommands(body.projectId, body.commands) } }),
+    }),
+
+    route('/gildra/v1/quality/policy', {
+      POST: async ({ body }) => ({ payload: { policy: await quality.setPolicy(body.projectId, body.policy) } }),
+      GET: async ({ query }) => ({ payload: { policy: quality.qualityPolicyOf(await projects.get(query.get('projectId') ?? '')) } }),
+    }),
+
+    route('/gildra/v1/tasks/attach', {
+      POST: async ({ body }) => {
+        const workspace = await workspaces.getRecord(body.workspaceId)
+        // Dirty precondition (§39) считает сервер, а не доверяет клиенту.
+        const dirty = await dirtyFiles(workspace.path)
+        return {
+          payload: {
+            task: await tasks.attachWorkspace(body.taskId, {
+              workspaceId: workspace.workspaceId,
+              sessionId: workspace.sessionId,
+              branch: workspace.branch,
+              baseSha: workspace.baseSha,
+              dirtyFiles: dirty,
+              acceptDirty: body.acceptDirty === true,
+            }),
+          },
+        }
+      },
+    }),
+
+    route('/gildra/v1/tasks/claims', {
+      POST: async ({ body }) => ({ payload: await tasks.setClaims(body.taskId, body.claims, { confirmExclusiveOverlap: body.confirmExclusiveOverlap === true }) }),
+    }),
+
+    route('/gildra/v1/tasks/acknowledge', {
+      POST: async ({ body }) => ({ payload: { task: await tasks.acknowledgeSignal(body.taskId, body) } }),
+    }),
+
+    route('/gildra/v1/tasks/verify', {
+      POST: async ({ body }) => ({ payload: { run: await quality.runVerification(body.taskId, { checkIds: body.checkIds }) } }),
+      GET: async ({ query }) => ({ payload: { run: await quality.getVerification(query.get('runId') ?? '') } }),
+    }),
+
+    route('/gildra/v1/tasks/verify/cancel', {
+      POST: async ({ body }) => ({ payload: { run: await quality.cancelVerification(body.runId) } }),
+    }),
+
+    route('/gildra/v1/tasks/regression', {
+      POST: async ({ body }) => ({ payload: { task: await quality.recordRegression(body.taskId, body) } }),
+    }),
+
+    // Definition of Done: факты и блокеры (§49, §66).
+    route('/gildra/v1/tasks/quality', {
+      GET: async ({ query }) => ({ payload: { quality: await quality.readiness(query.get('taskId') ?? '') } }),
+    }),
+
+    // Единственный путь в READY_FOR_HUMAN_REVIEW.
+    route('/gildra/v1/tasks/promote', {
+      POST: async ({ body }) => ({ payload: { task: await quality.promoteIfReady(body.taskId) } }),
+    }),
+
+    route('/gildra/v1/tasks/context', {
+      GET: async ({ query }) => ({ payload: { context: await contextBuilder.buildTaskContext(query.get('taskId') ?? '') } }),
+    }),
+
+    route('/gildra/v1/tasks/upstream', {
+      POST: async ({ body }) => ({ payload: { upstream: await upstream.assessUpstream(body.taskId) } }),
+    }),
+
+    route('/gildra/v1/tasks/delivery', {
+      POST: async ({ body }) => ({ payload: { task: await tasks.recordDelivery(body.taskId, body) } }),
+    }),
+
+    route('/gildra/v1/reviews/request', {
+      POST: async ({ body }) => ({ statusCode: 201, payload: await reviews.requestReview(body.taskId, body) }),
+    }),
+
+    route('/gildra/v1/reviews/submit', {
+      POST: async ({ body }) => ({ payload: { review: await reviews.submitReview(body.reviewId, body) } }),
+    }),
+
+    route('/gildra/v1/reviews', {
+      GET: async ({ query }) => ({ payload: { review: await reviews.getReview(query.get('reviewId') ?? '') } }),
+    }),
+
+    route('/gildra/v1/team', {
+      GET: async ({ query }) => ({ payload: { team: await tasks.teamOverview(query.get('projectId') ?? undefined) } }),
     }),
 
     route('/gildra/v1/recovery/scan', {

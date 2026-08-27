@@ -44,7 +44,7 @@ Object.defineProperty(globalThis, 'navigator', {
 // Сеть в тесте: маршруты Gildra Runtime отвечают фикстурами (панель
 // Workspaces должна отрисоваться), всё остальное — отказом.
 const RUNTIME_FIXTURES = {
-  '/gildra/v1/health': { ok: true, health: { runtime: 'READY', ready: true, apiVersion: 1, runtimeVersion: 2 } },
+  '/gildra/v1/health': { ok: true, health: { runtime: 'READY', ready: true, apiVersion: 1, runtimeVersion: 3 } },
   '/gildra/v1/merges/list?activeOnly=1': {
     ok: true,
     merges: [{

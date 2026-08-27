@@ -332,5 +332,119 @@ let ownerToken
   assert.doesNotMatch(serialized, /[0-9a-f]{48}/)
 }
 
+// --- Слой качества через HTTP-обвязку (§65, §66) ---------------------------
+{
+  // Политика: единственная trusted-команда + review; policy отдаётся GET-ом.
+  const setPolicy = await call(routeOf('/gildra/v1/quality/policy'), requestFor({
+    method: 'POST',
+    body: { projectId: 'demo', policy: { required: ['tests', 'review'], checks: { tests: { argv: ['node', '-e', 'console.log("api ok")'] } } } },
+  }))
+  assert.equal(setPolicy.status, 200)
+  const gotPolicy = await call(routeOf('/gildra/v1/quality/policy'), requestFor({ url: '/gildra/v1/quality/policy?projectId=demo' }))
+  assert.deepEqual(gotPolicy.body.policy.required, ['tests', 'review'])
+
+  // Профиль репозитория строится и кэшируется.
+  const profile = await call(routeOf('/gildra/v1/repo/profile'), requestFor({ url: '/gildra/v1/repo/profile?projectId=demo' }))
+  assert.equal(profile.status, 200)
+  assert.ok(Array.isArray(profile.body.profile.languages))
+
+  // Задача с критериями и claims; вторая задача видит пересечение.
+  const taskA = await call(routeOf('/gildra/v1/tasks'), requestFor({
+    method: 'POST',
+    body: { projectId: 'demo', title: 'Quality flow', owner: 'alex', acceptanceCriteria: ['работает'], claims: ['README.md'] },
+  }))
+  const flowTask = taskA.body.task
+  const taskB = await call(routeOf('/gildra/v1/tasks'), requestFor({
+    method: 'POST',
+    body: { projectId: 'demo', title: 'Neighbour', owner: 'peter', claims: ['README.md'] },
+  }))
+  assert.equal(taskB.body.overlaps.length, 1, 'API отдаёт пересечения claims')
+
+  // Team view.
+  const team = await call(routeOf('/gildra/v1/team'), requestFor({ url: '/gildra/v1/team?projectId=demo' }))
+  assert.ok(team.body.team.activeTasks >= 2)
+  assert.ok(team.body.team.overlaps.length >= 1)
+
+  // Привязка workspace: dirty считает сервер.
+  const sessionB = await call(routeOf('/gildra/v1/sessions'), requestFor({
+    method: 'POST',
+    body: { projectId: 'demo', userId: 'alex', sessionId: 'apiflow' },
+  }))
+  const workspaceId = sessionB.body.session.workspaceId
+  const attach = await call(routeOf('/gildra/v1/tasks/attach'), requestFor({
+    method: 'POST',
+    body: { taskId: flowTask.taskId, workspaceId },
+  }))
+  assert.equal(attach.status, 200)
+  assert.equal(attach.body.task.workspaceId, workspaceId)
+
+  // Verification через API → quality → блокер REVIEW_MISSING → promote 409.
+  const run = await call(routeOf('/gildra/v1/tasks/verify'), requestFor({
+    method: 'POST',
+    body: { taskId: flowTask.taskId },
+  }))
+  assert.equal(run.body.run.status, 'COMPLETED')
+  assert.equal(run.body.run.checks.find(check => check.id === 'tests').status, 'PASSED')
+
+  const qualityBefore = await call(routeOf('/gildra/v1/tasks/quality'), requestFor({ url: `/gildra/v1/tasks/quality?taskId=${flowTask.taskId}` }))
+  assert.equal(qualityBefore.body.quality.ready, false)
+  assert.ok(qualityBefore.body.quality.blockers.some(blocker => blocker.id === 'REVIEW_MISSING'))
+  const promoteEarly = await call(routeOf('/gildra/v1/tasks/promote'), requestFor({
+    method: 'POST', body: { taskId: flowTask.taskId },
+  }))
+  assert.equal(promoteEarly.status, 409)
+  assert.equal(promoteEarly.body.error.code, 'READINESS_REQUIRED')
+
+  // Ревью: writer≠reviewer guard работает и через API.
+  await call(routeOf('/gildra/v1/tasks/update'), requestFor({
+    method: 'POST', body: { taskId: flowTask.taskId, writerAgent: 'writer-a' },
+  }))
+  const conflict = await call(routeOf('/gildra/v1/reviews/request'), requestFor({
+    method: 'POST', body: { taskId: flowTask.taskId, reviewerAgent: 'writer-a' },
+  }))
+  assert.equal(conflict.status, 409)
+  assert.equal(conflict.body.error.code, 'WRITER_REVIEWER_CONFLICT')
+
+  const requested = await call(routeOf('/gildra/v1/reviews/request'), requestFor({
+    method: 'POST', body: { taskId: flowTask.taskId, reviewerAgent: 'reviewer-b' },
+  }))
+  assert.equal(requested.status, 201)
+  assert.ok(requested.body.packet.acceptanceCriteria.length === 1)
+  const submitted = await call(routeOf('/gildra/v1/reviews/submit'), requestFor({
+    method: 'POST',
+    body: { reviewId: requested.body.review.reviewId, verdict: 'APPROVED', findings: [], criteriaVerdicts: [{ met: true }] },
+  }))
+  assert.equal(submitted.body.review.verdict, 'APPROVED')
+
+  // Контекст задачи компактен и структурен.
+  const context = await call(routeOf('/gildra/v1/tasks/context'), requestFor({ url: `/gildra/v1/tasks/context?taskId=${flowTask.taskId}` }))
+  assert.ok(context.body.context.text.length < 8200)
+  assert.deepEqual(context.body.context.structured.required, ['tests', 'review'])
+
+  // Evidence протух после нового прогона не требуется — sha не менялся —
+  // теперь gate зелёный и promote работает.
+  const promote = await call(routeOf('/gildra/v1/tasks/promote'), requestFor({
+    method: 'POST', body: { taskId: flowTask.taskId },
+  }))
+  assert.equal(promote.status, 200, JSON.stringify(promote.body))
+  assert.equal(promote.body.task.status, 'READY_FOR_HUMAN_REVIEW')
+
+  // Delivery + upstream.
+  const delivery = await call(routeOf('/gildra/v1/tasks/delivery'), requestFor({
+    method: 'POST', body: { taskId: flowTask.taskId, mode: 'PR', prUrl: 'https://github.com/acme/demo/pull/12', prNumber: 12, ciStatus: 'PASSED' },
+  }))
+  assert.equal(delivery.body.task.delivery.prNumber, 12)
+  const upstreamCheck = await call(routeOf('/gildra/v1/tasks/upstream'), requestFor({
+    method: 'POST', body: { taskId: flowTask.taskId },
+  }))
+  assert.equal(upstreamCheck.body.upstream.status, 'UP_TO_DATE')
+
+  // Capabilities объявляют слой качества.
+  const capabilities = await call(routeOf('/gildra/v1/capabilities'), requestFor({}))
+  assert.equal(capabilities.body.features.qualityPipeline, true)
+  assert.equal(capabilities.body.features.teamClaims, true)
+  assert.equal(capabilities.body.features.upstreamAwareness, true)
+}
+
 await rm(base, { recursive: true, force: true })
 console.log('Gildra Runtime API tests passed.')
