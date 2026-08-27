@@ -10,7 +10,7 @@ heartbeat, частично выполненные Git-операции, reconne
 
 | Area | Finding | Severity | Fix |
 | --- | --- | --- | --- |
-| Git env | `git()` слепо наследует весь `process.env`, включая `GIT_SSH_COMMAND`/`GIT_ASKPASS`/`GIT_CONFIG*`; репозиторий может навязать hook/helper | **High** | `gitSafeEnv` + `-c core.hooksPath=…` |
+| Git env | `git()` слепо наследует весь `process.env`, включая `GIT_DIR`/`GIT_WORK_TREE`/`GIT_CONFIG*`, которые перенаправляют managed-команду в чужой репозиторий | **High** | `gitSafeEnv` + `-c core.hooksPath=…` |
 | Git hooks | worktree/merge исполняют hooks недоверенного репо | **High** | отключены флагами на всех managed-командах |
 | Lease ABA | «воскресший» writer после takeover мог финализировать destructive-операцию | **High** | fencing `generation` в durable-счётчике |
 | Crash consistency | многошаговые create/merge/cleanup без журнала: recovery гадает | **High** | durable operation journal + reconciliation |
@@ -140,8 +140,11 @@ BOOTING → RECOVERING (reconcile state ↔ worktrees ↔ git ↔ processes) →
 контролируемое окружение (`gitSafeEnv`): опасные `GIT_*` (`GIT_DIR`,
 `GIT_WORK_TREE`, `GIT_CONFIG*`, `GIT_SSH_COMMAND`, `GIT_ASKPASS`,
 `GIT_TEMPLATE_DIR`, `GIT_HOOKS_PATH`, `GIT_PROXY_COMMAND`, `GIT_EXTERNAL_DIFF`,
-`GIT_PAGER`, …) вычищаются из унаследованного env, а флаги
-`-c core.hooksPath=<empty> -c core.fsmonitor=false -c protocol.ext.allow=never`
+`GIT_PAGER`, …) вычищаются из унаследованного env. Важное уточнение: `GIT_SSH_COMMAND`,
+`GIT_ASKPASS` и `SSH_AUTH_SOCK` СОХРАНЯЮТСЯ — это собственные настройки
+пользователя внутри его же Unix-аккаунта, а не влияние недоверенного
+репозитория; ломать ими аутентификацию незачем, зависания закрывает таймаут.
+Флаги `-c core.hooksPath=<empty> -c core.fsmonitor=false -c protocol.ext.allow=never`
 + `GIT_TERMINAL_PROMPT=0` не дают репозиторию заставить Runtime выполнить
 произвольный helper/hook. SSH host-verification НЕ ослабляется. Аутентификация
 пользователя (`GIT_SSH`, ssh-agent, git credential helper, настроенные им явно)
@@ -165,3 +168,16 @@ BOOTING → RECOVERING (reconcile state ↔ worktrees ↔ git ↔ processes) →
   worktree-isolation и OS-права.
 - **Git guard уровня shell-строки не абсолютен**; основная защита от опасных
   git-команд агента — worktree-isolation, guard — дополнительный слой.
+- **Filter-драйверы недоверенного локального репозитория.** `git clone` не
+  переносит config и hooks с удалённой стороны, поэтому клонированный проект
+  безопасен. Но у ADOPT-нутого локального репозитория в его собственном
+  config может быть объявлен `filter.<name>.smudge`, который git выполнит при
+  checkout worktree. Отключить фильтры «оптом» git не умеет (нужно знать имя),
+  поэтому остаточный риск закрыт организационно: adopt — явное действие
+  пользователя над репозиторием, который у него уже на диске.
+- **Идемпотентность запросов — в памяти процесса.** Кэш `Idempotency-Key`
+  живёт до перезапуска Runtime и ограничен по TTL/размеру: он защищает от
+  ретрая клиента, а не заменяет durable-состояние.
+- **Windows: идентичность процесса не проверяется вне процесса-родителя.**
+  `StartTime` доступен только через PowerShell/wmic (отдельный процесс на
+  каждую проверку), поэтому там работает связка «живой хендл + taskkill /T».

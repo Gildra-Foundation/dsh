@@ -46,7 +46,7 @@ DOM Harness).
 | Любых `.ps1`/`.cmd`, Windows-веток в `scripts/*.mjs` | `.claude/skills/powershell-51/SKILL.md` |
 | Файлов в `install/`, корневых лаунчеров | `.claude/skills/installer-parity/SKILL.md` |
 | `plugins/gildra-dsh-ui-compact` (client.js / index.js) | `.claude/skills/client-feature/SKILL.md` |
-| `plugins/gildra-dsh-runtime` (sessions/workspaces/leases) | `docs/architecture.md` §2а + тесты плагина как спецификация |
+| `plugins/gildra-dsh-runtime` (sessions/workspaces/leases) | `docs/runtime-reliability.md` — контракт конкуренции и восстановления |
 | Реализации фичи или багфикса (до написания кода) | `.claude/skills/test-driven-development/SKILL.md` |
 | Любого бага, падающего теста, странного поведения | `.claude/skills/systematic-debugging/SKILL.md` |
 | Плана крупной задачи | `.claude/skills/writing-plans/SKILL.md` |
@@ -72,6 +72,12 @@ DOM Harness).
   продублированы по многим файлам** — меняешь значение, грепни репозиторий.
 - В `plugins/gildra-dsh-ui-compact/test.mjs` ассерты привязаны к тексту
   `client.js` — рефакторинг клиента требует синхронного обновления ассертов.
+- **Managed git идёт только через `lib/gitx.js`**: там очищается окружение и
+  отключаются hooks недоверенного репозитория. Прямой вызов `git` из других
+  модулей Runtime — дыра в этой защите.
+- **Разрушительные операции сначала проверяют ВСЕ предусловия и только потом
+  мутируют** (отклонённый cleanup не должен снимать lease), а перед
+  необратимым шагом перепроверяют fencing-поколение lease.
 - **Gildra Runtime (`plugins/gildra-dsh-runtime`)** использует только
   `node:`-модули (как все локальные плагины); orchestration-логика сессий/
   worktree/lease/merge живёт ТОЛЬКО там — не переноси её в DOM-оверлей и не

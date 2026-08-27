@@ -172,12 +172,19 @@ Linux-сервер не является Desktop Host. На нём запуск�
   повреждённый файл откладывается в сторону, а не роняет процесс.
 - Опасные операции пишутся в локальный audit-лог JSONL без секретов.
 
+Надёжность, конкуренция и восстановление вынесены в отдельный контракт —
+[`docs/runtime-reliability.md`](runtime-reliability.md): модель конкуренции,
+fencing поколений lease, три вида heartbeat, durable operation journal,
+state-машины, таблица crash-recovery и честный список ограничений.
+
 Доменные модули (`lib/`): `errors` (структурированные коды: WORKSPACE_LOCKED,
 PROTECTED_BRANCH, PORT_UNAVAILABLE, …), `ids` (валидация и генерация
 идентификаторов, санитизация веток), `store` (durable state), `audit`,
 `gitx` (bare/canonical репозитории, worktree, fetch-lock, merge),
 `projects`, `leases`, `workspaces`, `sessions`, `processes`, `ports`,
-`tasks`, `api` (маршруты `/gildra/v1/*`).
+`tasks`, `journal` (durable-журнал операций), `lifecycle` (BOOTING→READY),
+`migrations` (версии схемы state), `http` (guard'ы запроса и идемпотентность),
+`api` (маршруты `/gildra/v1/*`).
 
 Раскладка на диске (per Unix-user):
 
