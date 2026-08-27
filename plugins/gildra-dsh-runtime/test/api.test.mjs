@@ -229,9 +229,9 @@ let ownerToken
 
   const updated = await call(routeOf('/gildra/v1/tasks/update'), requestFor({
     method: 'POST',
-    body: { taskId: task.taskId, status: 'IN_PROGRESS', linkSession: session.sessionId, linkAgent: 'implementation' },
+    body: { taskId: task.taskId, status: 'IMPLEMENTING', linkSession: session.sessionId, linkAgent: 'implementation' },
   }))
-  assert.equal(updated.body.task.status, 'IN_PROGRESS')
+  assert.equal(updated.body.task.status, 'IMPLEMENTING')
   assert.deepEqual(updated.body.task.sessions, [session.sessionId])
 
   const invalid = await call(routeOf('/gildra/v1/tasks/update'), requestFor({

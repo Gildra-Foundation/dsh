@@ -10,6 +10,7 @@ import { createHash } from 'node:crypto'
 import { access, mkdir, readFile, realpath, rm } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { RuntimeError } from './errors.js'
+import { CURRENT_SCHEMA_VERSION } from './migrations.js'
 import { assertSegment, assertWritableBranch, generateId, sessionBranch } from './ids.js'
 import { mergePath, workspaceKey, workspacePath } from './paths.js'
 import { appendAudit } from './audit.js'
@@ -136,7 +137,7 @@ export function createWorkspaceManager({ store, roots, projects, leases, process
     })
 
     const record = {
-      schemaVersion: 1,
+      schemaVersion: CURRENT_SCHEMA_VERSION,
       workspaceId: id,
       projectId,
       userId,
@@ -351,7 +352,7 @@ export function createWorkspaceManager({ store, roots, projects, leases, process
     const targetBefore = await revParse(project.canonicalRepoPath, target)
     const operation = journal ? await journal.begin('MERGE', mergeId, { projectId, sourceBranch, targetBranch: target }) : undefined
     let record = {
-      schemaVersion: 1,
+      schemaVersion: CURRENT_SCHEMA_VERSION,
       mergeId,
       projectId,
       sourceBranch,

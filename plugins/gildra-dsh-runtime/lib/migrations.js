@@ -12,19 +12,49 @@
 
 import { RuntimeError } from './errors.js'
 
-export const CURRENT_SCHEMA_VERSION = 1
+export const CURRENT_SCHEMA_VERSION = 2
 
 // Первая версия формата. Запись без schemaVersion считается именно ею (а не
 // текущей): иначе после ввода версии 2 старые файлы проскочили бы мимо
 // миграции и были бы прочитаны как уже мигрированные.
 export const BASELINE_SCHEMA_VERSION = 1
 
+// v1 → v2: инженерная модель Task (docs/ai-quality.md). Статусы задач
+// переименованы, появились критерии/scope/claims/acknowledgments. Остальные
+// коллекции формат не меняли — для них шаг тождественный.
+const TASK_STATUS_V1_TO_V2 = Object.freeze({
+  PLANNED: 'PLANNED',
+  IN_PROGRESS: 'IMPLEMENTING',
+  TESTING: 'VERIFYING',
+  REVIEW: 'REVIEWING',
+  // Старый READY назначался словами, без evidence: честнее вернуть задачу в
+  // REVIEWING, чем объявить её прошедшей gate, которого тогда не существовало.
+  READY: 'REVIEWING',
+  MERGED: 'MERGED',
+  FAILED: 'FAILED',
+})
+
+function migrateTaskV1(record) {
+  return {
+    ...record,
+    status: TASK_STATUS_V1_TO_V2[record.status] ?? 'PLANNED',
+    kind: record.kind ?? 'feature',
+    acceptanceCriteria: record.acceptanceCriteria ?? [],
+    expectedAreas: record.expectedAreas ?? [],
+    claims: record.claims ?? [],
+    acknowledgments: record.acknowledgments ?? [],
+    reviews: record.reviews ?? [],
+    ...(record.status === 'READY' ? { blockReason: 'Статус READY из старой схемы: пройдите quality-gate заново.' } : {}),
+    ...(record.status === 'FAILED' && !record.failureKind ? { failureKind: 'IMPLEMENTATION' } : {}),
+  }
+}
+
 // Реестр forward-миграций: ключ — версия, ИЗ которой мигрируем
 // (MIGRATIONS[1] превращает запись v1 в v2, MIGRATIONS[2] — v2 в v3, …).
-// Схема пока первая, поэтому реестр пуст: миграции появляются только вместе
-// с реальным изменением формата записи, придумывать их «на будущее» нельзя.
 // Сам шаг возвращает новую запись; поле schemaVersion проставляет migrateRecord.
-export const MIGRATIONS = Object.freeze({})
+export const MIGRATIONS = Object.freeze({
+  1: (record, { collection } = {}) => (collection === 'tasks' ? migrateTaskV1(record) : record),
+})
 
 function isRecord(value) {
   return typeof value === 'object' && value !== null && !Array.isArray(value)

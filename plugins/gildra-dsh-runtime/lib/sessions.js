@@ -8,6 +8,7 @@
 
 import { hostname } from 'node:os'
 import { RuntimeError } from './errors.js'
+import { CURRENT_SCHEMA_VERSION } from './migrations.js'
 import { assertSegment, currentUserId, generateSessionId } from './ids.js'
 import { appendAudit } from './audit.js'
 import { sessionEnvironment } from './runtime-env.js'
@@ -67,7 +68,7 @@ export function createSessionManager({ store, roots, projects, workspaces, lease
       // не аллоцирует: читатели не запускают dev-серверы.
       const workspace = await workspaces.getRecord(attachTo ?? '')
       const record = {
-        schemaVersion: 1,
+        schemaVersion: CURRENT_SCHEMA_VERSION,
         id: sessionId,
         sessionId,
         userId,
@@ -93,7 +94,7 @@ export function createSessionManager({ store, roots, projects, workspaces, lease
     // Write-сессия: CREATING → workspace → lease → ports → ACTIVE. Заголовок
     // задачи хранится отдельно и никогда не попадает в имена веток/путей.
     const creating = {
-      schemaVersion: 1,
+      schemaVersion: CURRENT_SCHEMA_VERSION,
       id: sessionId,
       sessionId,
       userId,

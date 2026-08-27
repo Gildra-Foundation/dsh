@@ -135,12 +135,14 @@ const backdate = async (path, ms) => {
   assert.equal(existsSync(corrupt), true, '.corrupt-* — улика для диагностики, удалять её нельзя')
   assert.equal(existsSync(join(leaseDir, 'meta.json')), true, 'данные lease не трогаются')
   assert.equal(existsSync(store.filePath('sessions', 'sess-keep')), true, '.json удалять нельзя никогда')
-  assert.deepEqual(await store.read('sessions', 'sess-keep'), { schemaVersion: 1, status: 'ACTIVE' })
+  // Чтение прогоняет запись через миграции: v1-сессия получает текущую
+  // версию тождественным шагом (формат сессий в v2 не менялся).
+  assert.deepEqual(await store.read('sessions', 'sess-keep'), { schemaVersion: 2, status: 'ACTIVE' })
 }
 
 // --- Реестр миграций ------------------------------------------------------
 {
-  assert.equal(CURRENT_SCHEMA_VERSION, 1)
+  assert.equal(CURRENT_SCHEMA_VERSION, 2)
   assert.equal(BASELINE_SCHEMA_VERSION, 1)
   for (const key of Object.keys(MIGRATIONS)) {
     const from = Number(key)
@@ -153,7 +155,7 @@ const backdate = async (path, ms) => {
   assert.equal(migrateRecord(current, { collection: 'sessions' }), current)
   // Запись без schemaVersion — baseline первой версии, а не «текущая».
   assert.equal(schemaVersionOf({ status: 'ACTIVE' }), BASELINE_SCHEMA_VERSION)
-  assert.deepEqual(migrateRecord({ status: 'ACTIVE' }, { collection: 'sessions' }), { status: 'ACTIVE' })
+  assert.deepEqual(migrateRecord({ status: 'ACTIVE' }, { collection: 'sessions' }), { status: 'ACTIVE', schemaVersion: CURRENT_SCHEMA_VERSION })
   // Не-запись (примитив, массив) миграции не «чинят».
   assert.equal(migrateRecord(null, { collection: 'sessions' }), null)
   assert.deepEqual(migrateRecord([1, 2], { collection: 'sessions' }), [1, 2])
@@ -161,8 +163,8 @@ const backdate = async (path, ms) => {
 
 // --- Forward-миграция применяется последовательно ------------------------
 {
-  // Реестр пока пуст (схема первая), поэтому цепочка проверяется на
-  // инъецированном реестре — тем же кодом, что и боевая.
+  // Цепочка проверяется на инъецированном реестре — тем же кодом, что и
+  // боевой (боевой реестр дополнительно проверяется в tasks.test.mjs).
   const migrations = {
     1: record => ({ ...record, steps: [...(record.steps ?? []), 'v1->v2'] }),
     2: record => ({ ...record, steps: [...record.steps, 'v2->v3'] }),
@@ -231,9 +233,9 @@ const backdate = async (path, ms) => {
   assert.equal(JSON.parse(await readFile(path, 'utf8')).schemaVersion, CURRENT_SCHEMA_VERSION + 1)
   assert.deepEqual(store.corruptions(), [], 'запись из будущего — не повреждение файла')
 
-  // Обычная запись читается как раньше.
+  // Обычная запись читается как раньше (v1 мигрирует на чтении в текущую).
   await store.write('sessions', 'sess-ok', { schemaVersion: 1, status: 'ACTIVE' })
-  assert.deepEqual(await store.read('sessions', 'sess-ok'), { schemaVersion: 1, status: 'ACTIVE' })
+  assert.deepEqual(await store.read('sessions', 'sess-ok'), { schemaVersion: 2, status: 'ACTIVE' })
 }
 
 // --- Повреждение критической коллекции видно вызывающему коду ------------

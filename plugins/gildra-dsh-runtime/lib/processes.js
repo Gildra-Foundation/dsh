@@ -26,6 +26,7 @@ import { basename } from 'node:path'
 import { promisify } from 'node:util'
 
 import { appendAudit } from './audit.js'
+import { CURRENT_SCHEMA_VERSION } from './migrations.js'
 import { RuntimeError } from './errors.js'
 import { generateId, sanitizeSegment } from './ids.js'
 
@@ -322,7 +323,7 @@ export function createProcessManager({ store, roots, env = process.env, backend 
       }
       const identity = await backend.identify(child)
       const record = {
-        schemaVersion: 1,
+        schemaVersion: CURRENT_SCHEMA_VERSION,
         procId,
         sessionId,
         workspaceId,

@@ -17,6 +17,7 @@
 
 import { createServer } from 'node:net'
 import { RuntimeError } from './errors.js'
+import { CURRENT_SCHEMA_VERSION } from './migrations.js'
 import { assertSegment, sanitizeSegment } from './ids.js'
 
 const PORTS = 'ports'
@@ -83,7 +84,7 @@ export function createPortAllocator({ store, env = process.env, isSessionAlive }
 
   function leaseRecord({ port, name, sessionId, pid }) {
     return {
-      schemaVersion: 1,
+      schemaVersion: CURRENT_SCHEMA_VERSION,
       id: `port-${String(port)}`,
       port,
       name,

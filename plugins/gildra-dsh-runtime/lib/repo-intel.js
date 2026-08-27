@@ -12,6 +12,7 @@
 // shell-интерпретации нет нигде.
 
 import { RuntimeError } from './errors.js'
+import { CURRENT_SCHEMA_VERSION } from './migrations.js'
 import { assertSegment } from './ids.js'
 import { git, revParse } from './gitx.js'
 import { appendAudit } from './audit.js'
@@ -249,7 +250,7 @@ export function createRepoIntel({ store, roots, projects }) {
     const { files, truncated } = await readTree(project.canonicalRepoPath, sha)
     const profile = await buildProfileFromTree({ files, read: makeRead(project.canonicalRepoPath, sha) })
     const record = {
-      schemaVersion: 1,
+      schemaVersion: CURRENT_SCHEMA_VERSION,
       projectId,
       commit: sha,
       ref: target,

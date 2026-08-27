@@ -9,6 +9,7 @@
 import { access, realpath, stat } from 'node:fs/promises'
 import { basename, resolve, sep } from 'node:path'
 import { RuntimeError } from './errors.js'
+import { CURRENT_SCHEMA_VERSION } from './migrations.js'
 import { DEFAULT_PROTECTED_BRANCHES, assertBranchName, assertSegment, sanitizeSegment } from './ids.js'
 import { repoPath } from './paths.js'
 import {
@@ -161,7 +162,7 @@ export function createProjectRegistry({ store, roots }) {
       : [...DEFAULT_PROTECTED_BRANCHES]
 
     const record = {
-      schemaVersion: 1,
+      schemaVersion: CURRENT_SCHEMA_VERSION,
       projectId,
       canonicalRepoPath,
       origin,

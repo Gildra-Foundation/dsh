@@ -26,6 +26,12 @@ export const ERROR_CODES = Object.freeze({
   MERGE_CONFLICT: 409,
   SESSION_ORPHANED: 409,
   LIVE_PROCESSES: 409,
+  // Слой AI-качества: готовность вычисляется, а не назначается; claims
+  // сигнализируют о пересечении работы.
+  READINESS_REQUIRED: 409,
+  CLAIM_CONFLICT: 409,
+  WRITER_REVIEWER_CONFLICT: 409,
+  REVIEW_NOT_FOUND: 404,
   LIMIT_EXCEEDED: 429,
   PORT_UNAVAILABLE: 503,
   PORT_POOL_EXHAUSTED: 503,

@@ -306,11 +306,19 @@ export function registerRuntimeRoutes(ctx, runtime = createRuntime()) {
 
     route('/gildra/v1/tasks', {
       GET: async ({ query }) => ({ payload: { tasks: await tasks.listTasks({ projectId: query.get('projectId') ?? undefined }) } }),
-      POST: async ({ body }) => ({ statusCode: 201, payload: { task: await tasks.createTask(body ?? {}) } }),
+      POST: async ({ body }) => {
+        const created = await tasks.createTask(body ?? {})
+        return { statusCode: 201, payload: { task: created.task, overlaps: created.overlaps } }
+      },
     }),
 
     route('/gildra/v1/tasks/update', {
-      POST: async ({ body }) => ({ payload: { task: await tasks.updateTask(body.taskId, body) } }),
+      POST: async ({ body }) => {
+        // Смена статуса идёт через transition с его guard'ами (READY только
+        // через quality-gate); остальные поля — обычное обновление.
+        if (body.status !== undefined) await tasks.transition(body.taskId, body.status, body)
+        return { payload: { task: await tasks.updateTask(body.taskId, body) } }
+      },
     }),
 
     route('/gildra/v1/recovery/scan', {

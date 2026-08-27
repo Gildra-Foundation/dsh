@@ -110,7 +110,8 @@ import { ISOLATION_RULES, guardWorkspaceCommand } from '../lib/index.js'
   const store = new JsonStore(root, { onCorrupt: entry => corruptions.push(entry) })
   await store.ensureRoot()
   await store.write('sessions', 'sess-1', { schemaVersion: 1, status: 'active' })
-  assert.deepEqual(await store.read('sessions', 'sess-1'), { schemaVersion: 1, status: 'active' })
+  // Чтение мигрирует запись до текущей версии схемы (identity-шаг для сессий).
+  assert.deepEqual(await store.read('sessions', 'sess-1'), { schemaVersion: 2, status: 'active' })
   if (process.platform !== 'win32') {
     assert.equal(((await stat(store.filePath('sessions', 'sess-1'))).mode & 0o777), 0o600)
   }
