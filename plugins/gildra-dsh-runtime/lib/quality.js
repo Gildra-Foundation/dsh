@@ -71,6 +71,7 @@ export function redactSecrets(text, secretValues) {
 }
 const LOG_TAIL_BYTES = 2048
 const DEFAULT_CHECK_TIMEOUT_MS = 10 * 60_000
+const STALE_PREPARING_MS = 10 * 60_000
 const KNOWN_CHECK_STATUS = Object.freeze(['PASSED', 'FAILED', 'NOT_CONFIGURED', 'CANCELLED', 'TIMED_OUT'])
 
 export const DEFAULT_REVIEW_GATE = Object.freeze({ blocking: ['BLOCKER', 'HIGH'] })
@@ -202,32 +203,61 @@ export function createQualityManager({ store, roots, projects, tasks, workspaces
       })
     }
     const runId = generateId('verify')
-    // §19: один активный прогон на задачу, если политика явно не разрешила
-    // параллель. Проверка и запись RUNNING — под коротким локом задачи.
+    // §11: АТОМАРНАЯ резервация. Под локом задачи: проверка активных
+    // (PREPARING/RUNNING/CANCELLING) → durable-запись PREPARING с поколением.
+    // Раньше между проверкой и записью RUNNING создавался snapshot ВНЕ лока —
+    // параллельные запросы проходили проверку вдвоём.
     await store.withLock(`verify-${taskId.slice(0, 50)}`, async () => {
-      if (!policy.verification.allowParallel) {
-        for (const id of await store.list(VERIFICATIONS)) {
-          const row = await store.read(VERIFICATIONS, id)
-          if (row?.taskId === taskId && (row.status === 'RUNNING' || row.status === 'CANCELLING')) {
-            throw new RuntimeError('VERIFICATION_ACTIVE', 'У задачи уже идёт verification-прогон: дождитесь его, отмените по runId или разрешите параллель политикой.', { taskId, runId: row.runId })
-          }
+      let generation = 0
+      for (const id of await store.list(VERIFICATIONS)) {
+        const row = await store.read(VERIFICATIONS, id)
+        if (row?.taskId !== taskId) continue
+        generation = Math.max(generation, row.generation ?? 0)
+        if (!['PREPARING', 'RUNNING', 'CANCELLING'].includes(row.status)) continue
+        // Recovery зависшего PREPARING (§11): резервация без прогресса
+        // дольше лимита — брошенный процесс; помечаем FAILED и проходим.
+        if (row.status === 'PREPARING' && Date.now() - Date.parse(row.startedAt) > STALE_PREPARING_MS) {
+          await store.write(VERIFICATIONS, id, { ...row, status: 'FAILED', failure: 'STALE_PREPARING', finishedAt: new Date().toISOString() })
+          continue
+        }
+        if (!policy.verification.allowParallel) {
+          throw new RuntimeError('VERIFICATION_ACTIVE', 'У задачи уже идёт verification-прогон: дождитесь его, отмените по runId или разрешите параллель политикой.', { taskId, runId: row.runId, status: row.status })
         }
       }
+      await store.write(VERIFICATIONS, runId, {
+        schemaVersion: CURRENT_SCHEMA_VERSION,
+        runId,
+        taskId,
+        projectId: task.projectId,
+        workspaceId: task.workspaceId,
+        status: 'PREPARING',
+        generation: generation + 1,
+        startedAt: new Date().toISOString(),
+        checks: [],
+      })
     }, { timeoutMs: 15_000 })
     const logDir = join(roots.stateRoot, 'logs', 'verify')
     await mkdir(logDir, { recursive: true, mode: 0o700 })
 
     // Snapshot: committed-режим — detached worktree на headSha; uncommitted —
-    // сам workspace с честной пометкой и content-хэшем diff'а.
+    // сам workspace с честной пометкой и content-хэшем diff'а. Провал
+    // снапшота переводит резервацию PREPARING → FAILED (§11), не оставляя
+    // вечного «активного» прогона.
     let snapshotPath
     let snapshot
-    if (uncommittedMode) {
-      const diffText = await git(['-C', workspace.path, 'diff', '--no-ext-diff', 'HEAD'])
-      snapshot = { mode: 'UNCOMMITTED_SNAPSHOT', contentHash: createHash('sha256').update(diffText.stdout).digest('hex').slice(0, 16) }
-      snapshotPath = workspace.path
-    } else {
-      snapshotPath = await workspaces.createVerificationSnapshot(task.projectId, headSha, taskId, runId)
-      snapshot = { mode: 'COMMITTED', path: snapshotPath, sha: headSha }
+    try {
+      if (uncommittedMode) {
+        const diffText = await git(['-C', workspace.path, 'diff', '--no-ext-diff', 'HEAD'])
+        snapshot = { mode: 'UNCOMMITTED_SNAPSHOT', contentHash: createHash('sha256').update(diffText.stdout).digest('hex').slice(0, 16) }
+        snapshotPath = workspace.path
+      } else {
+        snapshotPath = await workspaces.createVerificationSnapshot(task.projectId, headSha, taskId, runId)
+        snapshot = { mode: 'COMMITTED', path: snapshotPath, sha: headSha }
+      }
+    } catch (error) {
+      const reserved = await store.read(VERIFICATIONS, runId)
+      await store.write(VERIFICATIONS, runId, { ...reserved, status: 'FAILED', failure: 'SNAPSHOT_FAILED', error: error instanceof Error ? error.message : String(error), finishedAt: new Date().toISOString() })
+      throw error
     }
     const { env: verificationEnv, secretValues } = buildVerificationEnv({
       allowedSecrets: policy.verification.allowedSecrets,
@@ -241,12 +271,10 @@ export function createQualityManager({ store, roots, projects, tasks, workspaces
 
     const checks = []
     let cancelled = false
+    const reservation = await store.read(VERIFICATIONS, runId)
+    if (reservation?.status === 'CANCELLING') cancelled = true
     const run = {
-      schemaVersion: CURRENT_SCHEMA_VERSION,
-      runId,
-      taskId,
-      projectId: task.projectId,
-      workspaceId: task.workspaceId,
+      ...reservation,
       branch: workspace.branch,
       headSha,
       dirtyAtRun: dirty.length,
@@ -254,9 +282,8 @@ export function createQualityManager({ store, roots, projects, tasks, workspaces
       // Ревизии требований (§9/§14): evidence доказывает соответствие ЭТОЙ
       // постановке, плану, claims и политике; смена любого — STALE.
       revisions: requirementRevisions({ task, project, profile: repoIntel ? await repoIntel.getProfile(task.projectId).catch(() => undefined) : undefined }),
-      status: 'RUNNING',
+      status: cancelled ? 'CANCELLING' : 'RUNNING',
       checks,
-      startedAt: new Date().toISOString(),
     }
     await store.write(VERIFICATIONS, runId, run)
 
@@ -349,7 +376,7 @@ export function createQualityManager({ store, roots, projects, tasks, workspaces
   async function cancelVerification(runId) {
     const run = await store.read(VERIFICATIONS, assertId(runId, 'runId'))
     if (!run) throw new RuntimeError('TASK_NOT_FOUND', `Прогон «${runId}» не найден.`, { runId })
-    if (run.status !== 'RUNNING') return run
+    if (!['RUNNING', 'PREPARING'].includes(run.status)) return run
     await store.write(VERIFICATIONS, runId, { ...run, status: 'CANCELLING' })
     const workspace = await workspaces.getRecord(run.workspaceId).catch(() => undefined)
     if (workspace) {
