@@ -285,6 +285,17 @@ export function registerRuntimeRoutes(ctx, runtime = createRuntime()) {
       POST: async ({ body }) => ({ statusCode: 201, payload: { merge: await workspaces.startMerge(body ?? {}) } }),
     }),
 
+    route('/gildra/v1/merges/list', {
+      GET: async ({ query }) => ({
+        payload: {
+          merges: await workspaces.listMerges({
+            projectId: query.get('projectId') ?? undefined,
+            activeOnly: query.get('activeOnly') === '1',
+          }),
+        },
+      }),
+    }),
+
     route('/gildra/v1/merges/complete', {
       POST: async ({ body }) => ({ payload: { merge: await workspaces.completeMerge(body.mergeId) } }),
     }),

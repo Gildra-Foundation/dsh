@@ -317,6 +317,8 @@
         ]),
         runtime: runtimeUiState.available ? {
           notice: runtimeUiState.notice,
+          busy: Object.entries(runtimeUiState.busy).sort(),
+          merges: runtimeUiState.merges.map(merge => [merge.mergeId, merge.status, merge.conflicts?.length ?? 0]),
           sessions: runtimeUiState.sessions.map(session => [
             session.sessionId, session.status, session.mode, session.branch ?? null,
           ]),
@@ -334,17 +336,31 @@
       if (runtimeRefreshPromise && !force) return runtimeRefreshPromise
       runtimeRefreshPromise = (async () => {
         try {
-          const [projects, sessions, workspaces] = await Promise.all([
+          // Health первым: он отвечает и когда Runtime ещё восстанавливается,
+          // и позволяет показать состояние вместо пустой панели.
+          const health = await runtimeCall('/health')
+          if (!health.health?.ready) {
+            runtimeUiState = {
+              ...runtimeUiState,
+              available: true,
+              notice: `Runtime: ${String(health.health?.runtime ?? 'не готов')} — восстановление состояния…`,
+            }
+            return
+          }
+          const [projects, sessions, workspaces, merges] = await Promise.all([
             runtimeCall('/projects'),
             runtimeCall('/sessions?activeOnly=1'),
             runtimeCall('/workspaces'),
+            runtimeCall('/merges/list?activeOnly=1').catch(() => ({ merges: [] })),
           ])
           runtimeUiState = {
+            ...runtimeUiState,
             available: true,
             notice: null,
             projects: projects.projects ?? [],
             sessions: sessions.sessions ?? [],
             workspaces: workspaces.workspaces ?? [],
+            merges: merges.merges ?? [],
           }
         } catch {
           // Runtime недоступен (старый сервер или плагин выключен): панель
@@ -361,6 +377,21 @@
     function runtimeNotice(message) {
       runtimeUiState = { ...runtimeUiState, notice: message }
       renderEnvironmentSwitcher()
+    }
+
+    // Одна операция на сущность: повторный клик не отправляет второй запрос.
+    async function withRuntimeOperation(entityId, label, action) {
+      if (runtimeUiState.busy[entityId]) return undefined
+      runtimeUiState = { ...runtimeUiState, busy: { ...runtimeUiState.busy, [entityId]: label } }
+      renderEnvironmentSwitcher()
+      try {
+        return await action()
+      } finally {
+        const busy = { ...runtimeUiState.busy }
+        delete busy[entityId]
+        runtimeUiState = { ...runtimeUiState, busy }
+        renderEnvironmentSwitcher()
+      }
     }
 
     async function runHeartbeats() {
@@ -383,9 +414,11 @@
         runtimeNotice('Сначала зарегистрируйте проект в Gildra Runtime.')
         return
       }
+      return withRuntimeOperation(`new:${project.projectId}`, 'Создаём…', async () => {
       try {
         const created = await runtimeCall('/sessions', {
           method: 'POST',
+          idempotencyKey: idempotencyKey('create-session', project.projectId),
           body: { projectId: project.projectId },
         })
         rememberRuntimeToken(created.session.sessionId, created.ownerToken)
@@ -394,23 +427,54 @@
       } catch (error) {
         runtimeNotice(`Не удалось создать сессию: ${error instanceof Error ? error.message : String(error)}`)
       }
+      })
     }
 
     async function mergeRuntimeSession(session) {
-      try {
-        const merge = await runtimeCall('/merges', {
-          method: 'POST',
-          body: { projectId: session.projectId, sourceBranch: session.branch },
-        })
-        if (merge.merge.status === 'completed') {
-          runtimeNotice(`Ветка ${session.branch} влита в базовую.`)
-        } else {
-          runtimeNotice(`Merge-конфликт (${String(merge.merge.conflicts.length)} файл.): разрешите в ${merge.merge.path}.`)
+      return withRuntimeOperation(session.sessionId, 'Сливаем…', async () => {
+        try {
+          const merge = await runtimeCall('/merges', {
+            method: 'POST',
+            idempotencyKey: idempotencyKey('merge', session.branch),
+            body: { projectId: session.projectId, sourceBranch: session.branch },
+          })
+          if (merge.merge.status === 'COMPLETED') {
+            runtimeNotice(`Ветка ${session.branch} влита в базовую.`)
+          } else {
+            // Конфликт не разрешается автоматически: показываем файлы и
+            // отправляем пользователя в merge-workspace.
+            const files = (merge.merge.conflicts ?? []).slice(0, 5).join(', ')
+            runtimeNotice(`Конфликт (${String(merge.merge.conflicts?.length ?? 0)}): ${files}. Разрешите в ${merge.merge.path}, затем «Завершить merge».`)
+          }
+          await refreshRuntimeUi(true)
+        } catch (error) {
+          runtimeNotice(`Merge не выполнен: ${error instanceof Error ? error.message : String(error)}`)
         }
-        await refreshRuntimeUi(true)
-      } catch (error) {
-        runtimeNotice(`Merge не выполнен: ${error instanceof Error ? error.message : String(error)}`)
-      }
+      })
+    }
+
+    async function completeRuntimeMerge(merge) {
+      return withRuntimeOperation(merge.mergeId, 'Завершаем merge…', async () => {
+        try {
+          await runtimeCall('/merges/complete', { method: 'POST', body: { mergeId: merge.mergeId } })
+          runtimeNotice(`Merge ${merge.sourceBranch} завершён.`)
+          await refreshRuntimeUi(true)
+        } catch (error) {
+          runtimeNotice(`Не удалось завершить merge: ${error instanceof Error ? error.message : String(error)}`)
+        }
+      })
+    }
+
+    async function abortRuntimeMerge(merge) {
+      return withRuntimeOperation(merge.mergeId, 'Отменяем merge…', async () => {
+        try {
+          await runtimeCall('/merges/abort', { method: 'POST', body: { mergeId: merge.mergeId } })
+          runtimeNotice(`Merge ${merge.sourceBranch} отменён; целевая ветка не тронута.`)
+          await refreshRuntimeUi(true)
+        } catch (error) {
+          runtimeNotice(`Не удалось отменить merge: ${error instanceof Error ? error.message : String(error)}`)
+        }
+      })
     }
 
     async function cleanupRuntimeSession(session) {
@@ -419,6 +483,7 @@
         runtimeNotice('Завершать можно свои сессии (токен в этом окне) или ORPHANED.')
         return
       }
+      return withRuntimeOperation(session.sessionId, 'Завершаем…', async () => {
       try {
         const plan = await runtimeCall(`/workspaces/plan?id=${encodeURIComponent(session.workspaceId)}`)
         const blocking = plan.plan.reasons.filter(reason => reason.code !== 'WORKSPACE_LOCKED')
@@ -428,9 +493,13 @@
         }
         await runtimeCall('/sessions/cleanup', {
           method: 'POST',
+          idempotencyKey: idempotencyKey('cleanup', session.sessionId),
           body: {
             sessionId: session.sessionId,
             ownerToken,
+            // План передаётся вместе с подтверждениями: если состояние
+            // изменилось после предпросмотра, сервер откажет, а не удалит.
+            expectedPlanToken: plan.plan.planToken,
             confirmDirty: blocking.some(reason => reason.code === 'WORKSPACE_DIRTY'),
             confirmUnmerged: blocking.some(reason => reason.code === 'BRANCH_NOT_MERGED'),
           },
@@ -441,9 +510,11 @@
       } catch (error) {
         runtimeNotice(`Cleanup не выполнен: ${error instanceof Error ? error.message : String(error)}`)
       }
+      })
     }
 
     async function recoverRuntimeSession(session) {
+      return withRuntimeOperation(session.sessionId, 'Восстанавливаем…', async () => {
       try {
         const recovered = await runtimeCall('/sessions/recover', { method: 'POST', body: { sessionId: session.sessionId } })
         rememberRuntimeToken(session.sessionId, recovered.ownerToken)
@@ -452,6 +523,7 @@
       } catch (error) {
         runtimeNotice(`Восстановление не удалось: ${error instanceof Error ? error.message : String(error)}`)
       }
+      })
     }
 
     function runtimeIdentityText() {
@@ -460,6 +532,48 @@
         ?? runtimeUiState.sessions.find(session => session.status === 'ACTIVE')
       if (!mine) return null
       return `Проект: ${mine.projectId} · Сессия: ${mine.sessionId} · Ветка: ${mine.branch ?? '—'} · ${mine.mode === 'read' ? 'REVIEW' : 'WRITE'}`
+    }
+
+    // Различаем «вкладка молчит» и «сессия осиротела» (§46): пользователь не
+    // должен видеть всё подряд как «сессия умерла».
+    function statusText(session) {
+      if (session.status === 'ORPHANED') return 'ORPHANED'
+      if (session.status === 'IDLE') return 'IDLE'
+      return session.status
+    }
+
+    function renderMergeRows(group) {
+      for (const merge of runtimeUiState.merges) {
+        if (merge.status !== 'CONFLICT') continue
+        const row = document.createElement('div')
+        row.className = 'gildra-workspace-row'
+        row.dataset.state = 'conflict'
+        const label = document.createElement('span')
+        label.className = 'gildra-workspace-name'
+        label.textContent = `Конфликт: ${merge.sourceBranch} → ${merge.targetBranch}`
+        label.title = (merge.conflicts ?? []).join('\n')
+        const detail = document.createElement('span')
+        detail.className = 'gildra-workspace-detail'
+        const busyLabel = runtimeUiState.busy[merge.mergeId]
+        detail.textContent = busyLabel ?? `${String(merge.conflicts?.length ?? 0)} файл.`
+        row.append(label, detail)
+        if (!busyLabel) {
+          const actions = document.createElement('span')
+          actions.className = 'gildra-workspace-actions'
+          const complete = document.createElement('button')
+          complete.type = 'button'
+          complete.textContent = 'Завершить merge'
+          complete.title = `Разрешите конфликты в ${merge.path}, затем завершите`
+          complete.addEventListener('click', () => void completeRuntimeMerge(merge))
+          const abort = document.createElement('button')
+          abort.type = 'button'
+          abort.textContent = 'Отменить'
+          abort.addEventListener('click', () => void abortRuntimeMerge(merge))
+          actions.append(complete, abort)
+          row.appendChild(actions)
+        }
+        group.list.appendChild(row)
+      }
     }
 
     function renderWorkspacesGroup(root) {
@@ -485,12 +599,23 @@
         label.title = `${session.branch ?? ''}\nСтатус: ${session.status}`
         const detail = document.createElement('span')
         detail.className = 'gildra-workspace-detail'
-        detail.textContent = workspace
-          ? `${session.status} · изм.: ${String(workspace.dirtyFiles ?? 0)} · ↑${String(workspace.ahead ?? 0)}`
-          : session.status
+        const busyLabel = runtimeUiState.busy[session.sessionId]
+        // Идущая операция вытесняет обычный статус: пользователь видит, что
+        // Runtime сейчас делает с этой сессией.
+        detail.textContent = busyLabel
+          ? busyLabel
+          : workspace
+            ? `${statusText(session)} · изм.: ${String(workspace.dirtyFiles ?? 0)} · ↑${String(workspace.ahead ?? 0)}`
+            : statusText(session)
         row.append(label, detail)
         const actions = document.createElement('span')
         actions.className = 'gildra-workspace-actions'
+        if (busyLabel) {
+          // Пока операция идёт, конфликтующие действия недоступны.
+          row.appendChild(actions)
+          group.list.appendChild(row)
+          continue
+        }
         if (session.status === 'ORPHANED') {
           const recover = document.createElement('button')
           recover.type = 'button'
@@ -515,10 +640,13 @@
         row.appendChild(actions)
         group.list.appendChild(row)
       }
+      renderMergeRows(group)
       const create = document.createElement('button')
       create.type = 'button'
       create.className = 'gildra-workspace-create'
-      create.textContent = '+ Новая изолированная сессия'
+      const creating = Object.entries(runtimeUiState.busy).some(([key]) => key.startsWith('new:'))
+      create.textContent = creating ? 'Создаём…' : '+ Новая изолированная сессия'
+      create.disabled = creating
       create.addEventListener('click', () => void createRuntimeSession())
       group.list.appendChild(create)
       if (runtimeUiState.notice) {

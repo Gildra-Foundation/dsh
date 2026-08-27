@@ -44,6 +44,18 @@ Object.defineProperty(globalThis, 'navigator', {
 // Сеть в тесте: маршруты Gildra Runtime отвечают фикстурами (панель
 // Workspaces должна отрисоваться), всё остальное — отказом.
 const RUNTIME_FIXTURES = {
+  '/gildra/v1/health': { ok: true, health: { runtime: 'READY', ready: true, apiVersion: 1, runtimeVersion: 2 } },
+  '/gildra/v1/merges/list?activeOnly=1': {
+    ok: true,
+    merges: [{
+      mergeId: 'merge-dom1',
+      status: 'CONFLICT',
+      sourceBranch: 'session/alex/sess-dom1',
+      targetBranch: 'main',
+      path: '/tmp/merge-dom1',
+      conflicts: ['src/a.ts', 'README.md'],
+    }],
+  },
   '/gildra/v1/projects': { ok: true, projects: [{ projectId: 'demo', defaultBranch: 'main' }] },
   '/gildra/v1/sessions?activeOnly=1': {
     ok: true,
@@ -155,6 +167,16 @@ assert.equal(document.querySelector('.sysmon').dataset.gildraCollapsed, 'true')
   assert.ok(buttons.includes('Merge'), 'чистая ahead-сессия предлагает Merge')
   const cleanupButton = [...row.querySelectorAll('button')].find(button => button.textContent === 'Завершить')
   assert.equal(cleanupButton.disabled, true, 'без owner-token завершение чужой сессии выключено')
+
+  // Конфликт merge показывается явно, с файлами и действиями (§45): UI не
+  // пытается разрешить его сам.
+  const conflictRow = [...document.querySelectorAll('.gildra-workspace-row')]
+    .find(candidate => candidate.dataset.state === 'conflict')
+  assert.ok(conflictRow, 'конфликтный merge должен отображаться отдельной строкой')
+  assert.match(conflictRow.textContent, /Конфликт: session\/alex\/sess-dom1 → main/)
+  assert.match(conflictRow.textContent, /2 файл/)
+  const conflictActions = [...conflictRow.querySelectorAll('button')].map(button => button.textContent)
+  assert.deepEqual(conflictActions, ['Завершить merge', 'Отменить'])
 }
 
 // 4. Идемпотентность (доказательство отсутствия петли): три повторных

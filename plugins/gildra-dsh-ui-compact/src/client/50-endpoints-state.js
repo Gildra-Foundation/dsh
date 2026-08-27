@@ -31,7 +31,18 @@
     // (worktree, lease, merge, cleanup) живёт в серверном @gildra/dsh-runtime.
     const RUNTIME_API = '/gildra/v1'
     const RUNTIME_TOKENS_KEY = 'gildra.runtime.tokens.v1'
-    let runtimeUiState = { available: false, projects: [], sessions: [], workspaces: [], notice: null }
+    let runtimeUiState = {
+      available: false,
+      projects: [],
+      sessions: [],
+      workspaces: [],
+      merges: [],
+      notice: null,
+      // Идущие операции per-entity: UI показывает «Создаём…/Сливаем…» и
+      // выключает конфликтующие кнопки. Backend-идемпотентность от этого не
+      // отменяется — это защита от лишнего клика, а не от гонки.
+      busy: {},
+    }
     let runtimeRefreshPromise
 
     function runtimeTokens() {
@@ -54,12 +65,21 @@
       }
     }
 
-    async function runtimeCall(path, { method = 'GET', body } = {}) {
+    // Ключ идемпотентности на попытку пользователя: ретрай того же действия
+    // не создаёт вторую сессию/merge даже при потерянном ответе.
+    function idempotencyKey(action, entityId) {
+      return `${action}:${entityId}:${Math.floor(Date.now() / 1000)}`
+    }
+
+    async function runtimeCall(path, { method = 'GET', body, idempotencyKey: key } = {}) {
       const response = await fetch(`${RUNTIME_API}${path}`, {
         method,
         cache: 'no-store',
         ...(body === undefined ? {} : {
-          headers: { 'content-type': 'application/json' },
+          headers: {
+            'content-type': 'application/json',
+            ...(key ? { 'idempotency-key': key } : {}),
+          },
           body: JSON.stringify(body),
         }),
       })
