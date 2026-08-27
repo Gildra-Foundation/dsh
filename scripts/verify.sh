@@ -30,6 +30,7 @@ for runtime_module in "$ROOT"/plugins/gildra-dsh-runtime/lib/*.js; do
   node --check "$runtime_module"
 done
 node "$ROOT/plugins/gildra-dsh-runtime/test/unit.test.mjs"
+node "$ROOT/plugins/gildra-dsh-runtime/test/git-safety.test.mjs"
 node "$ROOT/plugins/gildra-dsh-runtime/test/workspaces.test.mjs"
 node "$ROOT/plugins/gildra-dsh-runtime/test/leases.test.mjs"
 node "$ROOT/plugins/gildra-dsh-runtime/test/sessions.test.mjs"

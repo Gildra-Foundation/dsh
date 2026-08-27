@@ -6,10 +6,13 @@
 // Произвольные shell-команды через API не выполняются. Ошибки — структурные
 // (errors.js); UI никогда не парсит строки сообщений.
 
+import { join } from 'node:path'
+
 import { asRuntimeError } from './errors.js'
 import { JsonStore } from './store.js'
 import { runtimeRoots } from './paths.js'
 import { appendAudit } from './audit.js'
+import { setManagedHooksPath } from './gitx.js'
 import { createProjectRegistry } from './projects.js'
 import { createLeaseManager } from './leases.js'
 import { createProcessManager } from './processes.js'
@@ -74,6 +77,9 @@ function queryOf(req) {
 // чтобы тесты собирали весь стек без Harness.
 export function createRuntime({ env = process.env } = {}) {
   const roots = runtimeRoots(env)
+  // Каталог hooks для managed-git внутри нашего 0700 state-корня: подложить
+  // туда hook может только сам пользователь, то есть внутри границы доверия.
+  setManagedHooksPath(join(roots.stateRoot, 'no-hooks'))
   const store = new JsonStore(roots.stateRoot, {
     onCorrupt: entry => void appendAudit(roots.stateRoot, 'store.corrupt', entry).catch(() => {}),
   })

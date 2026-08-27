@@ -53,6 +53,7 @@ jobs:
           node plugins/gildra-skill-installer/test.mjs
           node patches/workspace-files-explorer-index.test.mjs
           node plugins/gildra-dsh-runtime/test/unit.test.mjs
+          node plugins/gildra-dsh-runtime/test/git-safety.test.mjs
           node plugins/gildra-dsh-runtime/test/workspaces.test.mjs
           node plugins/gildra-dsh-runtime/test/leases.test.mjs
           node plugins/gildra-dsh-runtime/test/sessions.test.mjs
@@ -134,6 +135,7 @@ jobs:
           node plugins/gildra-skill-installer/test.mjs
           node patches/workspace-files-explorer-index.test.mjs
           node plugins/gildra-dsh-runtime/test/unit.test.mjs
+          node plugins/gildra-dsh-runtime/test/git-safety.test.mjs
           node plugins/gildra-dsh-runtime/test/workspaces.test.mjs
           node plugins/gildra-dsh-runtime/test/leases.test.mjs
           node plugins/gildra-dsh-runtime/test/sessions.test.mjs

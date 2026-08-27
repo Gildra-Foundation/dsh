@@ -3,21 +3,110 @@
 // Только execFile (никакого shell): аргументы уходят отдельным argv, пути с
 // пробелами безопасны на всех платформах. Все операции с ветками/worktree
 // идут через эти помощники — сырой git из UI/API не выполняется.
+//
+// Репозиторий (особенно adopt локального пути) считается НЕДОВЕРЕННЫМ входом,
+// поэтому каждая managed-команда выполняется в контролируемом окружении:
+// вычищенный env + hardening-флаги `-c`, которые перебивают любой repo-config
+// (командная строка имеет высший приоритет в git).
 
 import { execFile } from 'node:child_process'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { RuntimeError } from './errors.js'
 
 const execFileAsync = promisify(execFile)
 
-const GIT_TIMEOUT_MS = 5 * 60 * 1000
+// Локальные операции (worktree/branch/status) не ходят в сеть: длинный
+// таймаут им не нужен и только маскирует зависание.
+export const LOCAL_TIMEOUT_MS = 60_000
+export const NETWORK_TIMEOUT_MS = 5 * 60_000
+export const CLONE_TIMEOUT_MS = 20 * 60_000
+
+// Минимальная версия git: `worktree remove`/`worktree list --porcelain`
+// стабильны с 2.17, а `init --initial-branch` требует 2.28.
+export const MINIMUM_GIT_VERSION = [2, 28, 0]
+
+// Переменные, перенаправляющие managed-операцию в ЧУЖОЙ репозиторий или
+// подменяющие конфигурацию: главный риск нарушения изоляции.
+const REPOSITORY_CONTROL_ENV = [
+  'GIT_DIR', 'GIT_COMMON_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE',
+  'GIT_OBJECT_DIRECTORY', 'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+  'GIT_CONFIG', 'GIT_CONFIG_GLOBAL', 'GIT_CONFIG_SYSTEM', 'GIT_CONFIG_COUNT',
+  'GIT_TEMPLATE_DIR', 'GIT_NAMESPACE', 'GIT_ATTR_SOURCE', 'GIT_ATTR_NOSYSTEM',
+]
+
+// Переменные, заставляющие git выполнить произвольную программу. Runtime
+// никогда не нуждается в pager/editor/external diff, поэтому вычищаем их.
+const EXECUTION_SURFACE_ENV = [
+  'GIT_EXTERNAL_DIFF', 'GIT_PAGER', 'GIT_EDITOR', 'GIT_SEQUENCE_EDITOR',
+  'GIT_PROXY_COMMAND', 'GIT_ALLOW_PROTOCOL',
+]
+
+// Аутентификация пользователя СОХРАНЯЕТСЯ (GIT_SSH, GIT_SSH_COMMAND,
+// GIT_ASKPASS, SSH_AUTH_SOCK, credential helper из его конфига): это его
+// собственные настройки внутри его же Unix-пользователя, а не влияние
+// недоверенного репозитория. Зависания закрывает таймаут, а не ослабление
+// аутентификации; StrictHostKeyChecking мы не трогаем.
+export function gitSafeEnv(baseEnv = process.env, overrides = {}) {
+  const env = { ...baseEnv }
+  for (const name of [...REPOSITORY_CONTROL_ENV, ...EXECUTION_SURFACE_ENV]) delete env[name]
+  // GIT_CONFIG_COUNT задаёт пары GIT_CONFIG_KEY_n/GIT_CONFIG_VALUE_n — сам
+  // счётчик уже удалён, но убираем и пары, чтобы не осталось хвостов.
+  for (const name of Object.keys(env)) {
+    if (/^GIT_CONFIG_(KEY|VALUE)_\d+$/.test(name)) delete env[name]
+  }
+  env.GIT_TERMINAL_PROMPT = '0'
+  return { ...env, ...overrides }
+}
+
+// Каталог без hooks. Реально существовать не обязан: git просто не находит
+// hooks по несуществующему пути. Runtime указывает путь внутри своего
+// state-корня (0700), поэтому подложить туда hook может только сам
+// пользователь — то есть уже внутри границы доверия.
+let managedHooksPath = join(tmpdir(), 'gildra-runtime-no-hooks')
+
+export function setManagedHooksPath(path) {
+  if (typeof path === 'string' && path.length > 0) managedHooksPath = path
+}
+
+export function hardeningArgs() {
+  return [
+    '--no-pager',
+    // Командная строка перебивает repo-config: hooks недоверенного
+    // репозитория не выполняются при worktree/merge/commit.
+    '-c', `core.hooksPath=${managedHooksPath}`,
+    '-c', 'core.fsmonitor=false',
+    // ext:: URL исполняет произвольную команду как транспорт.
+    '-c', 'protocol.ext.allow=never',
+    '-c', 'diff.external=',
+    '-c', 'core.pager=cat',
+  ]
+}
+
+export function classifyGitFailure(error, args) {
+  const output = `${String(error?.stderr ?? '')}\n${String(error?.stdout ?? '')}`
+  if (error?.killed || error?.signal === 'SIGTERM') {
+    return new RuntimeError('GIT_TIMEOUT', `git ${args[0] ?? ''}: операция превысила таймаут и была остановлена.`, {
+      command: args.find(argument => !argument.startsWith('-')) ?? 'git',
+    })
+  }
+  if (/Authentication failed|could not read Username|could not read Password|Permission denied \(publickey\)|terminal prompts disabled|Invalid username or password/i.test(output)) {
+    return new RuntimeError('GIT_AUTH_REQUIRED', 'Git требует аутентификацию: настройте доступ (ssh-ключ или credential helper) и повторите.', {})
+  }
+  const detail = output.split(/\r?\n/).map(line => line.trim()).filter(Boolean).at(-1) ?? ''
+  return new RuntimeError('GIT_FAILED', detail ? `git ${args[0] ?? ''}: ${detail.slice(0, 400)}` : `git ${args[0] ?? ''} завершился с ошибкой.`, {
+    args: args.slice(0, 6),
+  })
+}
 
 export async function git(args, options = {}) {
+  const fullArgs = [...hardeningArgs(), ...args]
   try {
-    return await execFileAsync('git', args, {
+    return await execFileAsync('git', fullArgs, {
       cwd: options.cwd,
-      env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...options.env },
-      timeout: options.timeoutMs ?? GIT_TIMEOUT_MS,
+      env: gitSafeEnv(process.env, options.env),
+      timeout: options.timeoutMs ?? LOCAL_TIMEOUT_MS,
       maxBuffer: 8 * 1024 * 1024,
       windowsHide: true,
     })
@@ -25,13 +114,43 @@ export async function git(args, options = {}) {
     if (error?.code === 'ENOENT') {
       throw new RuntimeError('GIT_UNAVAILABLE', 'Git не найден. Установите Git и повторите попытку.')
     }
-    if (options.allowFailure) return { stdout: String(error?.stdout ?? ''), stderr: String(error?.stderr ?? ''), failed: true, exitCode: error?.code }
-    const detail = String(error?.stderr ?? error?.message ?? '')
-      .split(/\r?\n/).map(line => line.trim()).filter(Boolean).at(-1) ?? ''
-    throw new RuntimeError('GIT_FAILED', detail ? `git ${args[0] ?? ''}: ${detail.slice(0, 400)}` : `git ${args[0] ?? ''} завершился с ошибкой.`, {
-      args: args.slice(0, 6),
+    if (options.allowFailure && !error?.killed) {
+      return { stdout: String(error?.stdout ?? ''), stderr: String(error?.stderr ?? ''), failed: true, exitCode: error?.code }
+    }
+    throw classifyGitFailure(error, args)
+  }
+}
+
+export function parseGitVersion(text) {
+  const match = /git version (\d+)\.(\d+)(?:\.(\d+))?/.exec(String(text))
+  if (!match) return undefined
+  return [Number(match[1]), Number(match[2]), Number(match[3] ?? 0)]
+}
+
+export function isVersionAtLeast(version, minimum) {
+  if (!version) return false
+  for (let index = 0; index < minimum.length; index++) {
+    const actual = version[index] ?? 0
+    if (actual > minimum[index]) return true
+    if (actual < minimum[index]) return false
+  }
+  return true
+}
+
+export async function gitVersion() {
+  const { stdout } = await git(['--version'], { timeoutMs: 15_000 })
+  return { raw: stdout.trim(), version: parseGitVersion(stdout) }
+}
+
+export async function assertMinimumGitVersion() {
+  const { raw, version } = await gitVersion()
+  if (!isVersionAtLeast(version, MINIMUM_GIT_VERSION)) {
+    throw new RuntimeError('UNSUPPORTED_GIT_VERSION', `Требуется git ${MINIMUM_GIT_VERSION.join('.')} или новее; установлен «${raw}».`, {
+      required: MINIMUM_GIT_VERSION.join('.'),
+      found: raw,
     })
   }
+  return { raw, version }
 }
 
 // Идентичность коммитов, создаваемых самим Runtime (merge-коммиты), не должна
@@ -46,6 +165,22 @@ export function identityArgs(identity = {}) {
 export async function isGitRepository(path) {
   const result = await git(['-C', path, 'rev-parse', '--git-dir'], { allowFailure: true })
   return !result.failed
+}
+
+export async function repositoryKind(path) {
+  // --show-toplevel не существует в bare-репозитории, поэтому спрашиваем его
+  // отдельно и только для рабочего дерева.
+  const result = await git([
+    '-C', path, 'rev-parse', '--is-bare-repository', '--git-common-dir',
+  ], { allowFailure: true })
+  if (result.failed) return undefined
+  const [bare, commonDir] = result.stdout.split(/\r?\n/).map(line => line.trim())
+  const kind = { bare: bare === 'true', commonDir }
+  if (!kind.bare) {
+    const top = await git(['-C', path, 'rev-parse', '--show-toplevel'], { allowFailure: true })
+    if (!top.failed) kind.topLevel = top.stdout.trim() || undefined
+  }
+  return kind
 }
 
 export async function initBareRepository(path) {
@@ -146,6 +281,19 @@ export async function isMergedInto(repoPath, branch, targetRef) {
   return !result.failed
 }
 
+// Проверка целостности canonical-репозитория. Запускается не на каждый
+// запрос, а точечно: после подозрительной ошибки, вручную и при recovery.
+export async function checkRepositoryIntegrity(repoPath) {
+  const result = await git(['-C', repoPath, 'fsck', '--connectivity-only', '--no-progress'], {
+    allowFailure: true,
+    timeoutMs: NETWORK_TIMEOUT_MS,
+  })
+  if (!result.failed) return { healthy: true }
+  const problems = String(result.stderr || result.stdout || '')
+    .split(/\r?\n/).map(line => line.trim()).filter(Boolean).slice(0, 20)
+  return { healthy: false, problems }
+}
+
 // Merge выполняется внутри merge-worktree; при конфликте возвращает список
 // конфликтующих файлов и оставляет worktree для разрешения — Runtime никогда
 // не разрешает конфликт молча.
@@ -174,10 +322,25 @@ export async function continueMergeCommit(worktreePath, message, identity = {}) 
   return (await revParse(worktreePath, 'HEAD'))
 }
 
-export async function fetchOrigin(repoPath) {
-  await git(['-C', repoPath, 'fetch', '--all', '--prune'])
+// Сетевые операции: ограниченные повторы с backoff. Ошибка аутентификации не
+// ретраится никогда — бесконечные попытки только блокируют аккаунт и висят.
+export async function fetchOrigin(repoPath, { attempts = 3, backoffMs = 1000, sleep } = {}) {
+  const wait = sleep ?? (ms => new Promise(resolveTimer => setTimeout(resolveTimer, ms)))
+  let lastError
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      await git(['-C', repoPath, 'fetch', '--all', '--prune'], { timeoutMs: NETWORK_TIMEOUT_MS })
+      return { fetched: true, attempts: attempt }
+    } catch (error) {
+      lastError = error
+      if (error?.code === 'GIT_AUTH_REQUIRED' || error?.code === 'GIT_UNAVAILABLE') throw error
+      if (attempt === attempts) break
+      await wait(backoffMs * 2 ** (attempt - 1))
+    }
+  }
+  throw lastError
 }
 
 export async function cloneBare(url, targetPath) {
-  await git(['clone', '--bare', '--', url, targetPath], { timeoutMs: 20 * 60 * 1000 })
+  await git(['clone', '--bare', '--', url, targetPath], { timeoutMs: CLONE_TIMEOUT_MS })
 }
