@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 
 import { ERROR_CODES, RuntimeError, asRuntimeError } from '../lib/errors.js'
 import {
@@ -85,10 +85,13 @@ import { ISOLATION_RULES, guardWorkspaceCommand } from '../lib/index.js'
 // --- paths ----------------------------------------------------------------
 
 {
+  // resolve() нормализует по-платформенному ('/tmp' → 'D:\tmp' на Windows),
+  // поэтому ожидания строятся теми же path-примитивами, а не литералами.
+  const stateDir = resolve('/tmp/gildra-test/state')
   const roots = runtimeRoots({ GILDRA_DSH_STATE_DIR: '/tmp/gildra-test/state' })
-  assert.equal(roots.stateRoot, '/tmp/gildra-test/state')
-  assert.equal(roots.reposRoot, '/tmp/gildra-test/repos')
-  assert.equal(roots.workspacesRoot, '/tmp/gildra-test/workspaces')
+  assert.equal(roots.stateRoot, stateDir)
+  assert.equal(roots.reposRoot, join(dirname(stateDir), 'repos'))
+  assert.equal(roots.workspacesRoot, join(dirname(stateDir), 'workspaces'))
   const path = workspacePath(roots, 'proj', 'alex', 'sess-1')
   assert.equal(path, join(roots.workspacesRoot, 'proj', 'alex', 'sess-1'))
   assert.throws(() => workspacePath(roots, '../evil', 'alex', 'sess-1'))

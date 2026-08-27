@@ -7,7 +7,7 @@
 // откладывается в сторону (.corrupt-*) и никогда не роняет процесс.
 
 import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { RuntimeError } from './errors.js'
 import { assertId, assertSegment } from './ids.js'
@@ -113,12 +113,41 @@ export class JsonStore {
         // появится), либо брошенный. Решает таймаут ниже.
       }
       if (Number.isInteger(ownerPid) && ownerPid !== process.pid && !processAlive(ownerPid)) {
-        const stale = `${lockPath}.stale-${randomUUID()}`
+        // Перехват — только под reaper-мьютексом с повторной проверкой pid:
+        // иначе между чтением meta и rename конкурент мог унести уже
+        // пересозданный СВЕЖИЙ лок нового владельца (та же гонка, что была в
+        // lease-перехвате и воспроизводилась на CI).
+        const reap = `${lockPath}.reap`
+        let reaping = false
         try {
-          await rename(lockPath, stale)
-          await rm(stale, { recursive: true, force: true }).catch(() => {})
+          await mkdir(reap)
+          reaping = true
         } catch {
-          // Другой процесс успел перехватить — продолжаем ждать.
+          try {
+            const info = await stat(reap)
+            if (Date.now() - info.mtimeMs > 30_000) await rm(reap, { recursive: true, force: true })
+          } catch {
+            /* reap уже исчез */
+          }
+        }
+        if (reaping) {
+          try {
+            let livePid = null
+            try {
+              livePid = JSON.parse(await readFile(join(lockPath, 'meta.json'), 'utf8')).pid
+            } catch {
+              livePid = null
+            }
+            if (livePid === ownerPid && !processAlive(livePid)) {
+              const stale = `${lockPath}.stale-${randomUUID()}`
+              await rename(lockPath, stale)
+              await rm(stale, { recursive: true, force: true }).catch(() => {})
+            }
+          } catch {
+            // Лок уже исчез или сменил владельца — просто повторяем цикл.
+          } finally {
+            await rm(reap, { recursive: true, force: true }).catch(() => {})
+          }
         }
         continue
       }

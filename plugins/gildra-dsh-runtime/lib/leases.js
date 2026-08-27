@@ -14,7 +14,7 @@
 
 import { hostname } from 'node:os'
 import { randomUUID } from 'node:crypto'
-import { access, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { access, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { RuntimeError } from './errors.js'
 import { assertId, generateOwnerToken } from './ids.js'
@@ -42,12 +42,16 @@ export function createLeaseManager({ roots, env = process.env }) {
   const leasesRoot = join(roots.stateRoot, 'leases')
   const leaseDir = workspaceId => join(leasesRoot, `${assertId(workspaceId, 'workspaceId')}.lease`)
 
-  async function readMeta(workspaceId) {
+  async function readMetaAt(dir) {
     try {
-      return JSON.parse(await readFile(join(leaseDir(workspaceId), 'meta.json'), 'utf8'))
+      return JSON.parse(await readFile(join(dir, 'meta.json'), 'utf8'))
     } catch {
       return undefined
     }
+  }
+
+  function readMeta(workspaceId) {
+    return readMetaAt(leaseDir(workspaceId))
   }
 
   function classify(meta, now = Date.now()) {
@@ -89,10 +93,50 @@ export function createLeaseManager({ roots, env = process.env }) {
     await rename(temporary, path)
   }
 
+  // Перехват осиротевшего lease выполняется под отдельным reaper-мьютексом:
+  // без него между «прочитал meta мёртвого владельца» и «rename» конкурент
+  // мог унести уже пересозданный СВЕЖИЙ lease победителя (dir живёт по тому
+  // же пути), и выигрывали двое. Жнец ровно один (атомарный mkdir), и уже под
+  // мьютексом он перепроверяет, что meta не сменилась (сравнение ownerToken).
+  async function reapOrphanedLease(dir, expected) {
+    const reap = `${dir}.reap`
+    try {
+      await mkdir(reap)
+    } catch (error) {
+      if (error?.code !== 'EEXIST') throw error
+      // Жнец-предшественник упал? Критическая секция — миллисекунды, поэтому
+      // reap старше 30 секунд считается брошенным.
+      try {
+        const info = await stat(reap)
+        if (Date.now() - info.mtimeMs > 30_000) await rm(reap, { recursive: true, force: true })
+      } catch {
+        /* reap уже исчез */
+      }
+      await new Promise(resolveTimer => setTimeout(resolveTimer, 20))
+      return false
+    }
+    try {
+      const current = await readMetaAt(dir)
+      if (classify(current) !== 'ORPHANED') return false
+      // Meta сменилась с момента решения о перехвате — это чужой свежий
+      // lease, его не трогаем. (expected === null означает «ожидаем обломок
+      // без meta»: появление meta тоже отменяет перехват.)
+      if ((current?.ownerToken ?? null) !== expected) return false
+      const aside = `${dir}.orphan-${randomUUID()}`
+      await rename(dir, aside)
+      await rm(aside, { recursive: true, force: true }).catch(() => {})
+      return true
+    } catch {
+      return false
+    } finally {
+      await rm(reap, { recursive: true, force: true }).catch(() => {})
+    }
+  }
+
   async function acquire({ workspaceId, sessionId, userId, mode = 'write', pid = process.pid, host = hostname() }) {
     await mkdir(leasesRoot, { recursive: true, mode: 0o700 })
     const dir = leaseDir(workspaceId)
-    for (let attempt = 0; attempt < 3; attempt++) {
+    for (let attempt = 0; attempt < 5; attempt++) {
       try {
         await mkdir(dir)
         const meta = {
@@ -130,15 +174,10 @@ export function createLeaseManager({ roots, env = process.env }) {
           holder: { sessionId: current?.sessionId, userId: current?.userId, pid: current?.pid, state },
         })
       }
-      // ORPHANED: перехват через rename — атомарно выигрывает один претендент.
-      const aside = `${dir}.orphan-${randomUUID()}`
-      try {
-        await rename(dir, aside)
-        await rm(aside, { recursive: true, force: true }).catch(() => {})
+      if (await reapOrphanedLease(dir, current?.ownerToken ?? null)) {
         await appendAudit(roots.stateRoot, 'lease.orphan-takeover', { workspaceId, previousSession: current?.sessionId })
-      } catch {
-        // Другой претендент успел первым — следующая итерация решит исход.
       }
+      // Исход решает следующая итерация: mkdir выигрывает ровно один.
     }
     throw new RuntimeError('WORKSPACE_LOCKED', 'Не удалось захватить write-lease.', { workspaceId })
   }
