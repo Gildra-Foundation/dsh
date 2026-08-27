@@ -59,6 +59,7 @@ await writeFile(join(repo, 'package.json'), JSON.stringify({ name: 'fixture', sc
 await commitAll(repo, 'init', identity)
 
 const runtime = createRuntime({ env: { GILDRA_DSH_STATE_DIR: join(base, 'state') } })
+const adminSetPolicy = (id, policy) => runtime.quality.setPolicy(id, policy, { verifiedAdmin: { actorId: 'test-admin' } })
 const { projects, sessions, workspaces, tasks, quality, reviews } = runtime
 let reviewerSeq = 0
 async function openReview(taskId, { reviewerAgent, mode = 'standard' }) {
@@ -77,7 +78,7 @@ async function openReview(taskId, { reviewerAgent, mode = 'standard' }) {
 }
 await git(['-C', repo, 'switch', '--detach'])
 await projects.register({ projectId: 'shop', path: repo })
-await quality.setPolicy('shop', {
+await adminSetPolicy('shop', {
   required: ['tests', 'review'],
   checks: { tests: { argv: ['node', 'test/validation.test.mjs'] } },
   architecture: {

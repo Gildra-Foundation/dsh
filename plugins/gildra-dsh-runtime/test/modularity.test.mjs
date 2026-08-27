@@ -210,9 +210,10 @@ const checkOf = (result, id) => result.checks.find(check => check.id === id)
   const workspaces = createWorkspaceManager({ store, roots, projects, env: {} })
   const tasks = createTaskManager({ store, roots, projects })
   const quality = createQualityManager({ store, roots, projects, tasks, workspaces, processes })
+const adminSetPolicy = (id, policy) => quality.setPolicy(id, policy, { verifiedAdmin: { actorId: 'test-admin' } })
   const repoIntel = createRepoIntel({ store, roots, projects })
   const reviews = createReviewManager({ store, roots, projects, tasks, workspaces, repoIntel })
-  await quality.setPolicy('demo', { required: ['tests', 'review'], checks: { tests: { argv: ['node', '-e', 'process.exit(0)'] } } })
+  await adminSetPolicy('demo', { required: ['tests', 'review'], checks: { tests: { argv: ['node', '-e', 'process.exit(0)'] } } })
 
   const workspace = await workspaces.createWorkspace({ projectId: 'demo', userId: 'alex', sessionId: 'sess-m1' })
   const { task } = await tasks.createTask({

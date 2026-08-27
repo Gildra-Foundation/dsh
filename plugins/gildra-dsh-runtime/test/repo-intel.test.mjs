@@ -176,16 +176,22 @@ const intel = createRepoIntel({ store, roots, projects })
   assert.deepEqual(intel.trustedCommands(project, profile), [],
     'discovered-команды не должны быть исполняемыми без явного одобрения')
 
+  // §8: без HUMAN_ADMIN одобрение невозможно — writer не делает discovered
+  // исполняемым сам.
+  await assert.rejects(intel.approveCommands('demo', [{ id: 'test', argv: ['pnpm', 'test'] }]),
+    error => error.code === 'CAPABILITY_REQUIRED')
+  const asAdmin = { verifiedAdmin: { actorId: 'test-admin' } }
   // Одобрить можно только существующую discovered-команду (§16).
-  await assert.rejects(intel.approveCommands('demo', [{ id: 'ghost', argv: ['make', 'ghost'] }]),
+  await assert.rejects(intel.approveCommands('demo', [{ id: 'ghost', argv: ['make', 'ghost'] }], asAdmin),
     /не найдена среди discovered/)
 
   // Одобрение фиксирует definitionHash источника.
-  await intel.approveCommands('demo', [{ id: 'test', argv: ['pnpm', 'test'] }])
+  await intel.approveCommands('demo', [{ id: 'test', argv: ['pnpm', 'test'] }], asAdmin)
   const approvedEntry = (await projects.get('demo')).approvedCommands[0]
   assert.equal(typeof approvedEntry.definitionHash, 'string')
   assert.equal(approvedEntry.sourceFile, 'package.json')
   assert.equal(approvedEntry.sourceCommit, profile.commit)
+  assert.equal(approvedEntry.approvedBy, 'test-admin')
   const afterApprove = intel.trustedCommands(await projects.get('demo'), profile)
   assert.equal(afterApprove.length, 1)
   assert.equal(afterApprove[0].trust, 'approved')
@@ -201,7 +207,7 @@ const intel = createRepoIntel({ store, roots, projects })
   assert.deepEqual(afterSwap, [],
     'изменённое определение команды обязано вернуть её в discovered')
   // Повторное одобрение нового определения восстанавливает доверие.
-  await intel.approveCommands('demo', [{ id: 'test', argv: ['pnpm', 'test'] }])
+  await intel.approveCommands('demo', [{ id: 'test', argv: ['pnpm', 'test'] }], asAdmin)
   assert.equal(intel.trustedCommands(await projects.get('demo'), swappedProfile).length, 1)
 
   // Без профиля approved-команды не считаются исполняемыми (нечем сверить).

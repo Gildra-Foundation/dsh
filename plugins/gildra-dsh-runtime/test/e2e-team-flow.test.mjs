@@ -56,6 +56,7 @@ await writeFile(join(repo, 'AGENTS.md'), '# Правила проекта\n')
 await commitAll(repo, 'init', identity)
 
 const runtime = createRuntime({ env: { GILDRA_DSH_STATE_DIR: join(base, 'state') } })
+const adminSetPolicy = (id, policy) => runtime.quality.setPolicy(id, policy, { verifiedAdmin: { actorId: 'test-admin' } })
 const { projects, sessions, workspaces, tasks, quality, reviews, upstream, contextBuilder, leases } = runtime
 
 // Честный claim-flow §4: request → claim capability read-сессией.
@@ -75,7 +76,7 @@ async function openReview(taskId, { reviewerAgent, mode = 'standard' }) {
   return { ...requested, reviewerCapability: claimed.reviewerCapability }
 }
 await projects.register({ projectId: 'auth-app', path: repo })
-await quality.setPolicy('auth-app', {
+await adminSetPolicy('auth-app', {
   required: ['tests', 'review'],
   checks: { tests: { argv: ['node', 'test.mjs'] } },
 })

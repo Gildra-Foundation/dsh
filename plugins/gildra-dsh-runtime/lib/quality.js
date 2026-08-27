@@ -120,10 +120,14 @@ export function qualityPolicyOf(project) {
 }
 
 export function createQualityManager({ store, roots, projects, tasks, workspaces, processes }) {
-  // Явная установка политики пользователем — единственный способ сделать
-  // команду trusted без пофайлового одобрения.
-  async function setPolicy(projectId, policy) {
+  // Политика меняется ТОЛЬКО человеком (§8): writer не ослабляет собственный
+  // Definition of Done. verifiedAdmin приходит от слоя, расходовавшего
+  // HUMAN_ADMIN-capability; сама модель флагам из body не верит.
+  async function setPolicy(projectId, policy, { verifiedAdmin } = {}) {
     const project = await projects.get(projectId)
+    if (!verifiedAdmin || typeof verifiedAdmin.actorId !== 'string') {
+      throw new RuntimeError('CAPABILITY_REQUIRED', 'Изменение Quality/Architecture Policy требует HUMAN_ADMIN capability из интерактивного канала.', { projectId })
+    }
     if (!policy || typeof policy !== 'object') throw new RuntimeError('INVALID_INPUT', 'Ожидалась политика качества.')
     const checks = {}
     for (const [id, check] of Object.entries(policy.checks ?? {})) {
@@ -150,8 +154,12 @@ export function createQualityManager({ store, roots, projects, tasks, workspaces
         ...(Array.isArray(policy.generatedFiles) ? { generatedFiles: policy.generatedFiles.map(String).slice(0, 50) } : {}),
       },
     }
+    // Ревизия и провенанс политики (§8): кто и когда одобрил; секретов нет.
+    record.qualityPolicyRevision = (project.qualityPolicyRevision ?? 0) + 1
+    record.qualityPolicyApprovedBy = verifiedAdmin.actorId.slice(0, 100)
+    record.qualityPolicyApprovedAt = new Date().toISOString()
     await store.write('projects', projectId, record)
-    await appendAudit(roots.stateRoot, 'quality.policy.set', { projectId, checks: Object.keys(checks).length })
+    await appendAudit(roots.stateRoot, 'quality.policy.set', { projectId, revision: record.qualityPolicyRevision, approvedBy: record.qualityPolicyApprovedBy, checks: Object.keys(checks).length })
     return qualityPolicyOf(record)
   }
 

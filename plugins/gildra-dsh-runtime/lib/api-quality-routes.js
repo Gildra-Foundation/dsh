@@ -18,11 +18,17 @@ export function registerQualityRoutes(route, { projects, workspaces, tasks, repo
   }),
 
   route('/gildra/v1/repo/commands/approve', {
-    POST: async ({ body }) => ({ payload: { approved: await repoIntel.approveCommands(body.projectId, body.commands) } }),
+    POST: async ({ body }) => {
+      const admin = await capabilities.consume(body.capability, { role: 'HUMAN_ADMIN', scope: 'command-approval', projectId: body.projectId })
+      return { payload: { approved: await repoIntel.approveCommands(body.projectId, body.commands, { verifiedAdmin: { actorId: admin.entityId ?? 'human' } }) } }
+    },
   }),
 
   route('/gildra/v1/quality/policy', {
-    POST: async ({ body }) => ({ payload: { policy: await quality.setPolicy(body.projectId, body.policy) } }),
+    POST: async ({ body }) => {
+      const admin = await capabilities.consume(body.capability, { role: 'HUMAN_ADMIN', scope: 'policy-change', projectId: body.projectId })
+      return { payload: { policy: await quality.setPolicy(body.projectId, body.policy, { verifiedAdmin: { actorId: admin.entityId ?? 'human' } }) } }
+    },
     GET: async ({ query }) => ({ payload: { policy: quality.qualityPolicyOf(await projects.get(query.get('projectId') ?? '')) } }),
   }),
 

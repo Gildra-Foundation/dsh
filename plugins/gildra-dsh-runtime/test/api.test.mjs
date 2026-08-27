@@ -335,11 +335,24 @@ let ownerToken
 // --- Слой качества через HTTP-обвязку (§65, §66) ---------------------------
 {
   // Политика: единственная trusted-команда + review; policy отдаётся GET-ом.
+  // §8: без HUMAN_ADMIN policy не меняется даже идеальным телом запроса.
+  const forgedPolicy = await call(routeOf('/gildra/v1/quality/policy'), requestFor({
+    method: 'POST',
+    body: { projectId: 'demo', policy: { required: ['review'] } },
+  }))
+  assert.equal(forgedPolicy.status, 403)
+  const adminCap = await runtime.capabilities.issue({ role: 'HUMAN_ADMIN', scope: 'policy-change', entityId: 'admin-alex', projectId: 'demo' })
   const setPolicy = await call(routeOf('/gildra/v1/quality/policy'), requestFor({
     method: 'POST',
-    body: { projectId: 'demo', policy: { required: ['tests', 'review'], checks: { tests: { argv: ['node', '-e', 'console.log("api ok")'] } } } },
+    body: { projectId: 'demo', capability: adminCap.capability, policy: { required: ['tests', 'review'], checks: { tests: { argv: ['node', '-e', 'console.log("api ok")'] } } } },
   }))
   assert.equal(setPolicy.status, 200)
+  // Одноразовость: повторное использование той же capability — отказ.
+  const reused = await call(routeOf('/gildra/v1/quality/policy'), requestFor({
+    method: 'POST',
+    body: { projectId: 'demo', capability: adminCap.capability, policy: { required: ['review'] } },
+  }))
+  assert.equal(reused.status, 403)
   const gotPolicy = await call(routeOf('/gildra/v1/quality/policy'), requestFor({ url: '/gildra/v1/quality/policy?projectId=demo' }))
   assert.deepEqual(gotPolicy.body.policy.required, ['tests', 'review'])
 

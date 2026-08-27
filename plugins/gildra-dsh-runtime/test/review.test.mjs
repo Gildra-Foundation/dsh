@@ -63,6 +63,7 @@ const leases = createLeaseManager({ roots, env: {} })
 const sessions = createSessionManager({ store, roots, projects, workspaces, leases, processes, env: {} })
 const capabilities = createCapabilityStore({ store, roots })
 const reviews = createReviewManager({ store, roots, projects, tasks, workspaces, sessions, leases, capabilities, repoIntel })
+const adminSetPolicy = (id, policy) => quality.setPolicy(id, policy, { verifiedAdmin: { actorId: 'test-admin' } })
 
 // Полный честный цикл §4: независимая read-сессия → request → claim по
 // owner-token этой сессии → capability. Writer capability не видит.
@@ -85,7 +86,7 @@ async function openReview(taskId, { reviewerAgent, mode = 'standard' } = {}) {
   return { ...requested, reviewerCapability: claimed.reviewerCapability, readSession }
 }
 
-await quality.setPolicy('demo', {
+await adminSetPolicy('demo', {
   required: ['tests', 'review'],
   checks: { tests: { argv: ['node', '-e', 'console.log("ok")'] } },
   protectedAreas: ['.github/workflows/**'],
@@ -302,7 +303,7 @@ await assert.rejects(
 {
   // Включаем командную политику доставки. CODEOWNERS в фикстуре покрывает
   // src/** → изменение задевает владельцев.
-  await quality.setPolicy('demo', {
+  await adminSetPolicy('demo', {
     required: ['tests', 'review'],
     checks: { tests: { argv: ['node', '-e', 'console.log("ok")'] } },
     protectedAreas: ['.github/workflows/**'],
@@ -348,7 +349,7 @@ await assert.rejects(
   assert.ok(stale.includes('CODEOWNERS_REVIEW_REQUIRED'), 'human-approval прошлого коммита не переносится')
 
   // Возврат политики без delivery-требований для следующих блоков.
-  await quality.setPolicy('demo', {
+  await adminSetPolicy('demo', {
     required: ['tests', 'review'],
     checks: { tests: { argv: ['node', '-e', 'console.log("ok")'] } },
     protectedAreas: ['.github/workflows/**'],

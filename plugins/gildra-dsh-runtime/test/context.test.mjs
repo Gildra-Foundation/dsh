@@ -48,8 +48,9 @@ const processes = createProcessManager({ store, roots })
 const repoIntel = createRepoIntel({ store, roots, projects })
 const quality = createQualityManager({ store, roots, projects, tasks, workspaces, processes })
 const contextBuilder = createContextBuilder({ projects, tasks, workspaces, repoIntel })
+const adminSetPolicy = (id, policy) => quality.setPolicy(id, policy, { verifiedAdmin: { actorId: 'test-admin' } })
 
-await quality.setPolicy('demo', {
+await adminSetPolicy('demo', {
   required: ['tests', 'review'],
   checks: { tests: { argv: ['node', '-e', 'process.exit(0)'] } },
   protectedAreas: ['.github/**'],

@@ -247,8 +247,12 @@ export function createRepoIntel({ store, roots, projects }) {
 
   // Явное одобрение discovered-команды пользователем. Одобряется ТОЧНЫЙ argv:
   // смена команды в репозитории сбрасывает доверие сама собой.
-  async function approveCommands(projectId, commands) {
+  async function approveCommands(projectId, commands, { verifiedAdmin } = {}) {
     const project = await projects.get(projectId)
+    // §8: discovered-команда становится исполняемой только решением человека.
+    if (!verifiedAdmin || typeof verifiedAdmin.actorId !== 'string') {
+      throw new RuntimeError('CAPABILITY_REQUIRED', 'Одобрение verification-команды требует HUMAN_ADMIN capability из интерактивного канала.', { projectId })
+    }
     if (!Array.isArray(commands) || commands.length === 0) {
       throw new RuntimeError('INVALID_INPUT', 'Ожидался непустой список команд для одобрения.')
     }
@@ -264,7 +268,7 @@ export function createRepoIntel({ store, roots, projects }) {
         throw new RuntimeError('INVALID_INPUT', `Команда «${argv.join(' ')}» не найдена среди discovered текущего профиля — одобрять нечего.`, { argv })
       }
       if (!approved.some(entry => argvEquals(entry.argv, argv) && entry.definitionHash === discovered.definitionHash)) {
-        approved.push({ id, argv, definitionHash: discovered.definitionHash, sourceFile: discovered.source, sourceCommit: profile.commit })
+        approved.push({ id, argv, definitionHash: discovered.definitionHash, sourceFile: discovered.source, sourceCommit: profile.commit, approvedBy: verifiedAdmin.actorId.slice(0, 100), approvedAt: new Date().toISOString() })
       }
     }
     if (approved.length > 50) {

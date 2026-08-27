@@ -96,13 +96,14 @@ const ARCHITECTURE = {
     { id: 'auth.controller', patterns: ['src/application/**'] },
   ],
 }
+const ADMIN = { verifiedAdmin: { actorId: 'test-admin' } }
 for (const rt of [alexRt, peterRt]) {
   await rt.quality.setPolicy('auth-app', {
     required: ['tests', 'review'],
     checks: { tests: { argv: ['node', 'test.mjs'] } },
     architecture: ARCHITECTURE,
     delivery: { requireCI: true, requireCodeOwners: true },
-  })
+  }, ADMIN)
 }
 
 // --- 1–2. Alex: Task A с MODULE-claim на auth.service ----------------------

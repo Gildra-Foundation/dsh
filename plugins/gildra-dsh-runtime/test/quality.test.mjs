@@ -47,6 +47,7 @@ const processes = createProcessManager({ store, roots })
 const workspaces = createWorkspaceManager({ store, roots, projects, env: {} })
 const tasks = createTaskManager({ store, roots, projects })
 const quality = createQualityManager({ store, roots, projects, tasks, workspaces, processes })
+const adminSetPolicy = (id, policy) => quality.setPolicy(id, policy, { verifiedAdmin: { actorId: 'test-admin' } })
 
 const identity = { name: 'Alex', email: 'alex@test' }
 
@@ -84,9 +85,9 @@ async function approveReview(taskId, headSha, extra = {}) {
 
 // --- 1–2. Политика и honest NOT_CONFIGURED --------------------------------
 {
-  await assert.rejects(quality.setPolicy('demo', { checks: { tests: { argv: 'npm test' } } }), /argv-массивом/,
+  await assert.rejects(adminSetPolicy('demo', { checks: { tests: { argv: 'npm test' } } }), /argv-массивом/,
     'shell-строка не принимается — только argv')
-  await quality.setPolicy('demo', {
+  await adminSetPolicy('demo', {
     required: ['tests', 'lint', 'typecheck', 'review'],
     checks: {
       tests: { argv: ['node', '-e', 'console.log("tests ok")'] },
@@ -132,7 +133,7 @@ const { task, workspace } = await makeTask()
 
 // --- Полный зелёный путь: единственная дорога в READY ---------------------
 {
-  await quality.setPolicy('demo', {
+  await adminSetPolicy('demo', {
     required: ['tests', 'review'],
     checks: { tests: { argv: ['node', '-e', 'console.log("ok")'] } },
   })
@@ -178,7 +179,7 @@ const { task, workspace } = await makeTask()
 
     // Интеграция: команда НЕ видит секрет Runtime; разрешённый секрет видит,
     // но в logTail он отредактирован.
-    await quality.setPolicy('demo', {
+    await adminSetPolicy('demo', {
       required: ['tests', 'review'],
       checks: { tests: { argv: ['node', '-e', 'console.log("leak=" + (process.env.GILDRA_TEST_SECRET_LEAK ?? "none"), "allowed=" + (process.env.GILDRA_TEST_ALLOWED ?? "none"))'] } },
       verification: { allowedSecrets: ['GILDRA_TEST_ALLOWED'] },
@@ -219,7 +220,7 @@ const { task, workspace } = await makeTask()
     delete process.env.GILDRA_TEST_ALLOWED
   }
   // Восстановление политики для следующих блоков.
-  await quality.setPolicy('demo', {
+  await adminSetPolicy('demo', {
     required: ['tests', 'review'],
     checks: { tests: { argv: ['node', '-e', 'console.log("ok")'] } },
   })
@@ -241,7 +242,7 @@ const { task, workspace } = await makeTask()
   assert.ok(!(await quality.readiness(task.taskId)).blockers.some(blocker => blocker.id === 'STALE_EVIDENCE_REVISION'))
 
   // Смена политики (новая команда) — тоже протухание.
-  await quality.setPolicy('demo', {
+  await adminSetPolicy('demo', {
     required: ['tests', 'review'],
     checks: { tests: { argv: ['node', '-e', 'console.log("changed")'] } },
   })
@@ -249,7 +250,7 @@ const { task, workspace } = await makeTask()
   assert.ok(afterPolicy.blockers.some(blocker => blocker.id === 'STALE_EVIDENCE_REVISION'),
     'смена политики качества делает старый прогон недействительным')
   // Восстанавливаем для следующих сценариев.
-  await quality.setPolicy('demo', {
+  await adminSetPolicy('demo', {
     required: ['tests', 'review'],
     checks: { tests: { argv: ['node', '-e', 'console.log("ok")'] } },
   })
@@ -258,7 +259,7 @@ const { task, workspace } = await makeTask()
 // --- 5. Таймаут через штатный terminate -----------------------------------
 {
   const slow = await makeTask({ title: 'Timeout task' })
-  await quality.setPolicy('demo', {
+  await adminSetPolicy('demo', {
     required: ['tests', 'review'],
     checks: { tests: { argv: ['node', '-e', 'setTimeout(() => {}, 30000)'], timeoutMs: 400 } },
   })
@@ -272,7 +273,7 @@ const { task, workspace } = await makeTask()
 // --- 6. Отмена: структурный статус, workspace жив --------------------------
 {
   const target = await makeTask({ title: 'Cancel task' })
-  await quality.setPolicy('demo', {
+  await adminSetPolicy('demo', {
     required: ['tests', 'review'],
     checks: {
       first: { argv: ['node', '-e', 'setTimeout(() => {}, 15000)'], timeoutMs: 20000 },
@@ -304,7 +305,7 @@ const { task, workspace } = await makeTask()
 // --- 6б. Run identity (§19): single-active, cancel по runId, latest-guard --
 {
   const target = await makeTask({ title: 'Run identity' })
-  await quality.setPolicy('demo', {
+  await adminSetPolicy('demo', {
     required: ['tests', 'review'],
     checks: { slow: { argv: ['node', '-e', 'setTimeout(() => {}, 12000)'], timeoutMs: 20000 }, quick: { argv: ['node', '-e', 'console.log("q")'] } },
     verification: { allowParallel: true },
@@ -336,7 +337,7 @@ const { task, workspace } = await makeTask()
   assert.deepEqual(await processes.listForSession(target.workspace.sessionId), [])
 
   // Single-active по умолчанию.
-  await quality.setPolicy('demo', {
+  await adminSetPolicy('demo', {
     required: ['tests', 'review'],
     checks: { slow: { argv: ['node', '-e', 'setTimeout(() => {}, 12000)'], timeoutMs: 20000 } },
   })
@@ -358,7 +359,7 @@ const { task, workspace } = await makeTask()
   await quality.cancelVerification(firstId)
   await first
   // Восстановление политики.
-  await quality.setPolicy('demo', {
+  await adminSetPolicy('demo', {
     required: ['tests', 'review'],
     checks: { tests: { argv: ['node', '-e', 'console.log("ok")'] } },
   })
@@ -367,7 +368,7 @@ const { task, workspace } = await makeTask()
 // --- 7. Regression-first bugfix (§18) -------------------------------------
 {
   const bug = await makeTask({ title: 'Bug', kind: 'bugfix' })
-  await quality.setPolicy('demo', {
+  await adminSetPolicy('demo', {
     required: ['tests', 'review'],
     checks: { tests: { argv: ['node', '--input-type=module', '-e', "import { readFileSync } from 'node:fs'; process.exit(readFileSync('app.js', 'utf8').includes('fixed') ? 0 : 1)"] } },
   })
