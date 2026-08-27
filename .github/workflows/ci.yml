@@ -73,6 +73,7 @@ jobs:
           node plugins/gildra-dsh-runtime/test/responsibility-expansion.test.mjs
           node plugins/gildra-dsh-runtime/test/public-api-gate.test.mjs
           node plugins/gildra-dsh-runtime/test/capabilities.test.mjs
+          node plugins/gildra-dsh-runtime/test/authority.test.mjs
           node plugins/gildra-dsh-runtime/test/verification-races.test.mjs
           node plugins/gildra-dsh-runtime/test/team.test.mjs
           node plugins/gildra-dsh-runtime/test/team-consistency.test.mjs
@@ -181,6 +182,7 @@ jobs:
           node plugins/gildra-dsh-runtime/test/responsibility-expansion.test.mjs
           node plugins/gildra-dsh-runtime/test/public-api-gate.test.mjs
           node plugins/gildra-dsh-runtime/test/capabilities.test.mjs
+          node plugins/gildra-dsh-runtime/test/authority.test.mjs
           node plugins/gildra-dsh-runtime/test/verification-races.test.mjs
           node plugins/gildra-dsh-runtime/test/team.test.mjs
           node plugins/gildra-dsh-runtime/test/team-consistency.test.mjs
