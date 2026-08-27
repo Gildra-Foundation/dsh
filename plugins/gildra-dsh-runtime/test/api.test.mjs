@@ -209,12 +209,12 @@ let ownerToken
     body: { projectId: 'demo', sourceBranch: workspace.branch },
   }))
   assert.equal(merge.status, 201)
-  assert.equal(merge.body.merge.status, 'completed')
+  assert.equal(merge.body.merge.status, 'COMPLETED')
   const { stdout } = await git(['-C', canonical, 'show', 'main:app.txt'])
   assert.equal(stdout, 'v2 from session\n')
 
   const fetched = await call(routeOf('/gildra/v1/merges'), requestFor({ url: `/gildra/v1/merges?id=${merge.body.merge.mergeId}` }))
-  assert.equal(fetched.body.merge.status, 'completed')
+  assert.equal(fetched.body.merge.status, 'COMPLETED')
 }
 
 // Задачи: create/list/update и структурная ошибка недопустимого статуса.

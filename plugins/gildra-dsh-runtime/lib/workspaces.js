@@ -48,7 +48,7 @@ async function pathExists(path) {
   }
 }
 
-export function createWorkspaceManager({ store, roots, projects, leases, processes, env = process.env }) {
+export function createWorkspaceManager({ store, roots, projects, leases, processes, journal, env = process.env }) {
   const limits = {
     perUser: limit(env, 'GILDRA_DSH_MAX_WORKSPACES_PER_USER', 32),
     perProject: limit(env, 'GILDRA_DSH_MAX_WORKSPACES_PER_PROJECT', 128),
@@ -272,7 +272,12 @@ export function createWorkspaceManager({ store, roots, projects, leases, process
   // отдельном merge-worktree; конфликт никогда не разрешается молча —
   // workspace остаётся с маркерами для ревью/merge-агента.
 
-  async function startMerge({ projectId, sourceBranch, targetBranch }) {
+  // Merge — самая опасная операция, поэтому у неё явная state machine
+  // (§19): PREPARING → MERGING → {COMPLETED | CONFLICT → COMPLETED | ABORTED}
+  // и собственная запись в operation journal. Целевая ветка двигается ТОЛЬКО
+  // последним шагом; при падении на любом шаге target остаётся нетронутым, а
+  // конфликтные маркеры сохраняются для ревью.
+  async function startMerge({ projectId, sourceBranch, targetBranch, policy = {} }) {
     const project = await projects.get(projectId)
     if (!(await branchExists(project.canonicalRepoPath, sourceBranch))) {
       throw new RuntimeError('INVALID_INPUT', `Ветка-источник «${sourceBranch}» не найдена.`, { sourceBranch })
@@ -288,35 +293,107 @@ export function createWorkspaceManager({ store, roots, projects, leases, process
       throw new RuntimeError('BRANCH_CHECKED_OUT', `Ветка «${target}» сейчас извлечена в «${checkedOutAt}» — объединить безопасно нельзя.`, { targetBranch: target, path: checkedOutAt })
     }
 
+    // Merge-policy (§21) конфигурируется, а не захардкожена под конкретный
+    // проект. Дефолт консервативный: сливаем только чистый workspace с
+    // реальными коммитами.
+    const effectivePolicy = {
+      requireClean: true,
+      requireCommits: true,
+      ...(project.mergePolicy ?? {}),
+      ...policy,
+    }
+    const sourceWorkspace = (await listRecords({ projectId })).find(record => record.branch === sourceBranch)
+    if (sourceWorkspace && effectivePolicy.requireClean && await pathExists(sourceWorkspace.path)) {
+      const dirty = await dirtyFiles(sourceWorkspace.path)
+      if (dirty.length > 0) {
+        throw new RuntimeError('WORKSPACE_DIRTY', `В workspace ветки «${sourceBranch}» есть незакоммиченные изменения (${String(dirty.length)}): закоммитьте их перед объединением.`, {
+          sourceBranch,
+          dirtyFiles: dirty.length,
+        })
+      }
+    }
+    // Свежесть базы (§20): показываем, насколько источник отстал от цели, и
+    // не выдаём старую базу за актуальную.
+    const counts = await aheadBehind(project.canonicalRepoPath, target, sourceBranch)
+    if (effectivePolicy.requireCommits && counts.ahead === 0) {
+      throw new RuntimeError('INVALID_INPUT', `Ветка «${sourceBranch}» не содержит новых коммитов относительно «${target}».`, {
+        sourceBranch, targetBranch: target, ...counts,
+      })
+    }
+
     const mergeId = generateId('merge')
     const path = mergePath(roots, projectId, mergeId)
-    await mkdir(dirname(path), { recursive: true, mode: 0o700 })
-    await addWorktree(project.canonicalRepoPath, path, { branch: target, existingBranch: true })
-
-    const result = await mergeRef(path, sourceBranch, {
-      message: `Merge ${sourceBranch} into ${target} (Gildra)`,
-    })
-    const record = {
+    const targetBefore = await revParse(project.canonicalRepoPath, target)
+    const operation = journal ? await journal.begin('MERGE', mergeId, { projectId, sourceBranch, targetBranch: target }) : undefined
+    let record = {
       schemaVersion: 1,
       mergeId,
       projectId,
       sourceBranch,
       targetBranch: target,
       path,
-      status: result.merged ? 'merged' : 'conflict',
-      conflicts: result.merged ? [] : result.conflicts,
+      status: 'PREPARING',
+      operationId: operation?.operationId,
+      // Точка отката: до этого коммита target можно вернуть, если понадобится
+      // разбирать последствия сбоя вручную.
+      targetBefore,
+      behindTarget: counts.behind,
+      aheadOfTarget: counts.ahead,
+      conflicts: [],
       createdAt: new Date().toISOString(),
     }
     await store.write(MERGES, mergeId, record)
-    await appendAudit(roots.stateRoot, 'merge.started', { mergeId, projectId, sourceBranch, targetBranch: target, status: record.status })
 
-    if (result.merged) {
-      await finalizeMergeWorktree(project, record)
-      record.status = 'completed'
+    try {
+      await mkdir(dirname(path), { recursive: true, mode: 0o700 })
+      await addWorktree(project.canonicalRepoPath, path, { branch: target, existingBranch: true })
+      record = { ...record, status: 'MERGING' }
       await store.write(MERGES, mergeId, record)
-      await appendAudit(roots.stateRoot, 'branch.merged', { mergeId, projectId, sourceBranch, targetBranch: target })
+      await operation?.advance('MERGING', { path })
+
+      const result = await mergeRef(path, sourceBranch, {
+        message: `Merge ${sourceBranch} into ${target} (Gildra)`,
+      })
+      if (!result.merged) {
+        record = { ...record, status: 'CONFLICT', conflicts: result.conflicts }
+        await store.write(MERGES, mergeId, record)
+        await operation?.advance('CONFLICT', { conflicts: result.conflicts.length })
+        await appendAudit(roots.stateRoot, 'merge.conflict', {
+          mergeId, projectId, sourceBranch, targetBranch: target, conflicts: result.conflicts.length,
+        })
+        return record
+      }
+      record = await finalizeMerge(project, record, operation)
+      return record
+    } catch (error) {
+      record = { ...record, status: 'FAILED', error: error instanceof Error ? error.message : String(error) }
+      await store.write(MERGES, mergeId, record)
+      await operation?.fail(error instanceof Error ? error.message : String(error))
+      throw error
     }
-    return record
+  }
+
+  // Последний атомарный логический шаг: merge-коммит уже в ветке target
+  // внутри merge-worktree, остаётся убрать worktree. Падение здесь не портит
+  // target — результат уже зафиксирован в git.
+  async function finalizeMerge(project, record, operation) {
+    await operation?.advance('MERGE_COMMITTED')
+    const targetAfter = await revParse(project.canonicalRepoPath, record.targetBranch)
+    await finalizeMergeWorktree(project, record)
+    const completed = { ...record, status: 'COMPLETED', targetAfter, completedAt: new Date().toISOString() }
+    await store.write(MERGES, record.mergeId, completed)
+    if (operation) await operation.complete()
+    // Разрешение конфликта происходит уже в другом вызове (а после
+    // перезапуска Runtime — и в другом процессе), где живой ручки операции
+    // нет: закрываем запись журнала по её идентификатору.
+    else if (journal && record.operationId) await journal.forget(record.operationId)
+    await appendAudit(roots.stateRoot, 'branch.merged', {
+      mergeId: record.mergeId,
+      projectId: record.projectId,
+      sourceBranch: record.sourceBranch,
+      targetBranch: record.targetBranch,
+    })
+    return completed
   }
 
   async function getMerge(mergeId) {
@@ -329,7 +406,7 @@ export function createWorkspaceManager({ store, roots, projects, leases, process
   // merge-агентом): файлы должны быть разрешены в merge-worktree.
   async function completeMerge(mergeId) {
     const record = await getMerge(mergeId)
-    if (record.status !== 'conflict') {
+    if (record.status !== 'CONFLICT') {
       throw new RuntimeError('INVALID_INPUT', 'Merge не находится в состоянии конфликта.', { mergeId, status: record.status })
     }
     // Разрешение = в конфликтных файлах не осталось merge-маркеров: caller
@@ -346,11 +423,9 @@ export function createWorkspaceManager({ store, roots, projects, leases, process
     }
     await continueMergeCommit(record.path, `Merge ${record.sourceBranch} into ${record.targetBranch} (Gildra, conflicts resolved)`)
     const project = await projects.get(record.projectId)
-    await finalizeMergeWorktree(project, record)
-    record.status = 'completed'
-    await store.write(MERGES, mergeId, record)
-    await appendAudit(roots.stateRoot, 'branch.merged', { mergeId: record.mergeId, projectId: record.projectId, sourceBranch: record.sourceBranch, targetBranch: record.targetBranch, resolvedConflicts: true })
-    return record
+    // Тот же финальный шаг, что и у бесконфликтного merge: одна точка, где
+    // результат становится видимым, и один аудит-след.
+    return finalizeMerge(project, { ...record, resolvedConflicts: true })
   }
 
   async function abortMerge(mergeId) {
@@ -362,10 +437,24 @@ export function createWorkspaceManager({ store, roots, projects, leases, process
       await rm(record.path, { recursive: true, force: true }).catch(() => {})
     }
     await pruneWorktrees(project.canonicalRepoPath)
-    record.status = 'aborted'
-    await store.write(MERGES, mergeId, record)
+    const aborted = { ...record, status: 'ABORTED', abortedAt: new Date().toISOString() }
+    await store.write(MERGES, mergeId, aborted)
+    if (journal && record.operationId) await journal.forget(record.operationId)
     await appendAudit(roots.stateRoot, 'merge.aborted', { mergeId, projectId: record.projectId })
-    return record
+    return aborted
+  }
+
+  // Список merge-операций для UI: показать конфликты и предложить действие.
+  async function listMerges(filter = {}) {
+    const rows = []
+    for (const id of await store.list(MERGES)) {
+      const record = await store.read(MERGES, id)
+      if (!record) continue
+      if (filter.projectId && record.projectId !== filter.projectId) continue
+      if (filter.activeOnly && ['COMPLETED', 'ABORTED'].includes(record.status)) continue
+      rows.push(record)
+    }
+    return rows
   }
 
   async function finalizeMergeWorktree(project, record) {
@@ -406,6 +495,7 @@ export function createWorkspaceManager({ store, roots, projects, leases, process
     cleanupWorkspace,
     startMerge,
     getMerge,
+    listMerges,
     completeMerge,
     abortMerge,
     adoptExistingWorktrees,

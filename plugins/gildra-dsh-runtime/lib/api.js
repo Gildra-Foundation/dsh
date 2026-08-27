@@ -9,6 +9,7 @@
 import { join } from 'node:path'
 
 import { createLifecycle } from './lifecycle.js'
+import { createJournal } from './journal.js'
 import {
   assertMutationRequest,
   createIdempotencyCache,
@@ -52,8 +53,9 @@ export function createRuntime({ env = process.env } = {}) {
   const leases = createLeaseManager({ roots, env })
   const processes = createProcessManager({ store, roots })
   const ports = createPortAllocator({ store, env })
-  const workspaces = createWorkspaceManager({ store, roots, projects, leases, processes, env })
-  const sessions = createSessionManager({ store, roots, projects, workspaces, leases, processes, ports, env })
+  const journal = createJournal({ roots })
+  const workspaces = createWorkspaceManager({ store, roots, projects, leases, processes, journal, env })
+  const sessions = createSessionManager({ store, roots, projects, workspaces, leases, processes, ports, journal, env })
   const tasks = createTaskManager({ store, roots, projects })
   const lifecycle = createLifecycle({ roots, store, sessions, projects })
   return { roots, store, projects, leases, processes, ports, workspaces, sessions, tasks, lifecycle }

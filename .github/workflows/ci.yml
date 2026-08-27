@@ -56,6 +56,7 @@ jobs:
           node plugins/gildra-dsh-runtime/test/git-safety.test.mjs
           node plugins/gildra-dsh-runtime/test/store.test.mjs
           node plugins/gildra-dsh-runtime/test/crash-recovery.test.mjs
+          node plugins/gildra-dsh-runtime/test/merge.test.mjs
           node plugins/gildra-dsh-runtime/test/workspaces.test.mjs
           node plugins/gildra-dsh-runtime/test/leases.test.mjs
           node plugins/gildra-dsh-runtime/test/sessions.test.mjs
@@ -140,6 +141,7 @@ jobs:
           node plugins/gildra-dsh-runtime/test/git-safety.test.mjs
           node plugins/gildra-dsh-runtime/test/store.test.mjs
           node plugins/gildra-dsh-runtime/test/crash-recovery.test.mjs
+          node plugins/gildra-dsh-runtime/test/merge.test.mjs
           node plugins/gildra-dsh-runtime/test/workspaces.test.mjs
           node plugins/gildra-dsh-runtime/test/leases.test.mjs
           node plugins/gildra-dsh-runtime/test/sessions.test.mjs

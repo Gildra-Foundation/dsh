@@ -104,7 +104,7 @@ assert.equal(await readFile(join(b.path, 'shared.txt'), 'utf8'), 'B-change\nline
 
 // --- Merge A → main: чистое объединение -----------------------------------
 const mergeA = await workspaces.startMerge({ projectId: 'demo', sourceBranch: a.branch })
-assert.equal(mergeA.status, 'completed')
+assert.equal(mergeA.status, 'COMPLETED')
 assert.equal(existsSync(mergeA.path), false, 'merge-worktree удаляется после успеха')
 const { stdout: mainAfterA } = await git(['-C', canonical, 'show', 'main:shared.txt'])
 assert.equal(mainAfterA, 'A-change\nline-2\nline-3\n')
@@ -120,7 +120,7 @@ await commitAll(c.path, 'C: rewrite first line', { name: 'Alex', email: 'alex@te
 // --- Merge B → main: ожидаемый конфликт, никакого молчаливого разрешения --
 await commitAll(b.path, 'B: change first line differently', { name: 'Alex', email: 'alex@test' })
 const mergeB = await workspaces.startMerge({ projectId: 'demo', sourceBranch: b.branch })
-assert.equal(mergeB.status, 'conflict')
+assert.equal(mergeB.status, 'CONFLICT')
 assert.deepEqual(mergeB.conflicts, ['shared.txt'])
 assert.equal(existsSync(mergeB.path), true, 'конфликтный merge-worktree остаётся для разрешения')
 const conflicted = await readFile(join(mergeB.path, 'shared.txt'), 'utf8')
@@ -133,7 +133,7 @@ await assert.rejects(workspaces.completeMerge(mergeB.mergeId), (error) => error.
 // Разрешаем конфликт и завершаем merge.
 await writeFile(join(mergeB.path, 'shared.txt'), 'AB-merged\nline-2\nline-3\n')
 const completed = await workspaces.completeMerge(mergeB.mergeId)
-assert.equal(completed.status, 'completed')
+assert.equal(completed.status, 'COMPLETED')
 const { stdout: mainAfterB } = await git(['-C', canonical, 'show', 'main:shared.txt'])
 assert.equal(mainAfterB, 'AB-merged\nline-2\nline-3\n')
 assert.equal(existsSync(mergeB.path), false)
@@ -141,9 +141,9 @@ assert.equal(existsSync(mergeB.path), false)
 // --- Merge с конфликтом можно отменить без следов -------------------------
 const mainBeforeAbort = await revParse(canonical, 'main')
 const mergeC = await workspaces.startMerge({ projectId: 'demo', sourceBranch: c.branch })
-assert.equal(mergeC.status, 'conflict')
+assert.equal(mergeC.status, 'CONFLICT')
 const aborted = await workspaces.abortMerge(mergeC.mergeId)
-assert.equal(aborted.status, 'aborted')
+assert.equal(aborted.status, 'ABORTED')
 assert.equal(await revParse(canonical, 'main'), mainBeforeAbort, 'abort не двигает main')
 assert.equal(existsSync(mergeC.path), false)
 
