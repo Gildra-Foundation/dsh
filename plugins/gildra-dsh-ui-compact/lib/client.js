@@ -3286,7 +3286,7 @@ window.__ModuleLoader__.load({
             runtimeCall('/workspaces'),
             runtimeCall('/merges/list?activeOnly=1').catch(() => ({ merges: [] })),
             // Старый Runtime без слоя качества — просто без Team-блока.
-            runtimeCall('/team').catch(() => ({ team: null })),
+            runtimeCall('/team').catch(() => ({ team: null, provider: undefined })),
           ])
           // Definition of Done по видимым задачам: факты, не «score» (§49).
           const teamTasks = team.team
@@ -3309,6 +3309,7 @@ window.__ModuleLoader__.load({
             workspaces: workspaces.workspaces ?? [],
             merges: merges.merges ?? [],
             team: team.team,
+            teamProvider: team.provider,
             taskQuality: Object.fromEntries(qualityPairs.filter(pair => pair[1])),
           }
         } catch {
@@ -3531,7 +3532,7 @@ window.__ModuleLoader__.load({
     function renderTeamGroup(root) {
       const team = runtimeUiState.team
       if (!runtimeUiState.available || !team || (team.activeTasks ?? 0) === 0) return
-      const group = environmentGroup('Команда')
+      const group = environmentGroup(runtimeUiState.teamProvider ? `Команда · ${String(runtimeUiState.teamProvider)}` : 'Команда')
 
       for (const [owner, tasks] of Object.entries(team.byOwner ?? {})) {
         for (const task of tasks) {
@@ -3545,13 +3546,22 @@ window.__ModuleLoader__.load({
           const detail = document.createElement('span')
           detail.className = 'gildra-workspace-detail'
           const quality = runtimeUiState.taskQuality[task.taskId]
-          if (task.status === 'READY_FOR_HUMAN_REVIEW') {
+          if (task.remote) {
+            // Задача другого Runtime: видим статус и модули, локальных
+            // подробностей качества у нас нет — и не притворяемся.
+            detail.textContent = `${task.status} · другой Runtime${(task.affectedModules ?? []).length ? ` · ${task.affectedModules.slice(0, 2).join(', ')}` : ''}`
+          } else if (task.status === 'READY_FOR_HUMAN_REVIEW') {
             detail.textContent = '✓ готова к human review'
           } else if (quality) {
-            // Показываем ФАКТЫ: какие именно ворота не пройдены.
+            // Показываем ФАКТЫ: какие именно ворота не пройдены. Архитектура —
+            // отдельной пометкой (§35): циклы и слои видны сразу.
             const blockers = (quality.blockers ?? []).map(blocker => blocker.id.split(':')[0])
             const unique = [...new Set(blockers)].slice(0, 3)
-            detail.textContent = quality.ready ? `${task.status} · ворота пройдены` : `${task.status} · ⚠ ${unique.join(', ')}`
+            const architecture = (quality.facts ?? []).filter(fact => fact.kind === 'architecture')
+            const archBad = architecture.filter(fact => fact.status === 'FAILED').length
+            const archWarn = architecture.filter(fact => fact.status === 'WARNING').length
+            const archNote = archBad > 0 ? ' · ✗ архитектура' : archWarn > 0 ? ' · ⚠ архитектура' : architecture.length > 0 ? ' · ✓ архитектура' : ''
+            detail.textContent = quality.ready ? `${task.status} · ворота пройдены${archNote}` : `${task.status} · ⚠ ${unique.join(', ')}${archNote}`
             detail.title = (quality.blockers ?? []).map(blocker => blocker.message).join('\n')
           } else {
             detail.textContent = task.status

@@ -75,11 +75,13 @@ const RUNTIME_FIXTURES = {
   },
   '/gildra/v1/team': {
     ok: true,
+    provider: 'github',
     team: {
       activeTasks: 2,
       byOwner: {
         alex: [{ taskId: 'task-dom-a', title: 'Auth service', status: 'REVIEWING' }],
         peter: [{ taskId: 'task-dom-b', title: 'Token handling', status: 'READY_FOR_HUMAN_REVIEW' }],
+        kim: [{ taskId: 'task-dom-c', title: 'Remote work', status: 'IMPLEMENTING', remote: true, affectedModules: ['auth.service'] }],
       },
       agents: [{ agent: 'writer-17', role: 'writer', taskId: 'task-dom-a' }],
       overlaps: [{
@@ -98,6 +100,10 @@ const RUNTIME_FIXTURES = {
       blockers: [
         { id: 'CHECK_FAILED:tests', message: 'Проверка «tests» в статусе FAILED.' },
         { id: 'REVIEW_MISSING', message: 'Независимое ревью не выполнялось.' },
+      ],
+      facts: [
+        { kind: 'architecture', id: 'dependency-cycles', status: 'FAILED' },
+        { kind: 'architecture', id: 'architecture-boundaries', status: 'PASSED' },
       ],
     },
   },
@@ -220,6 +226,15 @@ assert.equal(document.querySelector('.sysmon').dataset.gildraCollapsed, 'true')
   const readyRow = rows.find(candidate => /Token handling/.test(candidate.textContent))
   assert.match(readyRow.textContent, /✓ готова к human review/)
   assert.doesNotMatch(document.body.textContent, /quality score/i)
+
+  // §35: архитектурные факты видны в строке задачи.
+  assert.match(taskRow.textContent, /✗ архитектура/, 'проваленный архитектурный gate виден сразу')
+  // §34: задача другого Runtime помечена и показывает модули, не пути.
+  const remoteRow = rows.find(candidate => /Remote work/.test(candidate.textContent))
+  assert.ok(remoteRow, 'задача другого Runtime отображается')
+  assert.match(remoteRow.textContent, /другой Runtime/)
+  assert.match(remoteRow.textContent, /auth\.service/)
+  assert.match(document.body.textContent, /Команда · github/, 'backend провайдера виден команде')
 
   const overlapRow = rows.find(candidate => candidate.dataset.state === 'overlap')
   assert.ok(overlapRow, 'пересечение claims должно быть видно команде')
