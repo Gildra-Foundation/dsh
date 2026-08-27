@@ -32,6 +32,8 @@ export const DEFAULT_GATES = Object.freeze({
   UNEXPLAINED_PUBLIC_API_CHANGE: 'BLOCK',
   ANALYSIS_INCOMPLETE: 'BLOCK',
   DEEP_INTERNAL_IMPORT: 'REVIEW',
+  NEW_LARGE_MODULE: 'REVIEW',
+  RESPONSIBILITY_EXPANSION: 'REVIEW',
   OVERSIZED_MODULE_GROWTH: 'REVIEW',
   OVERSIZED_FUNCTION_GROWTH: 'REVIEW',
   NEW_GLOBAL_MUTABLE_STATE: 'REVIEW',
@@ -112,6 +114,11 @@ export function normalizeArchitecturePolicy(raw) {
       ...(Number.isInteger(policy.limits?.functionLinesWarning) ? { functionLinesWarning: policy.limits.functionLinesWarning } : {}),
       ...(Number.isInteger(policy.limits?.moduleGrowthWarning) ? { moduleGrowthWarning: policy.limits.moduleGrowthWarning } : {}),
     },
+    // Классификация совместимых областей публичного API (§18, путь 4):
+    // ломающие изменения в этих файлах проект считает допустимыми.
+    publicApiCompatible: Array.isArray(policy.publicApiCompatible)
+      ? policy.publicApiCompatible.map(String).slice(0, 50)
+      : [],
     gates,
     configured: layers.length > 0 || modules.length > 0,
   }

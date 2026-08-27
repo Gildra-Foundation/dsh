@@ -258,9 +258,10 @@ export async function analyzeTaskDiff({ workspacePath, baseSha, task, policy, pr
     highRisk,
     importsOfChanged,
     signals,
-    // Map добавленных строк по файлам — сырьё для Modularity Analyzer;
-    // в durable-сводку задачи не попадает.
+    // Map добавленных/удалённых строк по файлам — сырьё для Modularity
+    // Analyzer; в durable-сводку задачи не попадает.
     addedByFile,
+    removedByFile,
     analyzedAt: new Date().toISOString(),
   }
 }

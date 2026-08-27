@@ -12,11 +12,11 @@ import { createHash } from 'node:crypto'
 import { normalizeArchitecturePolicy, checkDeepImports, checkLayerViolations, moduleOf } from './architecture.js'
 import { addedEdges, buildImportGraph, findCycles, isSourceFile } from './import-graph.js'
 import { isTestPath } from './diff-analyzer.js'
-import { normalizePath } from './globs.js'
+import { matchesAny as matchesAnyCompat, normalizePath } from './globs.js'
 
 const DUPLICATE_WINDOW_LINES = 6
 const MAX_DUPLICATE_SCAN_FILES = 400
-const SIDE_EFFECT_SURFACES = [
+export const SIDE_EFFECT_SURFACES = [
   { id: 'fs', pattern: /['"]node:fs|['"]fs['"]|['"]fs\// },
   { id: 'network', pattern: /['"]node:https?['"]|['"]node:net['"]|fetch\s*\(/ },
   { id: 'process', pattern: /['"]node:child_process['"]|process\.exit|process\.kill/ },
@@ -78,6 +78,7 @@ export async function analyzeModularity({
   readAfter,
   changedFiles,
   addedByFile = new Map(),
+  removedByFile = new Map(),
   architecture,
   modulePlan,
   analysisTruncated = false,
@@ -161,15 +162,80 @@ export async function analyzeModularity({
     if (hits.length > 0) note('NEW_GLOBAL_MUTABLE_STATE', { file, lines: hits.slice(0, 3) })
   }
 
-  // --- MIXED_RESPONSIBILITIES: новый файл с несколькими side-effect слоями --
+  // --- MIXED_RESPONSIBILITIES / NEW_LARGE_MODULE / RESPONSIBILITY_EXPANSION -
   for (const file of changedSources) {
     if (isTestPath(file)) continue
     const before = await readBefore(file)
-    if (typeof before === 'string') continue // только новые файлы
     const after = await readAfter(file)
     if (typeof after !== 'string') continue
-    const surfaces = SIDE_EFFECT_SURFACES.filter(surface => surface.pattern.test(after)).map(surface => surface.id)
-    if (surfaces.length >= 3) note('MIXED_RESPONSIBILITIES', { file, surfaces })
+    const surfacesAfter = SIDE_EFFECT_SURFACES.filter(surface => surface.pattern.test(after)).map(surface => surface.id)
+
+    if (typeof before !== 'string') {
+      // Новый файл. MIXED: несколько side-effect слоёв сразу.
+      if (surfacesAfter.length >= 3) note('MIXED_RESPONSIBILITIES', { file, surfaces: surfacesAfter })
+      // NEW_LARGE_MODULE (§16): не «много строк», а КОМБИНАЦИЯ метрик —
+      // большой декларативный словарь функций/exports почти не имеет и
+      // сигнала не даёт.
+      const lines = after.split('\n').length
+      const functions = functionLengths(after)
+      const exportsCount = (after.match(/^export /gm) ?? []).length
+      const fanOut = (afterEdges.get(file) ?? new Set()).size
+      const largest = functions.reduce((max, entry) => Math.max(max, entry.lines), 0)
+      if (lines >= 300 && functions.length >= 10
+        && (exportsCount >= 10 || surfacesAfter.length >= 2 || fanOut >= 8)) {
+        note('NEW_LARGE_MODULE', {
+          file, lines, functions: functions.length, exports: exportsCount,
+          fanOut, sideEffectSurfaces: surfacesAfter, largestFunctionLines: largest,
+        })
+      }
+    } else {
+      // RESPONSIBILITY_EXPANSION (§17): существующий файл обзавёлся новыми
+      // side-effect поверхностями — domain-логика начала ходить в fs/сеть.
+      const surfacesBefore = SIDE_EFFECT_SURFACES.filter(surface => surface.pattern.test(before)).map(surface => surface.id)
+      const gained = surfacesAfter.filter(surface => !surfacesBefore.includes(surface))
+      if (gained.length > 0) {
+        note('RESPONSIBILITY_EXPANSION', { file, before: surfacesBefore, after: surfacesAfter, gained })
+      }
+    }
+  }
+
+  // --- UNEXPLAINED_PUBLIC_API_CHANGE (§18): gate существует в КОДЕ ----------
+  // Удалённые/переименованные export-имена; declared в plan.publicContracts-
+  // Changed или подпадающие под policy-классификацию совместимых — не
+  // «unexplained».
+  {
+    const declared = new Set((modulePlan?.publicContractsChanged ?? []).map(String))
+    const compatibleGlobs = policy.publicApiCompatible ?? []
+    const exportName = /^export\s+(?:async\s+)?(?:function|const|let|class)\s+([A-Za-z_$][\w$]*)/
+    const removedExports = []
+    for (const [file, lines] of removedByFile) {
+      if (!isSourceFile(file) || isTestPath(file)) continue
+      if (compatibleGlobs.length > 0 && matchesAnyCompat(file, compatibleGlobs)) continue
+      const addedNames = new Set((addedByFile.get(file) ?? [])
+        .map(line => exportName.exec(line)?.[1]).filter(Boolean))
+      for (const line of lines) {
+        const name = exportName.exec(line)?.[1]
+        if (!name) continue
+        if (addedNames.has(name)) continue // правка тела с той же сигнатурой
+        if (declared.has(name) || declared.has(file) || declared.has(`${file}#${name}`)) continue
+        const stillExported = new RegExp(`^export\\s+(?:async\\s+)?(?:function|const|let|class)\\s+${name}\\b|^export\\s*\\{[^}]*\\b${name}\\b`, 'm')
+          .test(await readAfter(file) ?? '')
+        if (stillExported) continue
+        removedExports.push({ file, name, kind: addedNames.size > 0 ? 'renamed-or-removed' : 'removed' })
+      }
+    }
+    // Изменение declared public entrypoint модуля — тоже контракт.
+    for (const module of policy.modules) {
+      for (const entry of module.publicEntrypoints ?? []) {
+        if (changed.includes(entry) && !declared.has(entry) && (removedByFile.get(entry) ?? []).some(line => exportName.test(line))) {
+          const already = removedExports.some(item => item.file === entry)
+          if (!already) removedExports.push({ file: entry, name: '(entrypoint)', kind: 'entrypoint-changed' })
+        }
+      }
+    }
+    if (removedExports.length > 0) {
+      note('UNEXPLAINED_PUBLIC_API_CHANGE', { changes: removedExports.slice(0, 20) })
+    }
   }
 
   // --- DUPLICATED_DOMAIN_LOGIC: добавленный блок уже существует в другом
@@ -212,7 +278,8 @@ export async function analyzeModularity({
   const gateChecks = [
     { id: 'dependency-cycles', codes: ['NEW_DEPENDENCY_CYCLE'], configured: true },
     { id: 'architecture-boundaries', codes: ['CROSS_LAYER_IMPORT', 'DEEP_INTERNAL_IMPORT'], configured: policy.layers.length > 0 || policy.modules.length > 0 },
-    { id: 'module-scope', codes: ['UNEXPECTED_MODULE_CHANGE', 'OVERSIZED_MODULE_GROWTH', 'MIXED_RESPONSIBILITIES', 'DUPLICATED_DOMAIN_LOGIC', 'NEW_GLOBAL_MUTABLE_STATE', 'OVERSIZED_FUNCTION_GROWTH'], configured: true },
+    { id: 'module-scope', codes: ['UNEXPECTED_MODULE_CHANGE', 'OVERSIZED_MODULE_GROWTH', 'MIXED_RESPONSIBILITIES', 'DUPLICATED_DOMAIN_LOGIC', 'NEW_GLOBAL_MUTABLE_STATE', 'OVERSIZED_FUNCTION_GROWTH', 'NEW_LARGE_MODULE', 'RESPONSIBILITY_EXPANSION'], configured: true },
+    { id: 'public-api', codes: ['UNEXPLAINED_PUBLIC_API_CHANGE'], configured: true },
     { id: 'analysis-completeness', codes: ['ANALYSIS_INCOMPLETE'], configured: true },
   ]
   const checks = gateChecks.map(gate => {

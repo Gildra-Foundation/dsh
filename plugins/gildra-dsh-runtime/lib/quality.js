@@ -513,6 +513,17 @@ export function createQualityManager({ store, roots, projects, tasks, workspaces
     // объяснение BLOCK-код не гасит (в отличие от REVIEW-сигналов ниже).
     for (const check of task.analysis?.modularity?.checks ?? []) {
       if (check.status === 'FAILED') {
+        // §18: public-api gate закрывается human-approval'ом breaking change
+        // на текущем HEAD (пути: удалить изменение / декларировать в плане /
+        // policy-классификация — они не доводят до FAILED вовсе).
+        if (check.id === 'public-api') {
+          const approval = (task.humanApprovals ?? []).find(entry => entry.kind === 'PUBLIC_API')
+          const currentHead = task.analysis?.headSha
+          if (approval && (!currentHead || approval.headSha === currentHead)) {
+            facts.push({ kind: 'architecture', id: check.id, status: 'APPROVED_BY_HUMAN' })
+            continue
+          }
+        }
         const codes = (check.findings ?? []).map(finding => finding.code).join(', ')
         blockers.push({ id: `ARCH:${check.id}`, message: `Архитектурный gate «${check.id}» не пройден: ${codes}. Устраните — объяснением это не закрывается.` })
       }
