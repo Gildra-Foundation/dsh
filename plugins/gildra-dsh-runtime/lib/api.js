@@ -35,6 +35,7 @@ import { createReviewManager } from './review.js'
 import { createUpstreamMonitor } from './upstream.js'
 import { createContextBuilder } from './context-builder.js'
 import { registerQualityRoutes } from './api-quality-routes.js'
+import { createCapabilityStore } from './capabilities.js'
 import { agentContextBlock, renderRuntimeProfile, sessionEnvironment } from './runtime-env.js'
 
 export const API_VERSION = 1
@@ -67,13 +68,14 @@ export function createRuntime({ env = process.env } = {}) {
   // создания отражает зависимости — intel и team нужны задачам для overlap.
   const repoIntel = createRepoIntel({ store, roots, projects })
   const team = createTeamProvider({ env, roots })
+  const capabilities = createCapabilityStore({ store, roots })
   const tasks = createTaskManager({ store, roots, projects, team, repoIntel })
   const quality = createQualityManager({ store, roots, projects, tasks, workspaces, processes })
-  const reviews = createReviewManager({ store, roots, projects, tasks, workspaces, repoIntel })
+  const reviews = createReviewManager({ store, roots, projects, tasks, workspaces, sessions, leases, capabilities, repoIntel })
   const upstream = createUpstreamMonitor({ roots, projects, tasks })
   const contextBuilder = createContextBuilder({ projects, tasks, workspaces, sessions, repoIntel, upstream })
   const lifecycle = createLifecycle({ roots, store, sessions, projects })
-  return { roots, store, projects, leases, processes, ports, workspaces, sessions, tasks, repoIntel, team, quality, reviews, upstream, contextBuilder, lifecycle }
+  return { roots, store, projects, leases, processes, ports, workspaces, sessions, tasks, repoIntel, team, capabilities, quality, reviews, upstream, contextBuilder, lifecycle }
 }
 
 export function registerRuntimeRoutes(ctx, runtime = createRuntime()) {

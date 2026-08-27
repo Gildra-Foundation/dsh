@@ -34,6 +34,16 @@ export function runtimeRoots(env = process.env) {
   }
 }
 
+export function reviewSnapshotPath(roots, taskId, reviewId) {
+  const path = join(
+    roots.verificationsRoot,
+    'review',
+    assertSegment(String(taskId).slice(0, 60), 'taskId'),
+    assertSegment(reviewId, 'reviewId'),
+  )
+  return assertInsideRoot(path, roots.verificationsRoot)
+}
+
 export function verificationPath(roots, taskId, runId) {
   const path = join(
     roots.verificationsRoot,

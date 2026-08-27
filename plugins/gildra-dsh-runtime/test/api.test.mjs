@@ -399,19 +399,44 @@ let ownerToken
   await call(routeOf('/gildra/v1/tasks/update'), requestFor({
     method: 'POST', body: { taskId: flowTask.taskId, writerAgent: 'writer-a' },
   }))
+  // Независимая read-сессия ревьюера — обязательное условие request (§4).
+  const reviewerSession = await call(routeOf('/gildra/v1/sessions'), requestFor({
+    method: 'POST',
+    body: { projectId: 'demo', userId: 'rev', mode: 'read', attachTo: workspaceId },
+  }))
+  const reviewerSessionId = reviewerSession.body.session.sessionId
+  const reviewerOwnerToken = reviewerSession.body.ownerToken
+  assert.equal(typeof reviewerOwnerToken, 'string', 'read-сессия получает owner-token')
+
   const conflict = await call(routeOf('/gildra/v1/reviews/request'), requestFor({
-    method: 'POST', body: { taskId: flowTask.taskId, reviewerAgent: 'writer-a' },
+    method: 'POST', body: { taskId: flowTask.taskId, reviewerAgent: 'writer-a', reviewerSessionId },
   }))
   assert.equal(conflict.status, 409)
   assert.equal(conflict.body.error.code, 'WRITER_REVIEWER_CONFLICT')
 
-  const requested = await call(routeOf('/gildra/v1/reviews/request'), requestFor({
+  const noSession = await call(routeOf('/gildra/v1/reviews/request'), requestFor({
     method: 'POST', body: { taskId: flowTask.taskId, reviewerAgent: 'reviewer-b' },
+  }))
+  assert.equal(noSession.status, 400, 'request без reviewer-сессии отклоняется')
+
+  const requested = await call(routeOf('/gildra/v1/reviews/request'), requestFor({
+    method: 'POST', body: { taskId: flowTask.taskId, reviewerAgent: 'reviewer-b', reviewerSessionId },
   }))
   assert.equal(requested.status, 201)
   assert.ok(requested.body.packet.acceptanceCriteria.length === 1)
-  assert.equal(typeof requested.body.reviewerCapability, 'string', 'request выдаёт capability один раз')
-  // Без capability вердикт не принимается даже с правильным именем (§13).
+  assert.equal(requested.body.reviewerCapability, undefined, 'writer НЕ получает capability из request (§4)')
+
+  // Claim чужим (writer-овским) токеном — отказ; своим — capability.
+  const wrongClaim = await call(routeOf('/gildra/v1/reviews/claim'), requestFor({
+    method: 'POST', body: { reviewId: requested.body.review.reviewId, sessionId: reviewerSessionId, ownerToken: 'not-the-token' },
+  }))
+  assert.equal(wrongClaim.status, 403)
+  const claimed = await call(routeOf('/gildra/v1/reviews/claim'), requestFor({
+    method: 'POST', body: { reviewId: requested.body.review.reviewId, sessionId: reviewerSessionId, ownerToken: reviewerOwnerToken },
+  }))
+  assert.equal(typeof claimed.body.reviewerCapability, 'string', 'capability выдаётся держателю read-сессии')
+
+  // Без capability вердикт не принимается даже с правильным именем.
   const forged = await call(routeOf('/gildra/v1/reviews/submit'), requestFor({
     method: 'POST',
     body: { reviewId: requested.body.review.reviewId, verdict: 'APPROVED', findings: [], criteriaVerdicts: [{ met: true }] },
@@ -419,7 +444,7 @@ let ownerToken
   assert.equal(forged.status, 409)
   const submitted = await call(routeOf('/gildra/v1/reviews/submit'), requestFor({
     method: 'POST',
-    body: { reviewId: requested.body.review.reviewId, capability: requested.body.reviewerCapability, verdict: 'APPROVED', findings: [], criteriaVerdicts: [{ met: true }] },
+    body: { reviewId: requested.body.review.reviewId, capability: claimed.body.reviewerCapability, verdict: 'APPROVED', findings: [], criteriaVerdicts: [{ met: true }] },
   }))
   assert.equal(submitted.body.review.verdict, 'APPROVED')
 

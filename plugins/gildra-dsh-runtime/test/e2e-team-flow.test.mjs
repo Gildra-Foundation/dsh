@@ -57,6 +57,23 @@ await commitAll(repo, 'init', identity)
 
 const runtime = createRuntime({ env: { GILDRA_DSH_STATE_DIR: join(base, 'state') } })
 const { projects, sessions, workspaces, tasks, quality, reviews, upstream, contextBuilder, leases } = runtime
+
+// Честный claim-flow §4: request → claim capability read-сессией.
+let reviewerSeq = 0
+async function openReview(taskId, { reviewerAgent, mode = 'standard' }) {
+  const task = await tasks.getTask(taskId)
+  const readSession = await sessions.createSession({
+    projectId: task.projectId, userId: `rvw${String(reviewerSeq += 1)}`,
+    mode: 'read', attachTo: task.workspaceId,
+  })
+  const requested = await reviews.requestReview(taskId, {
+    reviewerAgent, reviewerSessionId: readSession.session.sessionId, mode,
+  })
+  const claimed = await reviews.claimReview(requested.review.reviewId, {
+    sessionId: readSession.session.sessionId, ownerToken: readSession.ownerToken,
+  })
+  return { ...requested, reviewerCapability: claimed.reviewerCapability }
+}
 await projects.register({ projectId: 'auth-app', path: repo })
 await quality.setPolicy('auth-app', {
   required: ['tests', 'review'],
@@ -135,9 +152,9 @@ assert.equal(runA1.checks.find(check => check.id === 'tests').status, 'PASSED',
   'дефект не покрыт тестами проекта — verification честно зелёный')
 
 // --- 6–7. Независимый reviewer находит HIGH → задача НЕ READY --------------
-await assert.rejects(reviews.requestReview(taskA.taskId, { reviewerAgent: 'writer-17' }),
+await assert.rejects(openReview(taskA.taskId, { reviewerAgent: 'writer-17' }),
   error => error.code === 'WRITER_REVIEWER_CONFLICT')
-const review1 = await reviews.requestReview(taskA.taskId, { reviewerAgent: 'reviewer-4' })
+const review1 = await openReview(taskA.taskId, { reviewerAgent: 'reviewer-4' })
 assert.ok(review1.packet.diff.highRisk, 'auth-изменение обязано быть high-risk')
 await reviews.submitReview(review1.review.reviewId, {
   capability: review1.reviewerCapability,
@@ -178,7 +195,7 @@ await commitAll(wsA.path, 'fix: restore expiry boundary, add regression assert',
 const runA2 = await quality.runVerification(taskA.taskId)
 assert.equal(runA2.checks.find(check => check.id === 'tests').status, 'PASSED')
 
-const review2 = await reviews.requestReview(taskA.taskId, { reviewerAgent: 'reviewer-4' })
+const review2 = await openReview(taskA.taskId, { reviewerAgent: 'reviewer-4' })
 await reviews.submitReview(review2.review.reviewId, {
   capability: review2.reviewerCapability,
   verdict: 'APPROVED', findings: [],
@@ -190,7 +207,7 @@ await reviews.submitReview(review2.review.reviewId, {
   assert.ok(verdict.blockers.some(blocker => blocker.id === 'ADVERSARIAL_REQUIRED'),
     `high-risk auth-диф требует adversarial: ${JSON.stringify(verdict.blockers)}`)
 }
-const adversarial = await reviews.requestReview(taskA.taskId, { reviewerAgent: 'reviewer-9', mode: 'adversarial' })
+const adversarial = await openReview(taskA.taskId, { reviewerAgent: 'reviewer-9', mode: 'adversarial' })
 await reviews.submitReview(adversarial.review.reviewId, {
   capability: adversarial.reviewerCapability,
   verdict: 'APPROVED', findings: [],

@@ -134,6 +134,11 @@ export function registerQualityRoutes(route, { projects, workspaces, tasks, repo
     POST: async ({ body }) => ({ statusCode: 201, payload: await reviews.requestReview(body.taskId, body) }),
   }),
 
+  // Claim: capability получает только держатель owner-token reviewer-сессии.
+  route('/gildra/v1/reviews/claim', {
+    POST: async ({ body }) => ({ payload: await reviews.claimReview(body.reviewId, { sessionId: body.sessionId, ownerToken: body.ownerToken }) }),
+  }),
+
   route('/gildra/v1/reviews/submit', {
     POST: async ({ body }) => ({ payload: { review: await reviews.submitReview(body.reviewId, body) } }),
   }),

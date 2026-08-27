@@ -60,6 +60,21 @@ await commitAll(repo, 'init', identity)
 
 const runtime = createRuntime({ env: { GILDRA_DSH_STATE_DIR: join(base, 'state') } })
 const { projects, sessions, workspaces, tasks, quality, reviews } = runtime
+let reviewerSeq = 0
+async function openReview(taskId, { reviewerAgent, mode = 'standard' }) {
+  const record = await tasks.getTask(taskId)
+  const readSession = await sessions.createSession({
+    projectId: record.projectId, userId: `rvw${String(reviewerSeq += 1)}`,
+    mode: 'read', attachTo: record.workspaceId,
+  })
+  const requested = await reviews.requestReview(taskId, {
+    reviewerAgent, reviewerSessionId: readSession.session.sessionId, mode,
+  })
+  const claimed = await reviews.claimReview(requested.review.reviewId, {
+    sessionId: readSession.session.sessionId, ownerToken: readSession.ownerToken,
+  })
+  return { ...requested, reviewerCapability: claimed.reviewerCapability }
+}
 await git(['-C', repo, 'switch', '--detach'])
 await projects.register({ projectId: 'shop', path: repo })
 await quality.setPolicy('shop', {
@@ -153,7 +168,7 @@ await reviews.analyzeTask(task.taskId)
 }
 
 // Reviewer блокирует (§41): независимый вердикт по фактам анализа.
-const badReview = await reviews.requestReview(task.taskId, { reviewerAgent: 'reviewer-sim' })
+const badReview = await openReview(task.taskId, { reviewerAgent: 'reviewer-sim' })
 await reviews.submitReview(badReview.review.reviewId, {
   capability: badReview.reviewerCapability,
   verdict: 'CHANGES_REQUESTED',
@@ -205,7 +220,7 @@ await reviews.analyzeTask(task.taskId)
 
 const run = await quality.runVerification(task.taskId)
 assert.equal(run.checks.find(check => check.id === 'tests').status, 'PASSED')
-const goodReview = await reviews.requestReview(task.taskId, { reviewerAgent: 'reviewer-sim' })
+const goodReview = await openReview(task.taskId, { reviewerAgent: 'reviewer-sim' })
 await reviews.submitReview(goodReview.review.reviewId, {
   capability: goodReview.reviewerCapability,
   verdict: 'APPROVED', findings: [],

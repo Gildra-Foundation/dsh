@@ -12,7 +12,7 @@ import { dirname } from 'node:path'
 import { RuntimeError } from './errors.js'
 import { CURRENT_SCHEMA_VERSION } from './migrations.js'
 import { assertSegment, assertWritableBranch, sessionBranch } from './ids.js'
-import { verificationPath, workspaceKey, workspacePath } from './paths.js'
+import { reviewSnapshotPath, verificationPath, workspaceKey, workspacePath } from './paths.js'
 import { createMergeWorkflow } from './merge-workflow.js'
 import { appendAudit } from './audit.js'
 import {
@@ -308,6 +308,20 @@ export function createWorkspaceManager({ store, roots, projects, leases, process
     return path
   }
 
+  // Immutable snapshot для reviewer'а (§5 плана authority): reviewer читает
+  // копию точного SHA, а не mutable writer-дерево.
+  async function createReviewSnapshot(projectId, sha, taskId, reviewId) {
+    const project = await projects.get(projectId)
+    const path = reviewSnapshotPath(roots, taskId, reviewId)
+    await mkdir(dirname(path), { recursive: true, mode: 0o700 })
+    await withRepoLock(projectId, () => addWorktree(project.canonicalRepoPath, path, { detach: true, baseRef: sha }))
+    return path
+  }
+
+  async function removeReviewSnapshot(projectId, path) {
+    return removeVerificationSnapshot(projectId, path)
+  }
+
   async function removeVerificationSnapshot(projectId, path) {
     const project = await projects.get(projectId)
     await withRepoLock(projectId, async () => {
@@ -345,6 +359,8 @@ export function createWorkspaceManager({ store, roots, projects, leases, process
     ...mergeWorkflow,
     createVerificationSnapshot,
     removeVerificationSnapshot,
+    createReviewSnapshot,
+    removeReviewSnapshot,
     createWorkspace,
     getRecord,
     listRecords,

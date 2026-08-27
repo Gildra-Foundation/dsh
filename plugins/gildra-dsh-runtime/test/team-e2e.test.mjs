@@ -214,19 +214,35 @@ await commitAll(wsB.path, 'feat: expose expiry', identity)
 }
 
 // --- Полный DoD для обеих задач --------------------------------------------
+let reviewerSeq = 0
+async function openReview(rt, taskId, { reviewerAgent, mode = 'standard' }) {
+  const task = await rt.tasks.getTask(taskId)
+  const readSession = await rt.sessions.createSession({
+    projectId: task.projectId, userId: `rvw${String(reviewerSeq += 1)}`,
+    mode: 'read', attachTo: task.workspaceId,
+  })
+  const requested = await rt.reviews.requestReview(taskId, {
+    reviewerAgent, reviewerSessionId: readSession.session.sessionId, mode,
+  })
+  const claimed = await rt.reviews.claimReview(requested.review.reviewId, {
+    sessionId: readSession.session.sessionId, ownerToken: readSession.ownerToken,
+  })
+  return { ...requested, reviewerCapability: claimed.reviewerCapability }
+}
+
 async function driveToReady(rt, task, ws, reviewerName) {
   const verification = await rt.quality.runVerification(task.taskId)
   assert.equal(verification.snapshot.mode, 'COMMITTED', 'verification идёт на immutable snapshot (§40.16)')
   assert.equal(verification.checks.find(check => check.id === 'tests').status, 'PASSED')
 
-  const review = await rt.reviews.requestReview(task.taskId, { reviewerAgent: reviewerName })
+  const review = await openReview(rt, task.taskId, { reviewerAgent: reviewerName })
   await rt.reviews.submitReview(review.review.reviewId, {
     capability: review.reviewerCapability,
     verdict: 'APPROVED', findings: [],
     criteriaVerdicts: (await rt.tasks.getTask(task.taskId)).acceptanceCriteria.map(() => ({ met: true })),
   })
   // auth-области high-risk → adversarial.
-  const adversarial = await rt.reviews.requestReview(task.taskId, { reviewerAgent: `${reviewerName}-adv`, mode: 'adversarial' })
+  const adversarial = await openReview(rt, task.taskId, { reviewerAgent: `${reviewerName}-adv`, mode: 'adversarial' })
   await rt.reviews.submitReview(adversarial.review.reviewId, {
     capability: adversarial.reviewerCapability,
     verdict: 'APPROVED', findings: [],

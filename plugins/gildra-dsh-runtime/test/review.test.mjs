@@ -28,6 +28,9 @@ import { createTaskManager } from '../lib/tasks.js'
 import { createQualityManager } from '../lib/quality.js'
 import { createRepoIntel } from '../lib/repo-intel.js'
 import { createReviewManager } from '../lib/review.js'
+import { createSessionManager } from '../lib/sessions.js'
+import { createCapabilityStore } from '../lib/capabilities.js'
+import { createLeaseManager } from '../lib/leases.js'
 import { dependencyDelta, isTestPath } from '../lib/diff-analyzer.js'
 
 const identity = { name: 'Alex', email: 'alex@test' }
@@ -56,7 +59,31 @@ const workspaces = createWorkspaceManager({ store, roots, projects, env: {} })
 const tasks = createTaskManager({ store, roots, projects })
 const quality = createQualityManager({ store, roots, projects, tasks, workspaces, processes })
 const repoIntel = createRepoIntel({ store, roots, projects })
-const reviews = createReviewManager({ store, roots, projects, tasks, workspaces, repoIntel })
+const leases = createLeaseManager({ roots, env: {} })
+const sessions = createSessionManager({ store, roots, projects, workspaces, leases, processes, env: {} })
+const capabilities = createCapabilityStore({ store, roots })
+const reviews = createReviewManager({ store, roots, projects, tasks, workspaces, sessions, leases, capabilities, repoIntel })
+
+// Полный честный цикл §4: независимая read-сессия → request → claim по
+// owner-token этой сессии → capability. Writer capability не видит.
+let reviewerCounter = 0
+async function openReview(taskId, { reviewerAgent, mode = 'standard' } = {}) {
+  const task = await tasks.getTask(taskId)
+  const readSession = await sessions.createSession({
+    projectId: task.projectId, userId: `rev${String(reviewerCounter += 1)}`,
+    mode: 'read', attachTo: task.workspaceId,
+  })
+  const requested = await reviews.requestReview(taskId, {
+    reviewerAgent: reviewerAgent ?? `reviewer-${String(reviewerCounter)}`,
+    reviewerSessionId: readSession.session.sessionId,
+    mode,
+  })
+  const claimed = await reviews.claimReview(requested.review.reviewId, {
+    sessionId: readSession.session.sessionId,
+    ownerToken: readSession.ownerToken,
+  })
+  return { ...requested, reviewerCapability: claimed.reviewerCapability, readSession }
+}
 
 await quality.setPolicy('demo', {
   required: ['tests', 'review'],
@@ -137,14 +164,15 @@ let firstReviewCapability
 
 // --- 1. Writer не ревьюит сам себя ----------------------------------------
 await assert.rejects(
-  reviews.requestReview(task.taskId, { reviewerAgent: 'writer-17' }),
+  openReview(task.taskId, { reviewerAgent: 'writer-17' }),
   error => error.code === 'WRITER_REVIEWER_CONFLICT',
 )
 
 // --- 3–4. Консистентность вердикта и возврат writer'у ---------------------
 {
-  const { review, packet, reviewerCapability } = await reviews.requestReview(task.taskId, { reviewerAgent: 'reviewer-4' })
+  const { review, packet, reviewerCapability } = await openReview(task.taskId, { reviewerAgent: 'reviewer-4' })
   assert.equal(review.capabilityHash, undefined, 'хэш capability наружу не отдаётся')
+  assert.equal(typeof review.reviewSnapshotSha, 'string', 'review привязан к snapshot SHA')
 
   // §13: правильное ИМЯ без capability — подделка, отклоняется.
   await assert.rejects(
@@ -218,7 +246,7 @@ await assert.rejects(
   const verification = await quality.runVerification(task.taskId)
   assert.equal(verification.checks.find(check => check.id === 'tests').status, 'PASSED')
 
-  const second = await reviews.requestReview(task.taskId, { reviewerAgent: 'reviewer-4' })
+  const second = await openReview(task.taskId, { reviewerAgent: 'reviewer-4' })
   await reviews.submitReview(second.review.reviewId, {
     capability: second.reviewerCapability,
     verdict: 'APPROVED', findings: [],
@@ -230,7 +258,7 @@ await assert.rejects(
   assert.ok(verdict.blockers.some(blocker => blocker.id === 'ADVERSARIAL_REQUIRED'),
     `high-risk без adversarial не готов: ${JSON.stringify(verdict.blockers)}`)
 
-  const adversarial = await reviews.requestReview(task.taskId, { reviewerAgent: 'reviewer-9', mode: 'adversarial' })
+  const adversarial = await openReview(task.taskId, { reviewerAgent: 'reviewer-9', mode: 'adversarial' })
   await reviews.submitReview(adversarial.review.reviewId, {
     capability: adversarial.reviewerCapability,
     verdict: 'APPROVED', findings: [],

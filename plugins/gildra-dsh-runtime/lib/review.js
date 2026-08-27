@@ -8,10 +8,8 @@
 // Reviewer получает компактный пакет: задачу, критерии, policy, статистику
 // diff, evidence и сигналы анализа — но НЕ историю рассуждений writer'а.
 
-import { createHash, timingSafeEqual } from 'node:crypto'
-
 import { RuntimeError } from './errors.js'
-import { assertId, generateId, generateOwnerToken } from './ids.js'
+import { assertId, generateId } from './ids.js'
 import { appendAudit } from './audit.js'
 import { CURRENT_SCHEMA_VERSION } from './migrations.js'
 import { qualityPolicyOf } from './quality.js'
@@ -22,20 +20,6 @@ import { ownersForFiles } from './repo-intel.js'
 import { git } from './gitx.js'
 
 const REVIEWS = 'reviews'
-
-// Capability ревьюера (§13): подтверждение личности — секрет, выданный при
-// request, а не строка с именем. В store лежит только ХЭШ: чтение state не
-// раскрывает capability, сравнение — константное по времени.
-function capabilityHash(capability) {
-  return createHash('sha256').update(String(capability)).digest('hex')
-}
-
-function capabilityMatches(capability, storedHash) {
-  if (typeof capability !== 'string' || typeof storedHash !== 'string') return false
-  const given = Buffer.from(capabilityHash(capability), 'hex')
-  const stored = Buffer.from(storedHash, 'hex')
-  return given.length === stored.length && timingSafeEqual(given, stored)
-}
 
 export const SEVERITIES = Object.freeze(['BLOCKER', 'HIGH', 'MEDIUM', 'LOW', 'NIT'])
 export const CATEGORIES = Object.freeze([
@@ -72,7 +56,7 @@ function validateFindings(raw) {
   })
 }
 
-export function createReviewManager({ store, roots, projects, tasks, workspaces, repoIntel }) {
+export function createReviewManager({ store, roots, projects, tasks, workspaces, sessions, leases, capabilities, repoIntel }) {
   async function getReview(reviewId) {
     const record = await store.read(REVIEWS, assertId(reviewId, 'reviewId'))
     if (!record) throw new RuntimeError('REVIEW_NOT_FOUND', `Ревью «${reviewId}» не найдено.`, { reviewId })
@@ -191,7 +175,36 @@ export function createReviewManager({ store, roots, projects, tasks, workspaces,
     }
   }
 
-  // Запрос ревью. Главный guard слоя: reviewer ≠ writer (§14, §74).
+  // Проверки независимости reviewer-сессии (§4): существует, read-only, не
+  // сессия writer'а, тот же проект, без write-lease на workspace задачи.
+  async function assertIndependentReviewerSession(task, reviewerSessionId) {
+    if (typeof reviewerSessionId !== 'string' || reviewerSessionId === '') {
+      throw new RuntimeError('INVALID_INPUT', 'Review требует reviewerSessionId независимой read-сессии.')
+    }
+    const session = await sessions.getSession(reviewerSessionId)
+    if (session.mode !== 'read') {
+      throw new RuntimeError('WRITER_REVIEWER_CONFLICT', 'Reviewer обязан работать в read-сессии: write-сессия не бывает независимым судьёй.', { reviewerSessionId })
+    }
+    if (session.projectId !== task.projectId) {
+      throw new RuntimeError('WRITER_REVIEWER_CONFLICT', 'Reviewer-сессия принадлежит другому проекту.', { reviewerSessionId })
+    }
+    const writerSessionId = task.workspaceId
+      ? (await workspaces.getRecord(task.workspaceId).catch(() => undefined))?.sessionId
+      : undefined
+    if (writerSessionId && writerSessionId === reviewerSessionId) {
+      throw new RuntimeError('WRITER_REVIEWER_CONFLICT', 'Writer-сессия не может ревьюить собственную задачу.', { taskId: task.taskId })
+    }
+    if (task.workspaceId && leases) {
+      const lease = await leases.stateOf(task.workspaceId).catch(() => undefined)
+      if (lease && lease.state !== 'FREE' && lease.sessionId === reviewerSessionId) {
+        throw new RuntimeError('WRITER_REVIEWER_CONFLICT', 'Сессия с write-lease workspace задачи не может быть её reviewer\'ом.', { reviewerSessionId })
+      }
+    }
+    return { session, writerSessionId }
+  }
+
+  // Запрос ревью. Writer получает ТОЛЬКО reviewId и публичный статус:
+  // capability выдаётся исключительно reviewer-сессии через claimReview (§4).
   async function requestReview(taskId, { reviewerAgent, reviewerSessionId, mode = 'standard' }) {
     const task = await tasks.getTask(taskId)
     const reviewer = typeof reviewerAgent === 'string' ? reviewerAgent.trim() : ''
@@ -206,28 +219,33 @@ export function createReviewManager({ store, roots, projects, tasks, workspaces,
         taskId, writerAgent: task.writerAgent,
       })
     }
+    const { writerSessionId } = await assertIndependentReviewerSession(task, reviewerSessionId)
     // Свежий анализ diff — часть пакета: reviewer судит по фактам.
     const analysis = task.workspaceId ? await analyzeTask(taskId) : undefined
     const reviewId = generateId('review')
-    // Capability выдаётся ровно один раз — в ответе request. Подделать
-    // submit, зная только имя ревьюера, невозможно.
-    const reviewerCapability = generateOwnerToken()
+    // Immutable snapshot (§5): reviewer читает копию точного SHA, а не
+    // mutable writer-дерево; правка после request не меняет прочитанное.
+    let snapshotPath
+    if (analysis?.headSha) {
+      snapshotPath = await workspaces.createReviewSnapshot(task.projectId, analysis.headSha, taskId, reviewId)
+    }
     const record = {
       schemaVersion: CURRENT_SCHEMA_VERSION,
       reviewId,
       taskId,
       projectId: task.projectId,
       reviewerAgent: reviewer,
-      reviewerSessionId: typeof reviewerSessionId === 'string' ? reviewerSessionId.slice(0, 100) : undefined,
+      reviewerSessionId,
       writerAgent: task.writerAgent,
-      writerSessionId: task.workspaceId ? (await workspaces.getRecord(task.workspaceId).catch(() => undefined))?.sessionId : undefined,
-      capabilityHash: capabilityHash(reviewerCapability),
+      writerSessionId,
       // Ревизии требований на момент запроса: одобрение «той» постановки не
       // распространяется на изменённую (§14).
       revisions: requirementRevisions({ task, project: await projects.get(task.projectId) }),
       mode,
       status: 'REQUESTED',
       headSha: analysis?.headSha,
+      reviewSnapshotSha: analysis?.headSha,
+      ...(snapshotPath ? { snapshotPath } : {}),
       createdAt: new Date().toISOString(),
     }
     await store.write(REVIEWS, reviewId, record)
@@ -242,10 +260,37 @@ export function createReviewManager({ store, roots, projects, tasks, workspaces,
       ...(['PLANNED', 'IMPLEMENTING', 'VERIFYING', 'FIXING_REVIEW'].includes(withReviewer.status) ? { status: 'REVIEWING' } : {}),
     })
     await appendAudit(roots.stateRoot, 'review.requested', { taskId, reviewId, mode, reviewerAgent: reviewer })
-    // Хэш наружу не отдаём; capability — единственный раз, здесь.
-    const { capabilityHash: storedHash, ...visible } = record
-    void storedHash
-    return { review: visible, reviewerCapability, packet: await buildReviewPacket(await tasks.getTask(taskId), analysis) }
+    return { review: record, packet: await buildReviewPacket(await tasks.getTask(taskId), analysis) }
+  }
+
+  // Claim (§4): capability получает ТОЛЬКО держатель owner-token той самой
+  // read-сессии, что указана в review request. Writer, знающий reviewId и
+  // имя ревьюера, не получает ничего.
+  async function claimReview(reviewId, { sessionId, ownerToken }) {
+    const review = await getReview(reviewId)
+    if (review.status !== 'REQUESTED') {
+      throw new RuntimeError('INVALID_INPUT', 'Review уже не в состоянии REQUESTED.', { reviewId, status: review.status })
+    }
+    if (review.claimedAt) {
+      throw new RuntimeError('CAPABILITY_INVALID', 'Capability этого review уже была выдана; потеряна — запросите новое ревью.', { reason: 'ALREADY_CLAIMED', reviewId })
+    }
+    if (sessionId !== review.reviewerSessionId) {
+      throw new RuntimeError('WRITER_REVIEWER_CONFLICT', 'Claim разрешён только reviewer-сессии этого review.', { reviewId })
+    }
+    // Владение сессией доказывает owner-token; сверку делает session manager.
+    await sessions.requireOwner(sessionId, ownerToken)
+    const issued = await capabilities.issue({
+      role: 'AI_REVIEWER',
+      scope: 'review-submit',
+      entityId: reviewId,
+      taskId: review.taskId,
+      ...(review.reviewSnapshotSha ? { headSha: review.reviewSnapshotSha } : {}),
+      oneTime: false,
+      ttlMs: 24 * 60 * 60_000,
+    })
+    await store.write(REVIEWS, reviewId, { ...review, claimedAt: new Date().toISOString(), capabilityId: issued.capId })
+    await appendAudit(roots.stateRoot, 'review.claimed', { reviewId, reviewerSessionId: sessionId })
+    return { reviewerCapability: issued.capability, review: { reviewId, snapshotPath: review.snapshotPath, reviewSnapshotSha: review.reviewSnapshotSha } }
   }
 
   // Агрегация ревью на задаче: по каждому режиму берётся ПОСЛЕДНЕЕ
@@ -295,11 +340,11 @@ export function createReviewManager({ store, roots, projects, tasks, workspaces,
     if (review.status === 'SUBMITTED') {
       throw new RuntimeError('INVALID_INPUT', 'Это ревью уже отправлено: запросите новое для повторной проверки.', { reviewId })
     }
-    // §13: принять вердикт может только держатель capability ЭТОГО request.
-    // Имя ревьюера — метка для людей, а не доказательство.
-    if (!capabilityMatches(capability, review.capabilityHash)) {
-      throw new RuntimeError('WRITER_REVIEWER_CONFLICT', 'Вердикт принимается только с capability этого review request — имя ревьюера не является подтверждением личности.', { reviewId })
-    }
+    // §4: принять вердикт может только держатель capability, выданной
+    // reviewer-сессии при claim'е ЭТОГО review. Имя — метка для людей.
+    await capabilities.verify(capability, { role: 'AI_REVIEWER', scope: 'review-submit', entityId: reviewId }).catch(() => {
+      throw new RuntimeError('WRITER_REVIEWER_CONFLICT', 'Вердикт принимается только с capability, выданной reviewer-сессии этого review, — имя ревьюера не является подтверждением личности.', { reviewId })
+    })
     const task = await tasks.getTask(review.taskId)
     const project = await projects.get(task.projectId)
     const policy = qualityPolicyOf(project)
@@ -345,6 +390,11 @@ export function createReviewManager({ store, roots, projects, tasks, workspaces,
       submittedAt: new Date().toISOString(),
     }
     await store.write(REVIEWS, reviewId, submitted)
+    // Snapshot одноразовый: вердикт зафиксирован, SHA и provenance остаются
+    // в записи, файловая копия больше не нужна (§5).
+    if (review.snapshotPath) {
+      await workspaces.removeReviewSnapshot(review.projectId, review.snapshotPath).catch(() => {})
+    }
     await refreshTaskReviewSummary(review.taskId)
     // CHANGES_REQUESTED возвращает задачу writer'у (§14).
     if (verdict === 'CHANGES_REQUESTED') {
@@ -364,9 +414,9 @@ export function createReviewManager({ store, roots, projects, tasks, workspaces,
   // re-review; сам себе он findings не закрывает).
   async function resolveFinding(reviewId, { capability, resolution, index }) {
     const review = await getReview(reviewId)
-    if (!capabilityMatches(capability, review.capabilityHash)) {
+    await capabilities.verify(capability, { role: 'AI_REVIEWER', scope: 'review-submit', entityId: reviewId }).catch(() => {
       throw new RuntimeError('WRITER_REVIEWER_CONFLICT', 'Закрыть finding может только держатель capability этого ревью.', { reviewId })
-    }
+    })
     const findings = [...(review.findings ?? [])]
     if (!Number.isInteger(index) || index < 0 || index >= findings.length) {
       throw new RuntimeError('INVALID_INPUT', 'Некорректный индекс finding.', { index })
@@ -384,15 +434,12 @@ export function createReviewManager({ store, roots, projects, tasks, workspaces,
   // Актор по capability (§15, §33): ищем review задачи, чей хэш совпадает.
   // Используется API-слоем для строгих acknowledgment'ов.
   async function actorForCapability(taskId, capability) {
-    const task = await tasks.getTask(taskId)
-    for (const id of task.reviews ?? []) {
-      const row = await store.read(REVIEWS, id)
-      if (row && capabilityMatches(capability, row.capabilityHash)) {
-        return { type: 'AI_REVIEWER', id: row.reviewerAgent, reviewId: row.reviewId }
-      }
-    }
-    return undefined
+    const record = await capabilities.verify(capability, { role: 'AI_REVIEWER', scope: 'review-submit', taskId }).catch(() => undefined)
+    if (!record) return undefined
+    const row = await store.read(REVIEWS, record.entityId).catch(() => undefined)
+    if (!row || row.taskId !== taskId) return undefined
+    return { type: 'AI_REVIEWER', id: row.reviewerAgent, reviewId: row.reviewId }
   }
 
-  return { requestReview, submitReview, resolveFinding, getReview, analyzeTask, refreshTaskReviewSummary, buildReviewPacket, actorForCapability }
+  return { requestReview, claimReview, submitReview, resolveFinding, getReview, analyzeTask, refreshTaskReviewSummary, buildReviewPacket, actorForCapability }
 }

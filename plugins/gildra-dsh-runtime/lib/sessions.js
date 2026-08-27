@@ -9,7 +9,7 @@
 import { hostname } from 'node:os'
 import { RuntimeError } from './errors.js'
 import { CURRENT_SCHEMA_VERSION } from './migrations.js'
-import { assertSegment, currentUserId, generateSessionId } from './ids.js'
+import { generateOwnerToken, assertSegment, currentUserId, generateSessionId } from './ids.js'
 import { appendAudit } from './audit.js'
 import { sessionEnvironment } from './runtime-env.js'
 import { OPERATION_TYPES, PHASES, createJournal } from './journal.js'
@@ -65,8 +65,11 @@ export function createSessionManager({ store, roots, projects, workspaces, lease
 
     if (mode === 'read') {
       // Read-сессия видит существующий workspace, lease не берёт и портов
-      // не аллоцирует: читатели не запускают dev-серверы.
+      // не аллоцирует: читатели не запускают dev-серверы. Owner-token у неё
+      // ЕСТЬ (§4 плана authority): владение read-сессией — то, чем reviewer
+      // доказывает личность при claim'е review-capability.
       const workspace = await workspaces.getRecord(attachTo ?? '')
+      const readOwnerToken = generateOwnerToken()
       const record = {
         schemaVersion: CURRENT_SCHEMA_VERSION,
         id: sessionId,
@@ -79,6 +82,7 @@ export function createSessionManager({ store, roots, projects, workspaces, lease
         baseRef: workspace.baseRef,
         mode: 'read',
         status: 'ACTIVE',
+        ownerToken: readOwnerToken,
         title: title ? String(title).slice(0, 200) : undefined,
         createdAt: now,
         lastActivityAt: now,
@@ -86,7 +90,7 @@ export function createSessionManager({ store, roots, projects, workspaces, lease
       }
       await store.write(SESSIONS, sessionId, record)
       await appendAudit(roots.stateRoot, 'session.created', { sessionId, projectId, userId, mode })
-      return { session: record, environment: sessionEnvironment({ session: record, workspace, ports: [] }) }
+      return { session: record, ownerToken: readOwnerToken, environment: sessionEnvironment({ session: record, workspace, ports: [] }) }
     }
 
     if (mode !== 'write') throw new RuntimeError('INVALID_INPUT', 'mode должен быть write или read.', { mode })
