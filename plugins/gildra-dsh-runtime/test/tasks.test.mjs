@@ -65,6 +65,42 @@ const tasks = createTaskManager({ store, roots, projects })
   assert.equal(resumed.failureKind, undefined)
 }
 
+// --- 3б. Module Change Plan обязателен перед реализацией (§6) --------------
+{
+  const { task } = await tasks.createTask({ projectId: 'demo', title: 'Plan gate', owner: 'alex' })
+  await tasks.attachWorkspace(task.taskId, {
+    workspaceId: 'ws-plan', sessionId: 'sess-plan', branch: 'session/alex/plan', baseSha: 'b'.repeat(40),
+  })
+  await assert.rejects(
+    tasks.transition(task.taskId, 'IMPLEMENTING'),
+    error => error.code === 'MODULE_PLAN_REQUIRED',
+    'write-фаза без плана модулей запрещена',
+  )
+  await assert.rejects(tasks.setModulePlan(task.taskId, { modulesToChange: [] }), /хотя бы один/)
+  await assert.rejects(
+    tasks.setModulePlan(task.taskId, { modulesToChange: [{ module: 'x', reason: 'ok' }] }),
+    /почему меняется/,
+  )
+  await assert.rejects(
+    tasks.setModulePlan(task.taskId, { newModules: [{ id: 'dump' }] }),
+    /ответственность/,
+    'новый модуль без ответственности — будущая свалка',
+  )
+  await tasks.setModulePlan(task.taskId, {
+    modulesToChange: [{ module: 'runtime.sessions', reason: 'добавить review lifecycle' }],
+    newModules: [{ id: 'runtime.review', responsibility: 'независимое структурное ревью задач' }],
+    testsRequired: ['session lifecycle'],
+    risks: ['stale evidence'],
+  })
+  const planned = await tasks.transition(task.taskId, 'IMPLEMENTING')
+  assert.equal(planned.status, 'IMPLEMENTING')
+  assert.equal(planned.modulePlan.modulesToChange[0].module, 'runtime.sessions')
+
+  // Задача без workspace (чистое планирование) план не требует.
+  const { task: paper } = await tasks.createTask({ projectId: 'demo', title: 'Paper task', owner: 'alex' })
+  await tasks.transition(paper.taskId, 'IMPLEMENTING')
+}
+
 // --- 4. Dirty precondition (§39) ------------------------------------------
 {
   const { task } = await tasks.createTask({ projectId: 'demo', title: 'Dirty check', owner: 'alex' })

@@ -30,6 +30,8 @@ export const ERROR_CODES = Object.freeze({
   // Слой AI-качества: готовность вычисляется, а не назначается; claims
   // сигнализируют о пересечении работы.
   READINESS_REQUIRED: 409,
+  MODULE_PLAN_REQUIRED: 409,
+  TEAM_STATE_CONFLICT: 409,
   CLAIM_CONFLICT: 409,
   WRITER_REVIEWER_CONFLICT: 409,
   REVIEW_NOT_FOUND: 404,

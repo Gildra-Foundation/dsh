@@ -40,6 +40,11 @@ export const ACKNOWLEDGEABLE_SIGNALS = Object.freeze([
   'TEST_WEAKENING', 'UNEXPECTED_CHANGE', 'PROTECTED_AREA_CHANGE',
   'DEPENDENCY_CHANGE', 'GENERATED_FILE_EDIT', 'BACKWARD_COMPATIBILITY',
   'UPSTREAM_RELEVANT',
+  // Modularity Analyzer (§7): REVIEW-сигналы гасятся объяснением, BLOCK-коды
+  // (циклы, cross-layer) объяснением не гасятся вовсе — только устранением.
+  'DEEP_INTERNAL_IMPORT', 'OVERSIZED_MODULE_GROWTH', 'OVERSIZED_FUNCTION_GROWTH',
+  'NEW_GLOBAL_MUTABLE_STATE', 'DUPLICATED_DOMAIN_LOGIC', 'MIXED_RESPONSIBILITIES',
+  'UNEXPECTED_MODULE_CHANGE',
 ])
 
 const MAX_CRITERIA = 20
@@ -164,6 +169,13 @@ export function createTaskManager({ store, roots, projects }) {
     if ((status === 'BLOCKED' || status === 'CANCELLED') && typeof reason === 'string') {
       record.blockReason = reason.slice(0, 500)
     }
+    // Module Change Plan (§6): write-фаза не начинается без структурного
+    // плана «в каком модуле живёт ответственность». Для мелкой правки план
+    // короткий, но он обязан существовать — иначе логика ложится в случайный
+    // «удобный» файл. Задачи без workspace (чистое планирование) не трогаем.
+    if (status === 'IMPLEMENTING' && record.workspaceId && !record.modulePlan) {
+      throw new RuntimeError('MODULE_PLAN_REQUIRED', 'Перед реализацией зафиксируйте Module Change Plan: какие модули меняются и почему (POST /gildra/v1/tasks/module-plan).', { taskId })
+    }
     // Возврат в работу очищает причины прошлой остановки.
     if (status === 'IMPLEMENTING' || status === 'FIXING_REVIEW') {
       delete record.blockReason
@@ -226,6 +238,49 @@ export function createTaskManager({ store, roots, projects }) {
     record.claims = normalized
     const updated = await saveTask(record)
     return { task: updated, overlaps }
+  }
+
+  // Module Change Plan (§6): структурный план изменения ДО кода. Валидация
+  // держит план осмысленным (модуль + причина), но не бюрократичным: для
+  // мелкой правки достаточно одной записи.
+  async function setModulePlan(taskId, plan) {
+    const record = await getTask(taskId)
+    if (!plan || typeof plan !== 'object') throw new RuntimeError('INVALID_INPUT', 'Ожидался Module Change Plan.')
+    const changes = Array.isArray(plan.modulesToChange) ? plan.modulesToChange : []
+    const created = Array.isArray(plan.newModules) ? plan.newModules : []
+    if (changes.length + created.length === 0) {
+      throw new RuntimeError('INVALID_INPUT', 'План обязан называть хотя бы один изменяемый или новый модуль.')
+    }
+    const normalizedChanges = changes.slice(0, 30).map(entry => {
+      if (typeof entry?.module !== 'string' || entry.module === '' || entry.module.length > 120) {
+        throw new RuntimeError('INVALID_INPUT', 'modulesToChange: у каждой записи обязан быть module.')
+      }
+      if (typeof entry?.reason !== 'string' || entry.reason.trim().length < 5) {
+        throw new RuntimeError('INVALID_INPUT', `modulesToChange: объясните, почему меняется «${entry.module}».`)
+      }
+      return { module: entry.module, reason: entry.reason.trim().slice(0, 300) }
+    })
+    const normalizedNew = created.slice(0, 10).map(entry => {
+      if (typeof entry?.id !== 'string' || entry.id === '' || entry.id.length > 120) {
+        throw new RuntimeError('INVALID_INPUT', 'newModules: у нового модуля обязан быть id.')
+      }
+      if (typeof entry?.responsibility !== 'string' || entry.responsibility.trim().length < 10) {
+        throw new RuntimeError('INVALID_INPUT', `newModules: назовите ответственность модуля «${entry.id}» — модуль без ответственности это и есть будущая свалка.`)
+      }
+      return { id: entry.id, responsibility: entry.responsibility.trim().slice(0, 300) }
+    })
+    record.modulePlan = {
+      modulesToChange: normalizedChanges,
+      newModules: normalizedNew,
+      publicContractsChanged: (plan.publicContractsChanged ?? []).slice(0, 20).map(String),
+      dependenciesAdded: (plan.dependenciesAdded ?? []).slice(0, 20).map(String),
+      testsRequired: (plan.testsRequired ?? []).slice(0, 20).map(String),
+      risks: (plan.risks ?? []).slice(0, 20).map(String),
+      createdAt: new Date().toISOString(),
+    }
+    const updated = await saveTask(record)
+    await appendAudit(roots.stateRoot, 'task.module-plan', { taskId, modules: normalizedChanges.length, newModules: normalizedNew.length })
+    return updated
   }
 
   // Явное объяснение сигнала diff-анализа (§37): молча сигнал не гаснет.
@@ -339,6 +394,7 @@ export function createTaskManager({ store, roots, projects }) {
 
   return {
     createTask,
+    setModulePlan,
     getTask,
     listTasks,
     updateTask,

@@ -92,6 +92,10 @@ await tasks.attachWorkspace(task.taskId, {
   branch: workspace.branch, baseSha: workspace.baseSha,
 })
 await tasks.updateTask(task.taskId, { writerAgent: 'writer-17' })
+// Module Change Plan (§6): без него переход в IMPLEMENTING запрещён.
+await tasks.setModulePlan(task.taskId, {
+  modulesToChange: [{ module: 'src', reason: 'правка auth-сервиса и тестов' }],
+})
 
 // Изменения: ослабленный тест, новая зависимость, опасный паттерн, файл вне
 // scope, protected workflow, generated-файл, удалённый export.

@@ -374,6 +374,10 @@ export function registerRuntimeRoutes(ctx, runtime = createRuntime()) {
       },
     }),
 
+    route('/gildra/v1/tasks/module-plan', {
+      POST: async ({ body }) => ({ payload: { task: await tasks.setModulePlan(body.taskId, body.plan ?? body) } }),
+    }),
+
     route('/gildra/v1/tasks/claims', {
       POST: async ({ body }) => ({ payload: await tasks.setClaims(body.taskId, body.claims, { confirmExclusiveOverlap: body.confirmExclusiveOverlap === true }) }),
     }),
