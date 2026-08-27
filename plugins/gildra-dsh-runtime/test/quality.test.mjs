@@ -29,7 +29,7 @@ import { createProjectRegistry } from '../lib/projects.js'
 import { createWorkspaceManager } from '../lib/workspaces.js'
 import { createProcessManager } from '../lib/processes.js'
 import { createTaskManager } from '../lib/tasks.js'
-import { createQualityManager, qualityPolicyOf } from '../lib/quality.js'
+import { buildVerificationEnv, createQualityManager, qualityPolicyOf, redactSecrets } from '../lib/quality.js'
 
 const base = await mkdtemp(join(tmpdir(), 'gildra quality '))
 const repo = join(base, 'repo')
@@ -156,6 +156,73 @@ const { task, workspace } = await makeTask()
   const staleVerdict = await quality.readiness(task.taskId)
   assert.ok(staleVerdict.blockers.some(blocker => blocker.id === 'STALE_EVIDENCE'),
     'новый коммит обязан протушить evidence')
+}
+
+// --- 4в. Immutable snapshot и sanitized env (§17–§18) ----------------------
+{
+  const iso = await makeTask({ title: 'Isolation task' })
+  process.env.GILDRA_TEST_SECRET_LEAK = 'super-secret-value-42'
+  process.env.GILDRA_TEST_ALLOWED = 'allowed-secret-value-77'
+  try {
+    // Unit: allowlist-окружение.
+    const { env, secretValues } = buildVerificationEnv({
+      baseEnv: { PATH: '/usr/bin', HOME: '/home/x', RANDOM_TOKEN: 'nope', GILDRA_TEST_ALLOWED: 'v' },
+      allowedSecrets: ['GILDRA_TEST_ALLOWED'],
+      taskId: 't', workspaceId: 'w', runId: 'r',
+    })
+    assert.equal(env.RANDOM_TOKEN, undefined, 'не-allowlist переменная не передаётся')
+    assert.equal(env.GILDRA_TEST_ALLOWED, 'v')
+    assert.equal(env.GILDRA_VERIFICATION_RUN_ID, 'r')
+    assert.deepEqual(secretValues, ['v'])
+    assert.equal(redactSecrets('token v ok', ['token']), '••• v ok')
+
+    // Интеграция: команда НЕ видит секрет Runtime; разрешённый секрет видит,
+    // но в logTail он отредактирован.
+    await quality.setPolicy('demo', {
+      required: ['tests', 'review'],
+      checks: { tests: { argv: ['node', '-e', 'console.log("leak=" + (process.env.GILDRA_TEST_SECRET_LEAK ?? "none"), "allowed=" + (process.env.GILDRA_TEST_ALLOWED ?? "none"))'] } },
+      verification: { allowedSecrets: ['GILDRA_TEST_ALLOWED'] },
+    })
+    const run = await quality.runVerification(iso.task.taskId)
+    const check = run.checks.find(entry => entry.id === 'tests')
+    assert.match(check.logTail, /leak=none/, 'repository-код не должен видеть весь process.env (§18)')
+    assert.ok(!check.logTail.includes('allowed-secret-value-77'), 'значение разрешённого секрета редактируется из лога')
+    assert.match(check.logTail, /allowed=•••/)
+    assert.equal(run.snapshot.mode, 'COMMITTED')
+
+    // Immutability (§17): файл, созданный в workspace ПОСЛЕ коммита, в
+    // snapshot не попадает — проверяется ровно HEAD.
+    await writeFile(join(iso.workspace.path, 'sneaky.txt'), 'dirty\n')
+    await assert.rejects(quality.runVerification(iso.task.taskId), /UNCOMMITTED_SNAPSHOT/,
+      'грязное дерево без явного режима — отказ, а не тихая проверка «HEAD»')
+    const uncommitted = await quality.runVerification(iso.task.taskId, { allowUncommitted: true })
+    assert.equal(uncommitted.snapshot.mode, 'UNCOMMITTED_SNAPSHOT')
+    assert.equal(typeof uncommitted.snapshot.contentHash, 'string')
+    const verdict = await quality.readiness(iso.task.taskId)
+    assert.ok(verdict.blockers.some(blocker => blocker.id === 'EVIDENCE_ON_DIRTY_TREE'),
+      'UNCOMMITTED-evidence не проходит Definition of Done')
+    await rm(join(iso.workspace.path, 'sneaky.txt'))
+
+    // Snapshot-каталог удалён после committed-прогона.
+    const leftovers = existsSync(join(roots.stateRoot, '..', 'verification'))
+      ? (await import('node:fs/promises')).readdir(join(roots.stateRoot, '..', 'verification'))
+      : []
+    const rows = await leftovers
+    const remaining = []
+    for (const dir of rows) {
+      const inner = await (await import('node:fs/promises')).readdir(join(roots.stateRoot, '..', 'verification', dir)).catch(() => [])
+      remaining.push(...inner)
+    }
+    assert.deepEqual(remaining, [], 'committed-snapshot обязан удаляться после прогона')
+  } finally {
+    delete process.env.GILDRA_TEST_SECRET_LEAK
+    delete process.env.GILDRA_TEST_ALLOWED
+  }
+  // Восстановление политики для следующих блоков.
+  await quality.setPolicy('demo', {
+    required: ['tests', 'review'],
+    checks: { tests: { argv: ['node', '-e', 'console.log("ok")'] } },
+  })
 }
 
 // --- 4б. Смена требований после ревью протухает evidence и review (§14) ---

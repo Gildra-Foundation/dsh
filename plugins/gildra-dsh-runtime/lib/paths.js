@@ -28,7 +28,19 @@ export function runtimeRoots(env = process.env) {
     // Merge-воркспейсы отделены от сессионных: у них нет пользователя и
     // сессии, а жизненный цикл управляется merge workflow.
     mergesRoot: join(base, 'merges'),
+    // Immutable snapshot'ы верификации (§17): временные detached-worktree
+    // на конкретный SHA; живут только на время прогона.
+    verificationsRoot: join(base, 'verification'),
   }
+}
+
+export function verificationPath(roots, taskId, runId) {
+  const path = join(
+    roots.verificationsRoot,
+    assertSegment(String(taskId).slice(0, 60), 'taskId'),
+    assertSegment(runId, 'runId'),
+  )
+  return assertInsideRoot(path, roots.verificationsRoot)
 }
 
 export function mergePath(roots, projectId, mergeId) {

@@ -245,8 +245,13 @@ export async function branchExists(repoPath, branch) {
   return (await revParse(repoPath, `refs/heads/${branch}`)) !== undefined
 }
 
-export async function addWorktree(repoPath, worktreePath, { branch, baseRef, existingBranch = false }) {
+export async function addWorktree(repoPath, worktreePath, { branch, baseRef, existingBranch = false, detach = false }) {
   assertRepoMutationScope('worktree add')
+  if (detach) {
+    // Detached snapshot на неизменяемый SHA (§17): без ветки — двигать нечего.
+    await git(['-C', repoPath, 'worktree', 'add', '--detach', worktreePath, baseRef])
+    return
+  }
   if (existingBranch) {
     await git(['-C', repoPath, 'worktree', 'add', worktreePath, branch])
     return

@@ -12,7 +12,7 @@ import { dirname, join } from 'node:path'
 import { RuntimeError } from './errors.js'
 import { CURRENT_SCHEMA_VERSION } from './migrations.js'
 import { assertSegment, assertWritableBranch, generateId, sessionBranch } from './ids.js'
-import { mergePath, workspaceKey, workspacePath } from './paths.js'
+import { mergePath, verificationPath, workspaceKey, workspacePath } from './paths.js'
 import { appendAudit } from './audit.js'
 import {
   abortMergeIn,
@@ -298,6 +298,27 @@ export function createWorkspaceManager({ store, roots, projects, leases, process
     return { removed: true, workspaceId: id }
   }
 
+  // --- Verification snapshots (§17) ---------------------------------------
+  // Временный detached-worktree на ТОЧНЫЙ SHA: проверки никогда не бегут в
+  // mutable writer-дереве, и правка файла во время прогона не меняет то, что
+  // проверяется. Живёт в границах verification-корня и удаляется после.
+  async function createVerificationSnapshot(projectId, sha, taskId, runId) {
+    const project = await projects.get(projectId)
+    const path = verificationPath(roots, taskId, runId)
+    await mkdir(dirname(path), { recursive: true, mode: 0o700 })
+    await withRepoLock(projectId, () => addWorktree(project.canonicalRepoPath, path, { detach: true, baseRef: sha }))
+    return path
+  }
+
+  async function removeVerificationSnapshot(projectId, path) {
+    const project = await projects.get(projectId)
+    await withRepoLock(projectId, async () => {
+      await removeWorktree(project.canonicalRepoPath, path, { force: true }).catch(() => {})
+      await rm(path, { recursive: true, force: true }).catch(() => {})
+      await pruneWorktrees(project.canonicalRepoPath)
+    })
+  }
+
   // --- Merge workflow -----------------------------------------------------
   // Изменения сессий объединяются только через Git. Merge выполняется в
   // отдельном merge-worktree; конфликт никогда не разрешается молча —
@@ -559,6 +580,8 @@ export function createWorkspaceManager({ store, roots, projects, leases, process
   }
 
   return {
+    createVerificationSnapshot,
+    removeVerificationSnapshot,
     createWorkspace,
     getRecord,
     listRecords,

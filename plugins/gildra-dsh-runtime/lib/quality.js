@@ -15,6 +15,7 @@
 // одобренные discovered) и выполняются существующим Process Manager: та же
 // регистрация, лимиты, terminate и никакого shell.
 
+import { createHash } from 'node:crypto'
 import { mkdir, open, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 
@@ -23,11 +24,51 @@ import { assertId, generateId } from './ids.js'
 import { appendAudit } from './audit.js'
 import { CURRENT_SCHEMA_VERSION } from './migrations.js'
 import { assertCommandArgv } from './repo-intel.js'
-import { dirtyFiles, revParse } from './gitx.js'
+import { dirtyFiles, git, revParse } from './gitx.js'
 import { ACKNOWLEDGEABLE_SIGNALS } from './tasks.js'
 import { requirementRevisions, revisionsMatch, signalFingerprint } from './provenance.js'
 
 const VERIFICATIONS = 'verifications'
+
+// Sanitized-окружение верификации (§18): repository-код НЕ получает весь
+// process.env Runtime. Базовый allowlist + платформенный минимум Windows
+// (без SystemRoot/ComSpec там не стартует ни один процесс) + секреты,
+// ЯВНО разрешённые политикой проекта. Секреты не пишутся в audit/evidence,
+// а их значения редактируются из хвостов логов.
+const ENV_ALLOWLIST = Object.freeze([
+  'PATH', 'HOME', 'TMPDIR', 'TEMP', 'TMP', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ', 'CI',
+  // Windows-минимум: без него не запускается даже node.
+  'SYSTEMROOT', 'SystemRoot', 'COMSPEC', 'ComSpec', 'PATHEXT', 'WINDIR', 'SYSTEMDRIVE',
+  'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'PROGRAMFILES', 'NUMBER_OF_PROCESSORS', 'OS',
+])
+
+export function buildVerificationEnv({ baseEnv = process.env, allowedSecrets = [], taskId, workspaceId, runId }) {
+  const env = {}
+  for (const name of ENV_ALLOWLIST) {
+    if (baseEnv[name] !== undefined) env[name] = baseEnv[name]
+  }
+  const secrets = {}
+  for (const name of allowedSecrets) {
+    if (baseEnv[name] !== undefined) {
+      env[name] = baseEnv[name]
+      secrets[name] = baseEnv[name]
+    }
+  }
+  env.GILDRA_TASK_ID = String(taskId ?? '')
+  env.GILDRA_WORKSPACE_ID = String(workspaceId ?? '')
+  env.GILDRA_VERIFICATION_RUN_ID = String(runId ?? '')
+  return { env, secretValues: Object.values(secrets) }
+}
+
+// Редактирование секретов из текста лога: значение не должно пережить прогон
+// ни в evidence, ни в diagnostics.
+export function redactSecrets(text, secretValues) {
+  let out = String(text)
+  for (const value of secretValues) {
+    if (typeof value === 'string' && value.length >= 4) out = out.split(value).join('•••')
+  }
+  return out
+}
 const LOG_TAIL_BYTES = 2048
 const DEFAULT_CHECK_TIMEOUT_MS = 10 * 60_000
 const KNOWN_CHECK_STATUS = Object.freeze(['PASSED', 'FAILED', 'NOT_CONFIGURED', 'CANCELLED', 'TIMED_OUT'])
@@ -54,6 +95,12 @@ export function qualityPolicyOf(project) {
   return {
     required: Array.isArray(raw.required) && raw.required.length > 0 ? raw.required.map(String) : [...DEFAULT_REQUIRED],
     checks,
+    verification: {
+      allowedSecrets: Array.isArray(raw.verification?.allowedSecrets)
+        ? raw.verification.allowedSecrets.map(String).filter(name => /^[A-Z][A-Z0-9_]{1,60}$/.test(name)).slice(0, 20)
+        : [],
+      allowUncommitted: raw.verification?.allowUncommitted === true,
+    },
     reviewGate: {
       blocking: Array.isArray(raw.reviewGate?.blocking) && raw.reviewGate.blocking.length > 0
         ? raw.reviewGate.blocking.map(String)
@@ -87,6 +134,8 @@ export function createQualityManager({ store, roots, projects, tasks, workspaces
       qualityPolicy: {
         ...(required ? { required } : {}),
         checks,
+        ...(policy.verification ? { verification: policy.verification } : {}),
+        ...(policy.architecture ? { architecture: policy.architecture } : {}),
         ...(policy.reviewGate ? { reviewGate: { blocking: (policy.reviewGate.blocking ?? []).map(String).slice(0, 5) } } : {}),
         ...(Array.isArray(policy.protectedAreas) ? { protectedAreas: policy.protectedAreas.map(String).slice(0, 50) } : {}),
         ...(Array.isArray(policy.highRiskAreas) ? { highRiskAreas: policy.highRiskAreas.map(String).slice(0, 50) } : {}),
@@ -115,9 +164,13 @@ export function createQualityManager({ store, roots, projects, tasks, workspaces
     }
   }
 
-  // Прогон верификации задачи в её workspace. checks — подмножество id из
-  // политики (по умолчанию все настроенные + required).
-  async function runVerification(taskId, { checkIds } = {}) {
+  // Прогон верификации задачи. НИКОГДА не в mutable writer-worktree (§17):
+  // на каждый run создаётся immutable detached-snapshot точного headSha —
+  // правка файла во время прогона не меняет то, что проверяется, а evidence
+  // относится ровно к snapshot'у. Грязное дерево проверяется только в явном
+  // режиме UNCOMMITTED_SNAPSHOT (в самом workspace, с content-хэшем) и не
+  // выдаётся за проверку HEAD.
+  async function runVerification(taskId, { checkIds, allowUncommitted = false } = {}) {
     const task = await tasks.getTask(taskId)
     if (!task.workspaceId) throw new RuntimeError('INVALID_INPUT', 'У задачи нет привязанного workspace — верифицировать нечего.', { taskId })
     const workspace = await workspaces.getRecord(task.workspaceId)
@@ -126,9 +179,34 @@ export function createQualityManager({ store, roots, projects, tasks, workspaces
 
     const headSha = await revParse(workspace.path, 'HEAD')
     const dirty = await dirtyFiles(workspace.path)
+    const uncommittedMode = dirty.length > 0
+    if (uncommittedMode && !allowUncommitted && !policy.verification.allowUncommitted) {
+      throw new RuntimeError('WORKSPACE_DIRTY', `В workspace ${String(dirty.length)} незакоммиченных файлов. Закоммитьте их или явно запросите режим UNCOMMITTED_SNAPSHOT (allowUncommitted) — притворяться, что проверялся HEAD, нельзя.`, {
+        taskId, dirtyFiles: dirty.length,
+      })
+    }
     const runId = generateId('verify')
     const logDir = join(roots.stateRoot, 'logs', 'verify')
     await mkdir(logDir, { recursive: true, mode: 0o700 })
+
+    // Snapshot: committed-режим — detached worktree на headSha; uncommitted —
+    // сам workspace с честной пометкой и content-хэшем diff'а.
+    let snapshotPath
+    let snapshot
+    if (uncommittedMode) {
+      const diffText = await git(['-C', workspace.path, 'diff', '--no-ext-diff', 'HEAD'])
+      snapshot = { mode: 'UNCOMMITTED_SNAPSHOT', contentHash: createHash('sha256').update(diffText.stdout).digest('hex').slice(0, 16) }
+      snapshotPath = workspace.path
+    } else {
+      snapshotPath = await workspaces.createVerificationSnapshot(task.projectId, headSha, taskId, runId)
+      snapshot = { mode: 'COMMITTED', path: snapshotPath, sha: headSha }
+    }
+    const { env: verificationEnv, secretValues } = buildVerificationEnv({
+      allowedSecrets: policy.verification.allowedSecrets,
+      taskId,
+      workspaceId: task.workspaceId,
+      runId,
+    })
 
     const wanted = new Set(checkIds ?? [...new Set([...policy.required, ...Object.keys(policy.checks)])])
     wanted.delete('review') // review — отдельный этап, не команда
@@ -144,6 +222,7 @@ export function createQualityManager({ store, roots, projects, tasks, workspaces
       branch: workspace.branch,
       headSha,
       dirtyAtRun: dirty.length,
+      snapshot: { mode: snapshot.mode, ...(snapshot.contentHash ? { contentHash: snapshot.contentHash } : {}) },
       // Ревизии требований (§14): evidence доказывает соответствие ЭТОЙ
       // постановке и ЭТОЙ политике; их смена делает прогон STALE.
       revisions: requirementRevisions({ task, project }),
@@ -173,8 +252,8 @@ export function createQualityManager({ store, roots, projects, tasks, workspaces
         outcome = await processes.runManaged({
           sessionId: workspace.sessionId,
           workspaceId: task.workspaceId,
-          cwd: workspace.path,
-          env: process.env,
+          cwd: snapshotPath,
+          env: verificationEnv,
           role: 'verify',
           logPath,
           timeoutMs: configured.timeoutMs,
@@ -190,8 +269,13 @@ export function createQualityManager({ store, roots, projects, tasks, workspaces
         exitCode: outcome.exitCode,
         durationMs: Date.now() - startedAt,
         logPath,
-        logTail: await readLogTail(logPath),
+        logTail: redactSecrets(await readLogTail(logPath), secretValues),
       })
+    }
+    // Snapshot одноразовый: результат зафиксирован в evidence, дерево больше
+    // не нужно (§17).
+    if (snapshot.mode === 'COMMITTED') {
+      await workspaces.removeVerificationSnapshot(task.projectId, snapshotPath).catch(() => {})
     }
 
     const finished = {
@@ -294,8 +378,8 @@ export function createQualityManager({ store, roots, projects, tasks, workspaces
           }
         }
       }
-      if (run.dirtyAtRun > 0) {
-        blockers.push({ id: 'EVIDENCE_ON_DIRTY_TREE', message: 'Verification выполнялся на грязном дереве.' })
+      if (run.snapshot?.mode === 'UNCOMMITTED_SNAPSHOT' || run.dirtyAtRun > 0) {
+        blockers.push({ id: 'EVIDENCE_ON_DIRTY_TREE', message: 'Evidence получено в режиме UNCOMMITTED_SNAPSHOT — для готовности прогоните проверки на закоммиченном HEAD.' })
       }
       if (currentHead && run.headSha !== currentHead) {
         blockers.push({ id: 'STALE_EVIDENCE', message: 'После последнего verification появились новые коммиты — прогоните проверки заново.' })
