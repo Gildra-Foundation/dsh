@@ -17,6 +17,11 @@ import { assertSegment } from './ids.js'
 import { git, revParse } from './gitx.js'
 import { appendAudit } from './audit.js'
 import { matchesAny, normalizePath } from './globs.js'
+import { parseCodeowners } from './codeowners.js'
+
+// Реэкспорт для существующих вызывающих: владельцы переехали в codeowners.js
+// (разрыв цикла repo-intel ↔ architecture, найденного Modularity Analyzer).
+export { parseCodeowners, ownersForFiles } from './codeowners.js'
 import { stableHash } from './provenance.js'
 import { buildModuleMap } from './architecture.js'
 
@@ -49,40 +54,6 @@ export const DEFAULT_GENERATED_GLOBS = Object.freeze([
   'dist/**', 'generated/**', '**/*.generated.*', '**/*.min.js', '**/*.min.css',
   'package-lock.json', 'pnpm-lock.yaml', 'yarn.lock', 'Cargo.lock', 'go.sum',
 ])
-
-// --- CODEOWNERS -----------------------------------------------------------
-// Минимальный парсер обычных паттернов (§31): комментарии, якоря `/`,
-// basename-паттерны без слэша. Семантика GitHub: ПОСЛЕДНЕЕ совпавшее правило
-// решает. Отрицаний в CODEOWNERS нет по спецификации.
-export function parseCodeowners(text) {
-  const rules = []
-  for (const rawLine of String(text).split(/\r?\n/)) {
-    const line = rawLine.trim()
-    if (line === '' || line.startsWith('#')) continue
-    const [rawPattern, ...owners] = line.split(/\s+/)
-    if (!rawPattern || owners.length === 0) continue
-    let pattern = rawPattern.replace(/^\//, '')
-    // Паттерн без '/' в CODEOWNERS матчит basename на любой глубине.
-    if (!pattern.includes('/')) pattern = `**/${pattern}`
-    if (pattern.endsWith('/')) pattern = pattern.slice(0, -1)
-    rules.push({ pattern, owners: owners.filter(owner => owner.length <= 100).slice(0, 20) })
-  }
-  return rules
-}
-
-export function ownersForFiles(rules, files) {
-  const owners = new Set()
-  for (const file of files) {
-    // Последнее совпавшее правило побеждает — как в GitHub.
-    for (let index = rules.length - 1; index >= 0; index -= 1) {
-      if (matchesAny(normalizePath(file), [rules[index].pattern])) {
-        for (const owner of rules[index].owners) owners.add(owner)
-        break
-      }
-    }
-  }
-  return [...owners].sort()
-}
 
 // --- Детекторы ------------------------------------------------------------
 // Каждый детектор — чистая функция ({files, read}) → фрагмент профиля.

@@ -14,7 +14,7 @@ import { createHash } from 'node:crypto'
 import { RuntimeError } from './errors.js'
 import { matchesAny, matchesGlob, normalizePath } from './globs.js'
 import { buildImportGraph, fanMetrics, isSourceFile, moduleEdges } from './import-graph.js'
-import { ownersForFiles } from './repo-intel.js'
+import { ownersForFiles } from './codeowners.js'
 
 const MAX_LAYERS = 20
 const MAX_MODULES = 200
