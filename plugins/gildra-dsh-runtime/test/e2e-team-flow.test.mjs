@@ -140,6 +140,7 @@ await assert.rejects(reviews.requestReview(taskA.taskId, { reviewerAgent: 'write
 const review1 = await reviews.requestReview(taskA.taskId, { reviewerAgent: 'reviewer-4' })
 assert.ok(review1.packet.diff.highRisk, 'auth-изменение обязано быть high-risk')
 await reviews.submitReview(review1.review.reviewId, {
+  capability: review1.reviewerCapability,
   verdict: 'CHANGES_REQUESTED',
   findings: [{
     severity: 'HIGH', category: 'CORRECTNESS', file: 'src/auth/service.js', line: 4,
@@ -179,6 +180,7 @@ assert.equal(runA2.checks.find(check => check.id === 'tests').status, 'PASSED')
 
 const review2 = await reviews.requestReview(taskA.taskId, { reviewerAgent: 'reviewer-4' })
 await reviews.submitReview(review2.review.reviewId, {
+  capability: review2.reviewerCapability,
   verdict: 'APPROVED', findings: [],
   criteriaVerdicts: [{ met: true }, { met: true }],
 })
@@ -190,6 +192,7 @@ await reviews.submitReview(review2.review.reviewId, {
 }
 const adversarial = await reviews.requestReview(taskA.taskId, { reviewerAgent: 'reviewer-9', mode: 'adversarial' })
 await reviews.submitReview(adversarial.review.reviewId, {
+  capability: adversarial.reviewerCapability,
   verdict: 'APPROVED', findings: [],
   criteriaVerdicts: [{ met: true }, { met: true }],
   summary: 'Атаковал границу expiry и мусорные токены — сломать не удалось.',

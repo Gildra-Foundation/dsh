@@ -410,9 +410,16 @@ let ownerToken
   }))
   assert.equal(requested.status, 201)
   assert.ok(requested.body.packet.acceptanceCriteria.length === 1)
-  const submitted = await call(routeOf('/gildra/v1/reviews/submit'), requestFor({
+  assert.equal(typeof requested.body.reviewerCapability, 'string', 'request выдаёт capability один раз')
+  // Без capability вердикт не принимается даже с правильным именем (§13).
+  const forged = await call(routeOf('/gildra/v1/reviews/submit'), requestFor({
     method: 'POST',
     body: { reviewId: requested.body.review.reviewId, verdict: 'APPROVED', findings: [], criteriaVerdicts: [{ met: true }] },
+  }))
+  assert.equal(forged.status, 409)
+  const submitted = await call(routeOf('/gildra/v1/reviews/submit'), requestFor({
+    method: 'POST',
+    body: { reviewId: requested.body.review.reviewId, capability: requested.body.reviewerCapability, verdict: 'APPROVED', findings: [], criteriaVerdicts: [{ met: true }] },
   }))
   assert.equal(submitted.body.review.verdict, 'APPROVED')
 

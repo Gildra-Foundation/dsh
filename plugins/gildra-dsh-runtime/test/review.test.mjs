@@ -132,6 +132,8 @@ await commitAll(workspace.path, 'risky change', identity)
   assert.ok(stored.signals.length >= 5)
 }
 
+let firstReviewCapability
+
 // --- 1. Writer не ревьюит сам себя ----------------------------------------
 await assert.rejects(
   reviews.requestReview(task.taskId, { reviewerAgent: 'writer-17' }),
@@ -140,7 +142,24 @@ await assert.rejects(
 
 // --- 3–4. Консистентность вердикта и возврат writer'у ---------------------
 {
-  const { review, packet } = await reviews.requestReview(task.taskId, { reviewerAgent: 'reviewer-4' })
+  const { review, packet, reviewerCapability } = await reviews.requestReview(task.taskId, { reviewerAgent: 'reviewer-4' })
+  assert.equal(review.capabilityHash, undefined, 'хэш capability наружу не отдаётся')
+
+  // §13: правильное ИМЯ без capability — подделка, отклоняется.
+  await assert.rejects(
+    reviews.submitReview(review.reviewId, {
+      verdict: 'APPROVED', findings: [], criteriaVerdicts: [{ met: true }, { met: true }],
+    }),
+    error => error.code === 'WRITER_REVIEWER_CONFLICT' && /capability/.test(error.message),
+    'имя ревьюера не является подтверждением личности',
+  )
+  await assert.rejects(
+    reviews.submitReview(review.reviewId, {
+      capability: 'a'.repeat(48),
+      verdict: 'APPROVED', findings: [], criteriaVerdicts: [{ met: true }, { met: true }],
+    }),
+    error => error.code === 'WRITER_REVIEWER_CONFLICT',
+  )
   assert.equal((await tasks.getTask(task.taskId)).status, 'REVIEWING')
   assert.equal(packet.acceptanceCriteria.length, 2, 'reviewer получает критерии')
   assert.ok(packet.diff.signals.length >= 5, 'reviewer получает сигналы анализа')
@@ -152,6 +171,7 @@ await assert.rejects(
   }
   await assert.rejects(
     reviews.submitReview(review.reviewId, {
+      capability: reviewerCapability,
       verdict: 'APPROVED', findings: [highFinding],
       criteriaVerdicts: [{ met: true }, { met: true }],
     }),
@@ -159,15 +179,17 @@ await assert.rejects(
     'одобрить с открытым HIGH нельзя',
   )
   await assert.rejects(
-    reviews.submitReview(review.reviewId, { verdict: 'APPROVED', findings: [], criteriaVerdicts: [{ met: true }] }),
+    reviews.submitReview(review.reviewId, { capability: reviewerCapability, verdict: 'APPROVED', findings: [], criteriaVerdicts: [{ met: true }] }),
     /каждому из 2 критериев/,
   )
   const submitted = await reviews.submitReview(review.reviewId, {
+    capability: reviewerCapability,
     verdict: 'CHANGES_REQUESTED',
     findings: [highFinding, { severity: 'NIT', category: 'MAINTAINABILITY', message: 'имя функции читается двусмысленно' }],
     criteriaVerdicts: [{ met: false, note: 'вызовы login() сломаны' }, { met: false, note: 'тест выключен' }],
   })
   assert.equal(submitted.findings.length, 2)
+  firstReviewCapability = reviewerCapability
   const after = await tasks.getTask(task.taskId)
   assert.equal(after.status, 'FIXING_REVIEW', 'CHANGES_REQUESTED возвращает задачу writer’у')
   assert.equal(after.review.verdict, 'CHANGES_REQUESTED')
@@ -197,6 +219,7 @@ await assert.rejects(
 
   const second = await reviews.requestReview(task.taskId, { reviewerAgent: 'reviewer-4' })
   await reviews.submitReview(second.review.reviewId, {
+    capability: second.reviewerCapability,
     verdict: 'APPROVED', findings: [],
     criteriaVerdicts: [{ met: true }, { met: true }],
   })
@@ -208,6 +231,7 @@ await assert.rejects(
 
   const adversarial = await reviews.requestReview(task.taskId, { reviewerAgent: 'reviewer-9', mode: 'adversarial' })
   await reviews.submitReview(adversarial.review.reviewId, {
+    capability: adversarial.reviewerCapability,
     verdict: 'APPROVED', findings: [],
     criteriaVerdicts: [{ met: true }, { met: true }],
     summary: 'Пытался сломать переименование и конкурентный вызов — не удалось.',
@@ -242,12 +266,14 @@ await assert.rejects(
 
 // --- 6б. Finding закрывает только reviewer --------------------------------
 {
-  const review = await store.read('reviews', (await tasks.getTask(task.taskId)).reviews[0])
+  // Закрытие finding — тоже только по capability: writer с любым именем и
+  // даже знание имени ревьюера не помогают.
+  const firstReviewId = (await tasks.getTask(task.taskId)).reviews[0]
   await assert.rejects(
-    reviews.resolveFinding(review.reviewId, { index: 0, actor: 'writer-17', resolution: 'починил' }),
+    reviews.resolveFinding(firstReviewId, { index: 0, capability: 'writer-guess', resolution: 'починил' }),
     error => error.code === 'WRITER_REVIEWER_CONFLICT',
   )
-  const resolved = await reviews.resolveFinding(review.reviewId, { index: 0, actor: 'reviewer-4', resolution: 'проверил фикс: вызовы восстановлены' })
+  const resolved = await reviews.resolveFinding(firstReviewId, { index: 0, capability: firstReviewCapability, resolution: 'проверил фикс: вызовы восстановлены' })
   assert.equal(resolved.findings[0].status, 'RESOLVED')
 }
 

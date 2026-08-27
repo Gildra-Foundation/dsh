@@ -8,8 +8,10 @@
 // Reviewer получает компактный пакет: задачу, критерии, policy, статистику
 // diff, evidence и сигналы анализа — но НЕ историю рассуждений writer'а.
 
+import { createHash, timingSafeEqual } from 'node:crypto'
+
 import { RuntimeError } from './errors.js'
-import { assertId, generateId } from './ids.js'
+import { assertId, generateId, generateOwnerToken } from './ids.js'
 import { appendAudit } from './audit.js'
 import { CURRENT_SCHEMA_VERSION } from './migrations.js'
 import { qualityPolicyOf } from './quality.js'
@@ -18,6 +20,20 @@ import { analyzeModularity } from './modularity.js'
 import { git } from './gitx.js'
 
 const REVIEWS = 'reviews'
+
+// Capability ревьюера (§13): подтверждение личности — секрет, выданный при
+// request, а не строка с именем. В store лежит только ХЭШ: чтение state не
+// раскрывает capability, сравнение — константное по времени.
+function capabilityHash(capability) {
+  return createHash('sha256').update(String(capability)).digest('hex')
+}
+
+function capabilityMatches(capability, storedHash) {
+  if (typeof capability !== 'string' || typeof storedHash !== 'string') return false
+  const given = Buffer.from(capabilityHash(capability), 'hex')
+  const stored = Buffer.from(storedHash, 'hex')
+  return given.length === stored.length && timingSafeEqual(given, stored)
+}
 
 export const SEVERITIES = Object.freeze(['BLOCKER', 'HIGH', 'MEDIUM', 'LOW', 'NIT'])
 export const CATEGORIES = Object.freeze([
@@ -167,7 +183,7 @@ export function createReviewManager({ store, roots, projects, tasks, workspaces,
   }
 
   // Запрос ревью. Главный guard слоя: reviewer ≠ writer (§14, §74).
-  async function requestReview(taskId, { reviewerAgent, mode = 'standard' }) {
+  async function requestReview(taskId, { reviewerAgent, reviewerSessionId, mode = 'standard' }) {
     const task = await tasks.getTask(taskId)
     const reviewer = typeof reviewerAgent === 'string' ? reviewerAgent.trim() : ''
     if (reviewer === '' || reviewer.length > 100) {
@@ -184,12 +200,19 @@ export function createReviewManager({ store, roots, projects, tasks, workspaces,
     // Свежий анализ diff — часть пакета: reviewer судит по фактам.
     const analysis = task.workspaceId ? await analyzeTask(taskId) : undefined
     const reviewId = generateId('review')
+    // Capability выдаётся ровно один раз — в ответе request. Подделать
+    // submit, зная только имя ревьюера, невозможно.
+    const reviewerCapability = generateOwnerToken()
     const record = {
       schemaVersion: CURRENT_SCHEMA_VERSION,
       reviewId,
       taskId,
       projectId: task.projectId,
       reviewerAgent: reviewer,
+      reviewerSessionId: typeof reviewerSessionId === 'string' ? reviewerSessionId.slice(0, 100) : undefined,
+      writerAgent: task.writerAgent,
+      writerSessionId: task.workspaceId ? (await workspaces.getRecord(task.workspaceId).catch(() => undefined))?.sessionId : undefined,
+      capabilityHash: capabilityHash(reviewerCapability),
       mode,
       status: 'REQUESTED',
       headSha: analysis?.headSha,
@@ -207,7 +230,10 @@ export function createReviewManager({ store, roots, projects, tasks, workspaces,
       ...(['PLANNED', 'IMPLEMENTING', 'VERIFYING', 'FIXING_REVIEW'].includes(withReviewer.status) ? { status: 'REVIEWING' } : {}),
     })
     await appendAudit(roots.stateRoot, 'review.requested', { taskId, reviewId, mode, reviewerAgent: reviewer })
-    return { review: record, packet: await buildReviewPacket(await tasks.getTask(taskId), analysis) }
+    // Хэш наружу не отдаём; capability — единственный раз, здесь.
+    const { capabilityHash: storedHash, ...visible } = record
+    void storedHash
+    return { review: visible, reviewerCapability, packet: await buildReviewPacket(await tasks.getTask(taskId), analysis) }
   }
 
   // Агрегация ревью на задаче: по каждому режиму берётся ПОСЛЕДНЕЕ
@@ -249,10 +275,15 @@ export function createReviewManager({ store, roots, projects, tasks, workspaces,
     return summary
   }
 
-  async function submitReview(reviewId, { findings, criteriaVerdicts, verdict, summary }) {
+  async function submitReview(reviewId, { capability, findings, criteriaVerdicts, verdict, summary }) {
     const review = await getReview(reviewId)
     if (review.status === 'SUBMITTED') {
       throw new RuntimeError('INVALID_INPUT', 'Это ревью уже отправлено: запросите новое для повторной проверки.', { reviewId })
+    }
+    // §13: принять вердикт может только держатель capability ЭТОГО request.
+    // Имя ревьюера — метка для людей, а не доказательство.
+    if (!capabilityMatches(capability, review.capabilityHash)) {
+      throw new RuntimeError('WRITER_REVIEWER_CONFLICT', 'Вердикт принимается только с capability этого review request — имя ревьюера не является подтверждением личности.', { reviewId })
     }
     const task = await tasks.getTask(review.taskId)
     const project = await projects.get(task.projectId)
@@ -316,10 +347,10 @@ export function createReviewManager({ store, roots, projects, tasks, workspaces,
 
   // Закрыть finding может только reviewer этого ревью (writer чинит и просит
   // re-review; сам себе он findings не закрывает).
-  async function resolveFinding(reviewId, { index, actor, resolution }) {
+  async function resolveFinding(reviewId, { capability, resolution, index }) {
     const review = await getReview(reviewId)
-    if (actor !== review.reviewerAgent) {
-      throw new RuntimeError('WRITER_REVIEWER_CONFLICT', 'Закрыть finding может только reviewer, который его открыл.', { reviewId })
+    if (!capabilityMatches(capability, review.capabilityHash)) {
+      throw new RuntimeError('WRITER_REVIEWER_CONFLICT', 'Закрыть finding может только держатель capability этого ревью.', { reviewId })
     }
     const findings = [...(review.findings ?? [])]
     if (!Number.isInteger(index) || index < 0 || index >= findings.length) {
