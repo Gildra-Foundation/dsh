@@ -334,10 +334,12 @@ export function createTaskManager({ store, roots, projects }) {
     return updated
   }
 
-  // Доставка (§42–§44): PR и CI-факты. Runtime не ходит в GitHub сам — он
-  // валидирует и хранит то, что сообщает агент/интеграция, и ограничивает
-  // число CI-автопочинок, чтобы не было бесконечного цикла.
+  // Доставка: PR-факты. CI-статус сюда НЕ принимается (§32) — только через
+  // recordCiEvidence со структурной привязкой к commit SHA.
   async function recordDelivery(taskId, { mode, prUrl, prNumber, ciStatus, branchPushed }) {
+    if (ciStatus !== undefined) {
+      throw new RuntimeError('INVALID_INPUT', 'ciStatus в delivery не принимается: CI-доказательство передаётся через /tasks/ci-evidence с commitSha и workflowRunId (§32).')
+    }
     const record = await getTask(taskId)
     const delivery = { ...(record.delivery ?? { ciFixAttempts: 0 }) }
     if (mode !== undefined) {
@@ -361,26 +363,84 @@ export function createTaskManager({ store, roots, projects }) {
       delivery.prNumber = prNumber
     }
     if (branchPushed !== undefined) delivery.branchPushed = branchPushed === true
-    if (ciStatus !== undefined) {
-      if (!['PENDING', 'PASSED', 'FAILED'].includes(ciStatus)) {
-        throw new RuntimeError('INVALID_INPUT', 'ciStatus: PENDING, PASSED или FAILED.')
+    record.delivery = delivery
+    const updated = await saveTask(record)
+    await appendAudit(roots.stateRoot, 'task.delivery', { taskId, ...(delivery.prNumber ? { prNumber: delivery.prNumber } : {}) })
+    return updated
+  }
+
+  // Доверенное CI-evidence (§32): произвольный {"ciStatus":"PASSED"} не
+  // принимается. Обязательны commitSha (== headSha задачи), workflowRunId и
+  // источник; новый коммит протухает доказательство сам собой (проверка в
+  // readiness по commitSha).
+  async function recordCiEvidence(taskId, evidence) {
+    const record = await getTask(taskId)
+    const commitSha = typeof evidence?.commitSha === 'string' ? evidence.commitSha : ''
+    const conclusion = String(evidence?.conclusion ?? '')
+    if (!/^[0-9a-f]{40}$/.test(commitSha)) {
+      throw new RuntimeError('INVALID_INPUT', 'CI-evidence требует полный commitSha (40 hex).')
+    }
+    if (!['success', 'failure', 'cancelled', 'timed_out', 'neutral'].includes(conclusion)) {
+      throw new RuntimeError('INVALID_INPUT', 'CI-evidence: conclusion — success/failure/cancelled/timed_out/neutral.')
+    }
+    if (typeof evidence?.workflowRunId !== 'string' && !Number.isInteger(evidence?.workflowRunId)) {
+      throw new RuntimeError('INVALID_INPUT', 'CI-evidence требует workflowRunId доверенной интеграции.')
+    }
+    const currentHead = record.analysis?.headSha
+    if (currentHead && commitSha !== currentHead) {
+      throw new RuntimeError('CI_EVIDENCE_MISMATCH', `CI-evidence относится к ${commitSha.slice(0, 12)}, а HEAD задачи — ${String(currentHead).slice(0, 12)}: доказательство чужого коммита не принимается.`, {
+        taskId, commitSha, headSha: currentHead,
+      })
+    }
+    const delivery = { ...(record.delivery ?? { ciFixAttempts: 0 }) }
+    delivery.ci = {
+      commitSha,
+      conclusion,
+      workflowRunId: String(evidence.workflowRunId),
+      ...(evidence.checkSuiteId ? { checkSuiteId: String(evidence.checkSuiteId).slice(0, 60) } : {}),
+      ...(evidence.repository ? { repository: String(evidence.repository).slice(0, 200) } : {}),
+      source: String(evidence.source ?? 'github-integration').slice(0, 60),
+      verifiedAt: new Date().toISOString(),
+    }
+    if (conclusion !== 'success') {
+      delivery.ciFixAttempts = (delivery.ciFixAttempts ?? 0) + 1
+      record.failureKind = 'CI'
+      // Ограниченный CI-цикл: после лимита задача останавливается и ждёт
+      // человека, а не чинит CI вечно.
+      if (delivery.ciFixAttempts > DEFAULT_CI_FIX_LIMIT) {
+        record.status = 'BLOCKED'
+        record.blockReason = `CI падал ${String(delivery.ciFixAttempts)} раз подряд — автоматические починки исчерпаны, нужен человек.`
       }
-      delivery.ciStatus = ciStatus
-      if (ciStatus === 'FAILED') {
-        delivery.ciFixAttempts = (delivery.ciFixAttempts ?? 0) + 1
-        record.failureKind = 'CI'
-        // Ограниченный CI-цикл (§44): после лимита задача останавливается и
-        // ждёт человека, а не чинит CI вечно.
-        if (delivery.ciFixAttempts > DEFAULT_CI_FIX_LIMIT) {
-          record.status = 'BLOCKED'
-          record.blockReason = `CI падал ${String(delivery.ciFixAttempts)} раз подряд — автоматические починки исчерпаны, нужен человек.`
-        }
-      }
-      if (ciStatus === 'PASSED') delete record.failureKind
+    } else {
+      delete record.failureKind
     }
     record.delivery = delivery
     const updated = await saveTask(record)
-    await appendAudit(roots.stateRoot, 'task.delivery', { taskId, ...(ciStatus ? { ciStatus } : {}), ...(delivery.prNumber ? { prNumber: delivery.prNumber } : {}) })
+    await appendAudit(roots.stateRoot, 'task.ci-evidence', { taskId, conclusion, workflowRunId: delivery.ci.workflowRunId })
+    return updated
+  }
+
+  // Human-approval (§30, §33): фиксация человеческого решения (CODEOWNERS,
+  // protected-область). Внутри Unix-границы доверия «человек» — это явный
+  // human-актор вызова; крипто-подтверждения личности здесь нет и не
+  // обещается (см. docs/modularity.md).
+  async function recordHumanApproval(taskId, { kind, actorId, note }) {
+    const record = await getTask(taskId)
+    const approvalKind = String(kind ?? '').slice(0, 60)
+    if (approvalKind === '') throw new RuntimeError('INVALID_INPUT', 'Укажите kind human-approval (например CODEOWNERS).')
+    record.humanApprovals = [
+      ...(record.humanApprovals ?? []).filter(entry => entry.kind !== approvalKind),
+      {
+        kind: approvalKind,
+        actorType: 'HUMAN',
+        actorId: actor(actorId) ?? 'human',
+        headSha: record.analysis?.headSha,
+        ...(note ? { note: String(note).slice(0, 500) } : {}),
+        createdAt: new Date().toISOString(),
+      },
+    ]
+    const updated = await saveTask(record)
+    await appendAudit(roots.stateRoot, 'task.human-approval', { taskId, kind: approvalKind })
     return updated
   }
 
@@ -436,6 +496,8 @@ export function createTaskManager({ store, roots, projects }) {
     setClaims,
     acknowledgeSignal,
     recordDelivery,
+    recordCiEvidence,
+    recordHumanApproval,
     overlapsFor,
     teamOverview,
     saveTask,

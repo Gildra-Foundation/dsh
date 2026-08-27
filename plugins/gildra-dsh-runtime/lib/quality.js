@@ -107,6 +107,12 @@ export function qualityPolicyOf(project) {
         ? raw.reviewGate.blocking.map(String)
         : [...DEFAULT_REVIEW_GATE.blocking],
     },
+    delivery: {
+      requirePullRequest: raw.delivery?.requirePullRequest === true,
+      requirePushedBranch: raw.delivery?.requirePushedBranch === true,
+      requireCI: raw.delivery?.requireCI === true,
+      requireCodeOwners: raw.delivery?.requireCodeOwners === true,
+    },
     protectedAreas: Array.isArray(raw.protectedAreas) ? raw.protectedAreas.map(String) : [],
     highRiskAreas: Array.isArray(raw.highRiskAreas) ? raw.highRiskAreas.map(String) : [],
     generatedFiles: Array.isArray(raw.generatedFiles) ? raw.generatedFiles.map(String) : [],
@@ -135,6 +141,7 @@ export function createQualityManager({ store, roots, projects, tasks, workspaces
       qualityPolicy: {
         ...(required ? { required } : {}),
         checks,
+        ...(policy.delivery ? { delivery: policy.delivery } : {}),
         ...(policy.verification ? { verification: policy.verification } : {}),
         ...(policy.architecture ? { architecture: policy.architecture } : {}),
         ...(policy.reviewGate ? { reviewGate: { blocking: (policy.reviewGate.blocking ?? []).map(String).slice(0, 5) } } : {}),
@@ -496,6 +503,33 @@ export function createQualityManager({ store, roots, projects, tasks, workspaces
       const ack = ackBySignal.get('UPSTREAM_RELEVANT')
       if (!ack || ack.targetSha !== task.upstream.targetSha) {
         blockers.push({ id: 'UPSTREAM_RELEVANT', message: `Цель ушла вперёд и затронула связанные файлы (${String(task.upstream.behind)} коммитов) — обновите базу или объясните, почему это безопасно.` })
+      }
+    }
+
+    // Delivery-gates (§31–§32): PR-доставка и доверенное CI, привязанное к
+    // ТЕКУЩЕМУ HEAD; CODEOWNERS-область требует человеческого approve (§30).
+    const currentHeadForDelivery = task.analysis?.headSha
+    if (policy.delivery.requirePullRequest && !(task.delivery?.mode === 'PR' && task.delivery?.prNumber)) {
+      blockers.push({ id: 'DELIVERY_PR_REQUIRED', message: 'Политика проекта требует доставку через Pull Request.' })
+    }
+    if (policy.delivery.requirePushedBranch && task.delivery?.branchPushed !== true) {
+      blockers.push({ id: 'DELIVERY_PUSH_REQUIRED', message: 'Ветка задачи не отмечена как отправленная (branchPushed).' })
+    }
+    if (policy.delivery.requireCI) {
+      const ci = task.delivery?.ci
+      if (!ci || ci.conclusion !== 'success') {
+        blockers.push({ id: 'CI_EVIDENCE_REQUIRED', message: 'Нет успешного CI-evidence от доверенной интеграции.' })
+      } else if (currentHeadForDelivery && ci.commitSha !== currentHeadForDelivery) {
+        blockers.push({ id: 'CI_EVIDENCE_STALE', message: 'CI-evidence относится к предыдущему коммиту — дождитесь CI на текущем HEAD.' })
+      }
+    }
+    if (policy.delivery.requireCodeOwners) {
+      const affectedOwners = task.analysis?.affectedOwners ?? []
+      if (affectedOwners.length > 0) {
+        const approval = (task.humanApprovals ?? []).find(entry => entry.kind === 'CODEOWNERS')
+        if (!approval || (currentHeadForDelivery && approval.headSha !== currentHeadForDelivery)) {
+          blockers.push({ id: 'CODEOWNERS_REVIEW_REQUIRED', message: `Изменение задевает области владельцев (${affectedOwners.join(', ')}) — требуется human-approval на текущем HEAD; AI-reviewer обязательного человека не заменяет.` })
+        }
       }
     }
 

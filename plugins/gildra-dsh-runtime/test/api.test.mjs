@@ -436,11 +436,26 @@ let ownerToken
   assert.equal(promote.status, 200, JSON.stringify(promote.body))
   assert.equal(promote.body.task.status, 'READY_FOR_HUMAN_REVIEW')
 
-  // Delivery + upstream.
+  // Delivery + доверенный CI (§32): статус из body отклоняется, evidence с
+  // привязкой к SHA — принимается.
   const delivery = await call(routeOf('/gildra/v1/tasks/delivery'), requestFor({
-    method: 'POST', body: { taskId: flowTask.taskId, mode: 'PR', prUrl: 'https://github.com/acme/demo/pull/12', prNumber: 12, ciStatus: 'PASSED' },
+    method: 'POST', body: { taskId: flowTask.taskId, mode: 'PR', prUrl: 'https://github.com/acme/demo/pull/12', prNumber: 12 },
   }))
   assert.equal(delivery.body.task.delivery.prNumber, 12)
+  const forgedCi = await call(routeOf('/gildra/v1/tasks/delivery'), requestFor({
+    method: 'POST', body: { taskId: flowTask.taskId, ciStatus: 'PASSED' },
+  }))
+  assert.equal(forgedCi.status, 400)
+  const headNow = run.body.run.headSha
+  const wrongSha = await call(routeOf('/gildra/v1/tasks/ci-evidence'), requestFor({
+    method: 'POST', body: { taskId: flowTask.taskId, commitSha: '1'.repeat(40), conclusion: 'success', workflowRunId: 'wf-9' },
+  }))
+  assert.equal(wrongSha.status, 409)
+  assert.equal(wrongSha.body.error.code, 'CI_EVIDENCE_MISMATCH')
+  const goodCi = await call(routeOf('/gildra/v1/tasks/ci-evidence'), requestFor({
+    method: 'POST', body: { taskId: flowTask.taskId, commitSha: headNow, conclusion: 'success', workflowRunId: 'wf-10' },
+  }))
+  assert.equal(goodCi.body.task.delivery.ci.conclusion, 'success')
   const upstreamCheck = await call(routeOf('/gildra/v1/tasks/upstream'), requestFor({
     method: 'POST', body: { taskId: flowTask.taskId },
   }))

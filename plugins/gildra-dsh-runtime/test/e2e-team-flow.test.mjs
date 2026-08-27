@@ -220,7 +220,14 @@ await tasks.acknowledgeSignal(taskA.taskId, {
 // --- 13–14. Delivery и вычисленная готовность ------------------------------
 await tasks.recordDelivery(taskA.taskId, {
   mode: 'PR', branchPushed: true,
-  prUrl: 'https://github.com/acme/auth-app/pull/42', prNumber: 42, ciStatus: 'PASSED',
+  prUrl: 'https://github.com/acme/auth-app/pull/42', prNumber: 42,
+})
+// CI-доказательство привязано к текущему HEAD задачи (§32).
+await tasks.recordCiEvidence(taskA.taskId, {
+  commitSha: (await tasks.getTask(taskA.taskId)).analysis.headSha,
+  conclusion: 'success',
+  workflowRunId: 'wf-e2e-1',
+  source: 'github-integration',
 })
 const finalVerdict = await quality.readiness(taskA.taskId)
 assert.deepEqual(finalVerdict.blockers, [], `Definition of Done: ${JSON.stringify(finalVerdict.blockers)}`)

@@ -42,6 +42,7 @@ await writeFile(join(repo, 'package.json'), JSON.stringify({ name: 'fixture', de
 await writeFile(join(repo, 'src', 'auth.js'), 'export function login() {\n  return true\n}\n')
 await writeFile(join(repo, 'test', 'auth.test.js'), 'assert(login())\nassert(logout())\n')
 await writeFile(join(repo, '.github', 'workflows', 'ci.yml'), 'name: ci\n')
+await writeFile(join(repo, '.github', 'CODEOWNERS'), 'src/** @backend\n')
 await writeFile(join(repo, 'dist.generated.js'), 'generated artifact\n')
 await commitAll(repo, 'init', identity)
 
@@ -267,6 +268,53 @@ await assert.rejects(
   await writeFile(join(workspace.path, 'test', 'auth.test.js'), 'assert(login())\nassert(loginRenamed())\nassert(logout())\n')
   await commitAll(workspace.path, 'restore tests', identity)
   await reviews.analyzeTask(task.taskId)
+}
+
+// --- 6в. Delivery-gates и CODEOWNERS (§30–§32) -----------------------------
+{
+  // Включаем командную политику доставки. CODEOWNERS в фикстуре покрывает
+  // src/** → изменение задевает владельцев.
+  await quality.setPolicy('demo', {
+    required: ['tests', 'review'],
+    checks: { tests: { argv: ['node', '-e', 'console.log("ok")'] } },
+    protectedAreas: ['.github/workflows/**'],
+    generatedFiles: ['*.generated.js'],
+    delivery: { requirePullRequest: true, requirePushedBranch: true, requireCI: true, requireCodeOwners: true },
+  })
+  await reviews.analyzeTask(task.taskId)
+  const verdict = await quality.readiness(task.taskId)
+  const ids = verdict.blockers.map(blocker => blocker.id)
+  assert.ok(ids.includes('DELIVERY_PR_REQUIRED'), `нет PR-гейта: ${ids.join(',')}`)
+  assert.ok(ids.includes('DELIVERY_PUSH_REQUIRED'))
+  assert.ok(ids.includes('CI_EVIDENCE_REQUIRED'))
+  assert.ok(ids.includes('CODEOWNERS_REVIEW_REQUIRED'), 'область владельцев требует человека')
+  assert.ok((await tasks.getTask(task.taskId)).analysis.affectedOwners.includes('@backend'))
+
+  const headNow = (await tasks.getTask(task.taskId)).analysis.headSha
+  await tasks.recordDelivery(task.taskId, { mode: 'PR', prUrl: 'https://github.com/acme/x/pull/5', prNumber: 5, branchPushed: true })
+  await tasks.recordCiEvidence(task.taskId, { commitSha: headNow, conclusion: 'success', workflowRunId: 'wf-1' })
+  await tasks.recordHumanApproval(task.taskId, { kind: 'CODEOWNERS', actorId: 'peter' })
+  const after = await quality.readiness(task.taskId)
+  const remaining = after.blockers.map(blocker => blocker.id)
+  for (const gate of ['DELIVERY_PR_REQUIRED', 'DELIVERY_PUSH_REQUIRED', 'CI_EVIDENCE_REQUIRED', 'CODEOWNERS_REVIEW_REQUIRED']) {
+    assert.ok(!remaining.includes(gate), `${gate} должен быть закрыт: ${remaining.join(',')}`)
+  }
+
+  // Новый коммит протухает и CI, и human-approval.
+  await writeFile(join(workspace.path, 'src', 'auth.js'), (await (await import('node:fs/promises')).readFile(join(workspace.path, 'src', 'auth.js'), 'utf8')) + '// touch\n')
+  await commitAll(workspace.path, 'post-approval touch', identity)
+  await reviews.analyzeTask(task.taskId)
+  const stale = (await quality.readiness(task.taskId)).blockers.map(blocker => blocker.id)
+  assert.ok(stale.includes('CI_EVIDENCE_STALE'), `CI обязан протухнуть: ${stale.join(',')}`)
+  assert.ok(stale.includes('CODEOWNERS_REVIEW_REQUIRED'), 'human-approval прошлого коммита не переносится')
+
+  // Возврат политики без delivery-требований для следующих блоков.
+  await quality.setPolicy('demo', {
+    required: ['tests', 'review'],
+    checks: { tests: { argv: ['node', '-e', 'console.log("ok")'] } },
+    protectedAreas: ['.github/workflows/**'],
+    generatedFiles: ['*.generated.js'],
+  })
 }
 
 // --- 7. APPROVED протухает вместе с headSha -------------------------------

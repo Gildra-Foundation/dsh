@@ -436,6 +436,21 @@ export function registerRuntimeRoutes(ctx, runtime = createRuntime()) {
       POST: async ({ body }) => ({ payload: { task: await tasks.recordDelivery(body.taskId, body) } }),
     }),
 
+    // CI-факты — только структурным evidence (§32); произвольный статус из
+    // body отклоняется на уровне модели.
+    route('/gildra/v1/tasks/ci-evidence', {
+      POST: async ({ body }) => ({ payload: { task: await tasks.recordCiEvidence(body.taskId, body) } }),
+    }),
+
+    route('/gildra/v1/tasks/human-approval', {
+      POST: async ({ body }) => {
+        if (body.human !== true) {
+          throw new RuntimeError('INVALID_INPUT', 'human-approval фиксируется только явным human-актором (human: true).')
+        }
+        return { payload: { task: await tasks.recordHumanApproval(body.taskId, body) } }
+      },
+    }),
+
     route('/gildra/v1/reviews/request', {
       POST: async ({ body }) => ({ statusCode: 201, payload: await reviews.requestReview(body.taskId, body) }),
     }),

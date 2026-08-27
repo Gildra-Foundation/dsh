@@ -18,6 +18,7 @@ import { qualityPolicyOf } from './quality.js'
 import { analyzeTaskDiff } from './diff-analyzer.js'
 import { analyzeModularity } from './modularity.js'
 import { analysisHash, requirementRevisions, revisionsMatch, signalFingerprint } from './provenance.js'
+import { ownersForFiles } from './repo-intel.js'
 import { git } from './gitx.js'
 
 const REVIEWS = 'reviews'
@@ -145,6 +146,10 @@ export function createReviewManager({ store, roots, projects, tasks, workspaces,
       dangerous: analysis.dangerous.slice(0, 20),
       importsOfChanged: analysis.importsOfChanged,
       changedFiles: analysis.files.slice(0, 100).map(file => file.path),
+      // Владельцы затронутых файлов (§30): вход для CODEOWNERS-gate.
+      affectedOwners: profile?.owners?.rules
+        ? ownersForFiles(profile.owners.rules, analysis.files.map(file => file.path))
+        : [],
       modularity: {
         checks: analysis.modularity?.checks ?? [],
         changedModules: analysis.modularity?.changedModules ?? [],

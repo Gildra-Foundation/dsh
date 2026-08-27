@@ -230,21 +230,41 @@ const tasks = createTaskManager({ store, roots, projects })
   assert.ok(ACKNOWLEDGEABLE_SIGNALS.includes('PROTECTED_AREA_CHANGE'))
 }
 
-// --- 8. CI-петля ограничена (§44) -----------------------------------------
+// --- 8. CI: только структурное evidence, петля ограничена (§32, §44) -------
 {
   const { task } = await tasks.createTask({ projectId: 'demo', title: 'CI loop', owner: 'alex' })
   await tasks.recordDelivery(task.taskId, { mode: 'PR', prUrl: 'https://github.com/acme/x/pull/7', prNumber: 7 })
+
+  // Произвольный статус из body не принимается вовсе (§32).
+  await assert.rejects(tasks.recordDelivery(task.taskId, { ciStatus: 'PASSED' }), /ci-evidence/)
+  await assert.rejects(tasks.recordCiEvidence(task.taskId, { conclusion: 'success' }), /commitSha/)
+  await assert.rejects(
+    tasks.recordCiEvidence(task.taskId, { commitSha: 'f'.repeat(40), conclusion: 'success' }),
+    /workflowRunId/,
+    'evidence без идентификатора workflow-run не принимается',
+  )
+
+  const sha = 'f'.repeat(40)
   for (let attempt = 1; attempt <= 3; attempt += 1) {
-    const after = await tasks.recordDelivery(task.taskId, { ciStatus: 'FAILED' })
+    const after = await tasks.recordCiEvidence(task.taskId, { commitSha: sha, conclusion: 'failure', workflowRunId: `run-${String(attempt)}` })
     assert.equal(after.failureKind, 'CI')
     assert.equal(after.status === 'BLOCKED', false, `попытка ${String(attempt)} ещё в лимите`)
   }
-  const exhausted = await tasks.recordDelivery(task.taskId, { ciStatus: 'FAILED' })
+  const exhausted = await tasks.recordCiEvidence(task.taskId, { commitSha: sha, conclusion: 'failure', workflowRunId: 'run-4' })
   assert.equal(exhausted.status, 'BLOCKED', 'после лимита CI-починок задача останавливается и ждёт человека')
   assert.match(exhausted.blockReason, /CI/)
 
+  // Evidence чужого коммита отклоняется, когда HEAD задачи известен.
+  await tasks.saveTask({ ...(await tasks.getTask(task.taskId)), analysis: { headSha: 'a'.repeat(40), signals: [] } })
+  await assert.rejects(
+    tasks.recordCiEvidence(task.taskId, { commitSha: 'b'.repeat(40), conclusion: 'success', workflowRunId: 'run-x' }),
+    error => error.code === 'CI_EVIDENCE_MISMATCH',
+  )
+  const green = await tasks.recordCiEvidence(task.taskId, { commitSha: 'a'.repeat(40), conclusion: 'success', workflowRunId: 'run-y', checkSuiteId: 'cs-1' })
+  assert.equal(green.delivery.ci.conclusion, 'success')
+  assert.equal(green.delivery.ci.workflowRunId, 'run-y')
+
   await assert.rejects(tasks.recordDelivery(task.taskId, { prUrl: 'http://insecure.example/pr/1' }), /https/)
-  await assert.rejects(tasks.recordDelivery(task.taskId, { ciStatus: 'GREENISH' }), /ciStatus/)
 }
 
 // --- 9. Миграция v1 → v2 --------------------------------------------------
