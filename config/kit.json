@@ -33,6 +33,7 @@
         "gildra-architecture",
         "gildra-clean-code",
         "gildra-code-review",
+        "gildra-adversarial-review",
         "gildra-performance-audit"
       ]
     },

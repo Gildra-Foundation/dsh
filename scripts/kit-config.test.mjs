@@ -144,7 +144,7 @@ assert.match(renderedProfilePatch, /title: Gildra Coding/)
 const presets = await managedAgentPresets(repoDir, manifest)
 assert.deepEqual(
   presets.map((preset) => preset.id),
-  ['engineering', 'gildra-architecture', 'gildra-clean-code', 'gildra-code-review', 'gildra-performance-audit'],
+  ['engineering', 'gildra-architecture', 'gildra-clean-code', 'gildra-code-review', 'gildra-adversarial-review', 'gildra-performance-audit'],
 )
 for (const preset of presets) {
   assert.match(preset.metadata, /^name: /m)
