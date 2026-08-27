@@ -74,10 +74,12 @@ const routeOf = path => ctx.routes.get(path)
 // Проект.
 const seed = join(base, 'seed')
 await git(['init', '-b', 'main', seed])
+await git(['-C', seed, 'config', 'core.autocrlf', 'false'])
 await writeFile(join(seed, 'app.txt'), 'v1\n')
 await commitAll(seed, 'initial', { name: 'Seed', email: 'seed@test' })
 const canonical = join(base, 'repos', 'demo.git')
 await git(['clone', '--bare', seed, canonical])
+await git(['-C', canonical, 'config', 'core.autocrlf', 'false'])
 
 {
   const created = await call(routeOf('/gildra/v1/projects'), requestFor({

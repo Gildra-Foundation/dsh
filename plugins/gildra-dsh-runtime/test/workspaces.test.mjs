@@ -26,11 +26,13 @@ const workspaces = createWorkspaceManager({ store, roots, projects, env: {} })
 // --- Канонический bare-репозиторий с историей на main ---------------------
 const seed = join(base, 'seed repo')
 await git(['init', '-b', 'main', seed])
+await git(['-C', seed, 'config', 'core.autocrlf', 'false'])
 await writeFile(join(seed, 'README.md'), '# demo\n')
 await writeFile(join(seed, 'shared.txt'), 'line-1\nline-2\nline-3\n')
 await commitAll(seed, 'initial', { name: 'Seed', email: 'seed@test' })
 const canonical = join(base, 'repos', 'demo.git')
 await git(['clone', '--bare', seed, canonical])
+await git(['-C', canonical, 'config', 'core.autocrlf', 'false'])
 
 const project = await projects.register({ projectId: 'demo', path: canonical })
 assert.equal(project.defaultBranch, 'main')
