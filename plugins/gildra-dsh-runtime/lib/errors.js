@@ -24,6 +24,7 @@ export const ERROR_CODES = Object.freeze({
   WORKSPACE_BUSY: 409,
   BRANCH_CHECKED_OUT: 409,
   MERGE_CONFLICT: 409,
+  MERGE_TARGET_MOVED: 409,
   SESSION_ORPHANED: 409,
   LIVE_PROCESSES: 409,
   // Слой AI-качества: готовность вычисляется, а не назначается; claims

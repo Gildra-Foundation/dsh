@@ -9,6 +9,7 @@
 // вычищенный env + hardening-флаги `-c`, которые перебивают любой repo-config
 // (командная строка имеет высший приоритет в git).
 
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { execFile } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -245,6 +246,7 @@ export async function branchExists(repoPath, branch) {
 }
 
 export async function addWorktree(repoPath, worktreePath, { branch, baseRef, existingBranch = false }) {
+  assertRepoMutationScope('worktree add')
   if (existingBranch) {
     await git(['-C', repoPath, 'worktree', 'add', worktreePath, branch])
     return
@@ -253,10 +255,12 @@ export async function addWorktree(repoPath, worktreePath, { branch, baseRef, exi
 }
 
 export async function removeWorktree(repoPath, worktreePath, { force = false } = {}) {
+  assertRepoMutationScope('worktree remove')
   await git(['-C', repoPath, 'worktree', 'remove', ...(force ? ['--force'] : []), worktreePath])
 }
 
 export async function pruneWorktrees(repoPath) {
+  assertRepoMutationScope('worktree prune')
   await git(['-C', repoPath, 'worktree', 'prune'], { allowFailure: true })
 }
 
@@ -281,12 +285,53 @@ export async function listWorktrees(repoPath) {
   return entries
 }
 
+// --- Инвариант repo-лока (§57 плана AI-качества) --------------------------
+// Мутации МЕТАДАННЫХ канонического репозитория (worktree add/remove/prune,
+// создание/удаление веток, CAS ссылок) обязаны идти под межпроцессным
+// repo-локом — иначе параллельные git-процессы правят одни файлы (на Windows
+// это гарантированно ломается). Дисциплину «взял лок» невозможно проверить
+// на ревью каждый раз, поэтому она закреплена в Runtime: withRepoLock входит
+// в этот scope, а мутирующие помощники ПАДАЮТ вне его. Новая canonical-
+// мутация без лока не пройдёт ни один тест, который её вызывает.
+//
+// Scope хранит контекст асинхронной цепочки (AsyncLocalStorage): он ничего
+// не знает про другие процессы — межпроцессность даёт сам лок, а scope лишь
+// доказывает, что код пришёл через него.
+const repoMutationScope = new AsyncLocalStorage()
+
+export function enterRepoMutationScope(context, action) {
+  return repoMutationScope.run(context ?? {}, action)
+}
+
+function assertRepoMutationScope(operation) {
+  if (repoMutationScope.getStore() === undefined) {
+    throw new RuntimeError('INTERNAL', `Внутренняя ошибка: canonical-мутация «${operation}» вызвана без repo-лока (withRepoLock). Это нарушение контракта §57.`, { operation })
+  }
+}
+
+// Первый родитель коммита: главный инструмент проверки «target двигался
+// только нашим merge-коммитом».
+export async function commitParent(repoPath, sha) {
+  const result = await git(['-C', repoPath, 'rev-parse', '--verify', '--quiet', `${sha}^1`], { allowFailure: true })
+  if (result.failed) return undefined
+  return result.stdout.trim() || undefined
+}
+
+// Атомарный compare-and-swap ссылки: git сам гарантирует, что ссылка будет
+// заменена, только если её текущее значение равно expectedOld.
+export async function updateRefCas(repoPath, ref, newSha, expectedOld) {
+  assertRepoMutationScope('update-ref')
+  const result = await git(['-C', repoPath, 'update-ref', `refs/heads/${ref}`, newSha, expectedOld], { allowFailure: true })
+  return !result.failed
+}
+
 export async function branchCheckedOutAt(repoPath, branch) {
   const worktrees = await listWorktrees(repoPath)
   return worktrees.find(entry => entry.branch === branch && !entry.bare)?.path
 }
 
 export async function deleteBranch(repoPath, branch, { force = false } = {}) {
+  assertRepoMutationScope('branch delete')
   await git(['-C', repoPath, 'branch', force ? '-D' : '-d', branch])
 }
 
@@ -365,12 +410,22 @@ export async function continueMergeCommit(worktreePath, message, identity = {}) 
 
 // Сетевые операции: ограниченные повторы с backoff. Ошибка аутентификации не
 // ретраится никогда — бесконечные попытки только блокируют аккаунт и висят.
+//
+// Refspec задан ЯВНО, потому что оба «удобных» варианта опасны или бесполезны:
+//   - `git clone --bare` не пишет remote.origin.fetch вовсе, и `fetch --all`
+//     обновлял только FETCH_HEAD — canonical main никогда не двигался, и
+//     upstream awareness для клонов был бы слеп (обнаружено тестом §56);
+//   - зеркальный refspec С `--prune` УДАЛЯЛ БЫ локальные session/* ветки,
+//     которых нет в origin (обнаружено тем же тестом).
+// Поэтому: явный `+refs/heads/*:refs/heads/*` БЕЗ prune — origin-ветки
+// обновляются принудительно, локальные session-ветки не удаляются никогда, а
+// ветку, извлечённую в чей-то worktree, git отказывается трогать сам.
 export async function fetchOrigin(repoPath, { attempts = 3, backoffMs = 1000, sleep } = {}) {
   const wait = sleep ?? (ms => new Promise(resolveTimer => setTimeout(resolveTimer, ms)))
   let lastError
   for (let attempt = 1; attempt <= attempts; attempt++) {
     try {
-      await git(['-C', repoPath, 'fetch', '--all', '--prune'], { timeoutMs: NETWORK_TIMEOUT_MS })
+      await git(['-C', repoPath, 'fetch', 'origin', '+refs/heads/*:refs/heads/*'], { timeoutMs: NETWORK_TIMEOUT_MS })
       return { fetched: true, attempts: attempt }
     } catch (error) {
       lastError = error

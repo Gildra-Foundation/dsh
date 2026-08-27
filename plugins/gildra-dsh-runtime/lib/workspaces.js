@@ -20,6 +20,7 @@ import {
   aheadBehind,
   branchCheckedOutAt,
   branchExists,
+  commitParent,
   continueMergeCommit,
   currentBranch,
   deleteBranch,
@@ -28,8 +29,10 @@ import {
   listWorktrees,
   mergeRef,
   pruneWorktrees,
+  enterRepoMutationScope,
   removeWorktree,
   revParse,
+  updateRefCas,
 } from './gitx.js'
 
 const WORKSPACES = 'workspaces'
@@ -83,7 +86,9 @@ export function createWorkspaceManager({ store, roots, projects, leases, process
     if (typeof projectId !== 'string' || projectId === '') {
       throw new RuntimeError('INTERNAL', 'Внутренняя ошибка: лок репозитория без projectId.', {})
     }
-    return store.withLock(`repo-${projectId}`, action, { timeoutMs: REPO_LOCK_TIMEOUT_MS })
+    // Лок + scope: межпроцессное исключение даёт mkdir-лок, а scope (§57)
+    // доказывает мутирующим git-помощникам, что вызов пришёл через него.
+    return store.withLock(`repo-${projectId}`, () => enterRepoMutationScope({ projectId }, action), { timeoutMs: REPO_LOCK_TIMEOUT_MS })
   }
 
   async function listRecords(filter = {}) {
@@ -305,7 +310,11 @@ export function createWorkspaceManager({ store, roots, projects, leases, process
   // конфликтные маркеры сохраняются для ревью.
   async function startMerge({ projectId, sourceBranch, targetBranch, policy = {} }) {
     const project = projects.assertUsable ? projects.assertUsable(await projects.get(projectId)) : await projects.get(projectId)
-    if (!(await branchExists(project.canonicalRepoPath, sourceBranch))) {
+    // Источник закрепляется НЕИЗМЕНЯЕМЫМ коммитом в момент старта (§56):
+    // fetch или перехват, сдвинувший ветку-источник посреди операции, не
+    // изменит уже валидированное содержимое merge.
+    const sourceSha = await revParse(project.canonicalRepoPath, `refs/heads/${sourceBranch}`)
+    if (!sourceSha) {
       throw new RuntimeError('INVALID_INPUT', `Ветка-источник «${sourceBranch}» не найдена.`, { sourceBranch })
     }
     const target = targetBranch ?? project.defaultBranch
@@ -340,7 +349,7 @@ export function createWorkspaceManager({ store, roots, projects, leases, process
     }
     // Свежесть базы (§20): показываем, насколько источник отстал от цели, и
     // не выдаём старую базу за актуальную.
-    const counts = await aheadBehind(project.canonicalRepoPath, target, sourceBranch)
+    const counts = await aheadBehind(project.canonicalRepoPath, target, sourceSha)
     if (effectivePolicy.requireCommits && counts.ahead === 0) {
       throw new RuntimeError('INVALID_INPUT', `Ветка «${sourceBranch}» не содержит новых коммитов относительно «${target}».`, {
         sourceBranch, targetBranch: target, ...counts,
@@ -356,6 +365,7 @@ export function createWorkspaceManager({ store, roots, projects, leases, process
       mergeId,
       projectId,
       sourceBranch,
+      sourceSha,
       targetBranch: target,
       path,
       status: 'PREPARING',
@@ -377,7 +387,9 @@ export function createWorkspaceManager({ store, roots, projects, leases, process
       await store.write(MERGES, mergeId, record)
       await operation?.advance('MERGING', { path })
 
-      const result = await mergeRef(path, sourceBranch, {
+      // Сливается закреплённый SHA, а не имя ветки: имя остаётся только в
+      // сообщении коммита.
+      const result = await mergeRef(path, sourceSha, {
         message: `Merge ${sourceBranch} into ${target} (Gildra)`,
       })
       if (!result.merged) {
@@ -405,6 +417,33 @@ export function createWorkspaceManager({ store, roots, projects, leases, process
   async function finalizeMerge(project, record, operation) {
     await operation?.advance('MERGE_COMMITTED')
     const targetAfter = await revParse(project.canonicalRepoPath, record.targetBranch)
+    // §56, доказано экспериментом: если target сдвинули между worktree add и
+    // merge-коммитом (например fetch принёс чужой коммит X), HEAD worktree
+    // резолвится в НОВЫЙ tip, а дерево остаётся старым — merge-коммит
+    // сохраняет X в истории, но МОЛЧА выбрасывает его содержимое. Ловим это
+    // по первому родителю: у честного merge он равен targetBefore. Плохой
+    // коммит снимается атомарным CAS (цель возвращается на чужой tip), а
+    // операция падает честной ошибкой вместо тихой потери данных.
+    const parentOfMerge = targetAfter ? await commitParent(project.canonicalRepoPath, targetAfter) : undefined
+    if (record.targetBefore && targetAfter && parentOfMerge !== record.targetBefore) {
+      await withRepoLock(record.projectId, () => updateRefCas(project.canonicalRepoPath, record.targetBranch, parentOfMerge, targetAfter))
+      await finalizeMergeWorktree(project, record, { force: true })
+      const failed = {
+        ...record,
+        status: 'FAILED',
+        targetMoved: true,
+        error: `Ветка «${record.targetBranch}» была сдвинута другой операцией во время merge; merge отменён, чужие изменения сохранены.`,
+      }
+      await store.write(MERGES, record.mergeId, failed)
+      if (operation) await operation.fail('MERGE_TARGET_MOVED')
+      else if (journal && record.operationId) await journal.forget(record.operationId)
+      await appendAudit(roots.stateRoot, 'merge.target-moved', {
+        mergeId: record.mergeId, projectId: record.projectId, targetBranch: record.targetBranch,
+      })
+      throw new RuntimeError('MERGE_TARGET_MOVED', `Целевая ветка «${record.targetBranch}» изменилась во время merge (например, fetch). Обновите базу и повторите объединение.`, {
+        mergeId: record.mergeId, targetBefore: record.targetBefore, movedTo: parentOfMerge,
+      })
+    }
     await finalizeMergeWorktree(project, record)
     const completed = { ...record, status: 'COMPLETED', targetAfter, completedAt: new Date().toISOString() }
     await store.write(MERGES, record.mergeId, completed)
@@ -485,9 +524,12 @@ export function createWorkspaceManager({ store, roots, projects, leases, process
     return rows
   }
 
-  async function finalizeMergeWorktree(project, record) {
+  async function finalizeMergeWorktree(project, record, { force = false } = {}) {
     await withRepoLock(record.projectId, async () => {
-      await removeWorktree(project.canonicalRepoPath, record.path).catch(() => {})
+      // force нужен аварийной ветке MERGE_TARGET_MOVED: после CAS-отката
+      // цель указывает не на HEAD worktree, дерево выглядит «грязным», и
+      // remove без force тихо оставил бы worktree держать target извлечённой.
+      await removeWorktree(project.canonicalRepoPath, record.path, { force }).catch(() => {})
       await rm(record.path, { recursive: true, force: true }).catch(() => {})
       await pruneWorktrees(project.canonicalRepoPath)
     })

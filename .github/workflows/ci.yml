@@ -65,6 +65,7 @@ jobs:
           node plugins/gildra-dsh-runtime/test/review.test.mjs
           node plugins/gildra-dsh-runtime/test/upstream.test.mjs
           node plugins/gildra-dsh-runtime/test/context.test.mjs
+          node plugins/gildra-dsh-runtime/test/fetch-race.test.mjs
           node plugins/gildra-dsh-runtime/test/multiprocess.test.mjs
           node plugins/gildra-dsh-runtime/test/stress.test.mjs
           node plugins/gildra-dsh-runtime/test/workspaces.test.mjs
@@ -160,6 +161,7 @@ jobs:
           node plugins/gildra-dsh-runtime/test/review.test.mjs
           node plugins/gildra-dsh-runtime/test/upstream.test.mjs
           node plugins/gildra-dsh-runtime/test/context.test.mjs
+          node plugins/gildra-dsh-runtime/test/fetch-race.test.mjs
           node plugins/gildra-dsh-runtime/test/multiprocess.test.mjs
           node plugins/gildra-dsh-runtime/test/stress.test.mjs
           node plugins/gildra-dsh-runtime/test/workspaces.test.mjs
