@@ -140,6 +140,31 @@ const tasks = createTaskManager({ store, roots, projects })
 
   await assert.rejects(teamTasks.recordOverlapDecision(task.taskId, { decision: 'SHRUG' }), /Решение по пересечению/)
   await teamTasks.recordOverlapDecision(task.taskId, { decision: 'COORDINATE', note: 'Согласовано с Peter в чате: он не трогает выдачу.' })
+  assert.equal(typeof (await teamTasks.getTask(task.taskId)).overlapDecision.overlapFingerprint, 'string')
+
+  // §14: между решением и стартом появилась НОВАЯ чужая задача в той же
+  // области — старое COORDINATE её не покрывает.
+  await shared.publishTaskSummary(sanitizeTaskSummary({
+    projectId: 'demo', taskId: 'task-kim-remote', title: 'Auth cache', owner: 'kim',
+    status: 'IMPLEMENTING',
+    claims: [{ type: 'PATH', area: 'src/shared-auth/**', mode: 'CLAIMED' }],
+  }))
+  await assert.rejects(
+    teamTasks.transition(task.taskId, 'IMPLEMENTING'),
+    error => error.code === 'STALE_OVERLAP_DECISION',
+    'новое пересечение требует нового решения',
+  )
+  // Смена СВОЕГО плана — тоже смена контекста решения.
+  await teamTasks.recordOverlapDecision(task.taskId, { decision: 'COORDINATE', note: 'Пересогласовано с Kim и Peter: делим кэш и выдачу.' })
+  await teamTasks.setModulePlan(task.taskId, {
+    modulesToChange: [{ module: 'auth.service', reason: 'меняем выдачу' }, { module: 'auth.cache', reason: 'добавился кэш' }],
+  })
+  await assert.rejects(
+    teamTasks.transition(task.taskId, 'IMPLEMENTING'),
+    error => error.code === 'STALE_OVERLAP_DECISION',
+    'новый Module Change Plan протухает решение',
+  )
+  await teamTasks.recordOverlapDecision(task.taskId, { decision: 'COORDINATE', note: 'Финальное согласование по обоим модулям.' })
   const started = await teamTasks.transition(task.taskId, 'IMPLEMENTING')
   assert.equal(started.status, 'IMPLEMENTING')
   assert.equal(started.overlapDecision.decision, 'COORDINATE')

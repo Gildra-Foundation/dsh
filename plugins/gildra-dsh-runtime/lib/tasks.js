@@ -17,7 +17,7 @@ import { appendAudit } from './audit.js'
 import { CURRENT_SCHEMA_VERSION } from './migrations.js'
 import { detectOverlaps, detectSemanticOverlaps, normalizeClaims } from './claims.js'
 import { sanitizeTaskSummary } from './team.js'
-import { signalFingerprint } from './provenance.js'
+import { signalFingerprint, stableHash } from './provenance.js'
 
 const TASKS = 'tasks'
 
@@ -80,6 +80,20 @@ function actor(raw) {
 export const OVERLAP_DECISIONS = Object.freeze(['COORDINATE', 'CONTINUE', 'WAIT', 'TRANSFER_OWNERSHIP'])
 
 const TEAM_SYNC = 'team-sync'
+
+// Отпечаток КОНТЕКСТА пересечения (§14): сами пересечения + свои claims и
+// план + ревизии чужих задач. Решение COORDINATE действительно ровно для
+// этого отпечатка: новая задача, чужая или своя claim, новый план или
+// восстановившийся провайдер с новыми данными меняют отпечаток.
+function overlapContextFingerprint({ overlaps, semantic, record, others }) {
+  return stableHash({
+    overlaps: overlaps.map(entry => ({ taskId: entry.taskId, area: entry.area, mode: entry.mode, kind: entry.kind })),
+    semantic: semantic.map(entry => ({ taskId: entry.taskId, sharedModules: entry.sharedModules })),
+    claims: record.claims ?? [],
+    plan: record.modulePlan ?? null,
+    relatedTaskRevisions: Object.fromEntries(others.map(entry => [entry.taskId, entry.revision ?? entry.updatedAt ?? null])),
+  })
+}
 
 export function createTaskManager({ store, roots, projects, team, repoIntel }) {
   // Реальное состояние синхронизации (§15): UI не имеет права показывать
@@ -285,10 +299,21 @@ export function createTaskManager({ store, roots, projects, team, repoIntel }) {
         overlaps = []
         semantic = []
       }
-      if ((overlaps.length > 0 || semantic.length > 0) && !record.overlapDecision) {
-        throw new RuntimeError('OVERLAP_DECISION_REQUIRED', 'Работа пересекается с активными задачами команды — зафиксируйте решение (COORDINATE/CONTINUE/WAIT/TRANSFER_OWNERSHIP) прежде чем писать код.', {
-          taskId, overlaps, semantic,
-        })
+      if (overlaps.length > 0 || semantic.length > 0) {
+        const others = await foreignTasks(record.projectId, taskId)
+        const fingerprint = overlapContextFingerprint({ overlaps, semantic, record, others })
+        if (!record.overlapDecision) {
+          throw new RuntimeError('OVERLAP_DECISION_REQUIRED', 'Работа пересекается с активными задачами команды — зафиксируйте решение (COORDINATE/CONTINUE/WAIT/TRANSFER_OWNERSHIP) прежде чем писать код.', {
+            taskId, overlaps, semantic, overlapFingerprint: fingerprint,
+          })
+        }
+        // §14: старое решение не действует бессрочно — только для ТОГО
+        // контекста, в котором принималось.
+        if (record.overlapDecision.overlapFingerprint !== fingerprint) {
+          throw new RuntimeError('STALE_OVERLAP_DECISION', 'Командный контекст изменился после решения по пересечению (новая задача, чужая claim или новый план) — примите решение заново.', {
+            taskId, overlaps, semantic, overlapFingerprint: fingerprint,
+          })
+        }
       }
     }
     // Возврат в работу очищает причины прошлой остановки.
@@ -405,8 +430,20 @@ export function createTaskManager({ store, roots, projects, team, repoIntel }) {
     if (!OVERLAP_DECISIONS.includes(decision)) {
       throw new RuntimeError('INVALID_INPUT', `Решение по пересечению: ${OVERLAP_DECISIONS.join('/')}.`, { allowed: OVERLAP_DECISIONS })
     }
+    // Решение привязывается к ТЕКУЩЕМУ контексту пересечения (§14).
+    const plannedModules = [
+      ...(record.modulePlan?.modulesToChange ?? []).map(entry => entry.module),
+      ...(record.modulePlan?.newModules ?? []).map(entry => entry.id),
+    ]
+    const overlaps = await overlapsFor(record.projectId, { claims: record.claims ?? [], modules: plannedModules, excludeTaskId: taskId })
+    const semantic = await semanticOverlapsFor(record.projectId, { modules: plannedModules, excludeTaskId: taskId })
+    const others = await foreignTasks(record.projectId, taskId)
     record.overlapDecision = {
       decision,
+      overlapFingerprint: overlapContextFingerprint({ overlaps, semantic, record, others }),
+      teamRevision: (await teamSyncState(record.projectId))?.lastRevision,
+      claimsHash: stableHash(record.claims ?? []),
+      modulePlanHash: stableHash(record.modulePlan ?? null),
       ...(note ? { note: String(note).slice(0, 500) } : {}),
       createdAt: new Date().toISOString(),
     }
