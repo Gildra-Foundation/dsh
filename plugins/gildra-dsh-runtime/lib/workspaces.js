@@ -76,6 +76,12 @@ export function createWorkspaceManager({ store, roots, projects, leases, process
   // git, и на медленной машине с десятками сессий очередь должна ждать, а не
   // отказывать. Очередь всё же конечна — это осознанный предсказуемый отказ.
   function withRepoLock(projectId, action) {
+    // Опечатка в имени поля дала бы лок «repo-undefined»: он бы не падал, но
+    // сериализовал бы все проекты между собой и НЕ защищал бы нужный. Такую
+    // ошибку тесты не заметят, поэтому проверяем явно.
+    if (typeof projectId !== 'string' || projectId === '') {
+      throw new RuntimeError('INTERNAL', 'Внутренняя ошибка: лок репозитория без projectId.', {})
+    }
     return store.withLock(`repo-${projectId}`, action, { timeoutMs: REPO_LOCK_TIMEOUT_MS })
   }
 
