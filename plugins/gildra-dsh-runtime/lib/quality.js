@@ -335,6 +335,16 @@ export function createQualityManager({ store, roots, projects, tasks, workspaces
       }
     }
 
+    // Архитектурные gates (§8): FAILED-чек — блокер до устранения; никакое
+    // объяснение BLOCK-код не гасит (в отличие от REVIEW-сигналов ниже).
+    for (const check of task.analysis?.modularity?.checks ?? []) {
+      if (check.status === 'FAILED') {
+        const codes = (check.findings ?? []).map(finding => finding.code).join(', ')
+        blockers.push({ id: `ARCH:${check.id}`, message: `Архитектурный gate «${check.id}» не пройден: ${codes}. Устраните — объяснением это не закрывается.` })
+      }
+      facts.push({ kind: 'architecture', id: check.id, status: check.status })
+    }
+
     // Сигналы diff-анализа: каждый либо отсутствует, либо явно объяснён (§37).
     const signals = task.analysis?.signals ?? []
     const acknowledged = new Set((task.acknowledgments ?? []).map(entry => entry.signal))

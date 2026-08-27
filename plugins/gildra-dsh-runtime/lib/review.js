@@ -14,6 +14,8 @@ import { appendAudit } from './audit.js'
 import { CURRENT_SCHEMA_VERSION } from './migrations.js'
 import { qualityPolicyOf } from './quality.js'
 import { analyzeTaskDiff } from './diff-analyzer.js'
+import { analyzeModularity } from './modularity.js'
+import { git } from './gitx.js'
 
 const REVIEWS = 'reviews'
 
@@ -59,6 +61,21 @@ export function createReviewManager({ store, roots, projects, tasks, workspaces,
     return record
   }
 
+  // Дерево репозитория на конкретном SHA: files + ленивое чтение.
+  async function treeAt(workspacePath, sha) {
+    const { stdout } = await git(['-C', workspacePath, 'ls-tree', '-r', '--name-only', sha])
+    const files = stdout.split('\n').filter(Boolean)
+    const cache = new Map()
+    const read = async path => {
+      if (cache.has(path)) return cache.get(path)
+      const shown = await git(['-C', workspacePath, 'show', `${sha}:${path}`], { allowFailure: true })
+      const value = shown.failed ? undefined : shown.stdout
+      cache.set(path, value)
+      return value
+    }
+    return { files, read }
+  }
+
   // Diff-анализ задачи: считается здесь, потому что его потребители — пакет
   // reviewer'а и сигналы readiness. Результат сохраняется на задаче.
   async function analyzeTask(taskId) {
@@ -75,6 +92,26 @@ export function createReviewManager({ store, roots, projects, tasks, workspaces,
       policy,
       profile,
     })
+    // Modularity Analyzer (§7–§8): граф «до/после», сигналы и архитектурные
+    // gates. Сигналы вливаются в общий список — REVIEW-коды гасятся
+    // acknowledgment'ом, BLOCK-коды блокируют readiness до устранения.
+    const before = await treeAt(workspace.path, analysis.baseSha)
+    const after = await treeAt(workspace.path, 'HEAD')
+    const modularity = await analyzeModularity({
+      filesBefore: before.files,
+      readBefore: before.read,
+      filesAfter: after.files,
+      readAfter: after.read,
+      changedFiles: analysis.files.map(file => file.path),
+      addedByFile: analysis.addedByFile,
+      architecture: project.qualityPolicy?.architecture,
+      modulePlan: task.modulePlan,
+      analysisTruncated: analysis.truncated === true,
+    })
+    analysis.modularity = modularity
+    for (const signal of modularity.signals) {
+      analysis.signals.push({ kind: signal.code, detail: signal.detail })
+    }
     // На задаче — компактная сводка; полные списки строк не тянем.
     const summary = {
       baseSha: analysis.baseSha,
@@ -88,6 +125,11 @@ export function createReviewManager({ store, roots, projects, tasks, workspaces,
       dangerous: analysis.dangerous.slice(0, 20),
       importsOfChanged: analysis.importsOfChanged,
       changedFiles: analysis.files.slice(0, 100).map(file => file.path),
+      modularity: {
+        checks: analysis.modularity?.checks ?? [],
+        changedModules: analysis.modularity?.changedModules ?? [],
+        preexisting: (analysis.modularity?.preexisting ?? []).length,
+      },
       analyzedAt: analysis.analyzedAt,
     }
     await tasks.saveTask({ ...(await tasks.getTask(taskId)), analysis: summary })
