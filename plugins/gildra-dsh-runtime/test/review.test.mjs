@@ -321,7 +321,18 @@ await assert.rejects(
   const headNow = (await tasks.getTask(task.taskId)).analysis.headSha
   await tasks.recordDelivery(task.taskId, { mode: 'PR', prUrl: 'https://github.com/acme/x/pull/5', prNumber: 5, branchPushed: true })
   await tasks.recordCiEvidence(task.taskId, { commitSha: headNow, conclusion: 'success', workflowRunId: 'wf-1' })
-  await tasks.recordHumanApproval(task.taskId, { kind: 'CODEOWNERS', actorId: 'peter' })
+  // §6: слово «human» не работает — нужна одноразовая capability из
+  // интерактивного канала (здесь его роль играет прямой issue).
+  await assert.rejects(
+    tasks.recordHumanApproval(task.taskId, { kind: 'CODEOWNERS', actorId: 'peter' }),
+    error => error.code === 'CAPABILITY_REQUIRED',
+  )
+  const humanCap = await capabilities.issue({
+    role: 'HUMAN_ADMIN', scope: 'human:CODEOWNERS', taskId: task.taskId,
+    headSha: (await tasks.getTask(task.taskId)).analysis.headSha,
+  })
+  await capabilities.consume(humanCap.capability, { role: 'HUMAN_ADMIN', scope: 'human:CODEOWNERS', taskId: task.taskId })
+  await tasks.recordHumanApproval(task.taskId, { kind: 'CODEOWNERS', actorId: 'peter', verifiedHuman: true })
   const after = await quality.readiness(task.taskId)
   const remaining = after.blockers.map(blocker => blocker.id)
   for (const gate of ['DELIVERY_PR_REQUIRED', 'DELIVERY_PUSH_REQUIRED', 'CI_EVIDENCE_REQUIRED', 'CODEOWNERS_REVIEW_REQUIRED']) {

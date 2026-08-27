@@ -344,7 +344,7 @@ export function registerRuntimeRoutes(ctx, runtime = createRuntime()) {
     }),
 
     // Маршруты слоя качества — в собственном модуле (см. его шапку).
-    ...registerQualityRoutes(route, { projects, workspaces, tasks, repoIntel, quality, reviews, upstream, contextBuilder, team: runtime.team }),
+    ...registerQualityRoutes(route, { projects, workspaces, tasks, repoIntel, quality, reviews, upstream, contextBuilder, team: runtime.team, capabilities: runtime.capabilities }),
 
     route('/gildra/v1/recovery/scan', {
       POST: async () => ({ payload: { report: await sessions.scanForRecovery() } }),

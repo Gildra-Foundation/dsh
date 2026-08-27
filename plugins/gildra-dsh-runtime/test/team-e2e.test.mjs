@@ -268,7 +268,14 @@ async function driveToReady(rt, task, ws, reviewerName) {
   // может не быть; approve фиксируем при необходимости.
   const verdictBefore = await rt.quality.readiness(task.taskId)
   if (verdictBefore.blockers.some(blocker => blocker.id === 'CODEOWNERS_REVIEW_REQUIRED')) {
-    await rt.tasks.recordHumanApproval(task.taskId, { kind: 'CODEOWNERS', actorId: 'security-team-human' })
+    // Интерактивный канал (§6): host выдаёт одноразовую capability, действие
+    // фиксируется после её расхода.
+    const humanCap = await rt.capabilities.issue({
+      role: 'HUMAN_ADMIN', scope: 'human:CODEOWNERS', taskId: task.taskId,
+      headSha: (await rt.tasks.getTask(task.taskId)).analysis.headSha,
+    })
+    await rt.capabilities.consume(humanCap.capability, { role: 'HUMAN_ADMIN', scope: 'human:CODEOWNERS', taskId: task.taskId })
+    await rt.tasks.recordHumanApproval(task.taskId, { kind: 'CODEOWNERS', actorId: 'security-team-human', verifiedHuman: true })
   }
   const verdict = await rt.quality.readiness(task.taskId)
   assert.deepEqual(verdict.blockers, [], `DoD ${task.taskId}: ${JSON.stringify(verdict.blockers)}`)

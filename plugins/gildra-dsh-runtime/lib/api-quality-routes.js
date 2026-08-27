@@ -9,7 +9,7 @@
 import { RuntimeError } from './errors.js'
 import { dirtyFiles } from './gitx.js'
 
-export function registerQualityRoutes(route, { projects, workspaces, tasks, repoIntel, quality, reviews, upstream, contextBuilder, team }) {
+export function registerQualityRoutes(route, { projects, workspaces, tasks, repoIntel, quality, reviews, upstream, contextBuilder, team, capabilities }) {
   return [
   // --- Слой AI-качества (§65): repository intelligence, quality, review --
 
@@ -69,12 +69,18 @@ export function registerQualityRoutes(route, { projects, workspaces, tasks, repo
       // иначе — writer, которому строгие сигналы гасить нельзя.
       let verifiedActor
       if (typeof body.capability === 'string') {
+        // Сначала пробуем как reviewer-capability, затем как human-capability
+        // на acknowledgment; слово «human: true» не значит ничего.
         verifiedActor = await reviews.actorForCapability(body.taskId, body.capability)
         if (!verifiedActor) {
-          throw new RuntimeError('WRITER_REVIEWER_CONFLICT', 'Capability не соответствует ни одному review этой задачи.', { taskId: body.taskId })
+          const human = await capabilities.consume(body.capability, {
+            role: 'HUMAN_ADMIN', scope: 'human:ACKNOWLEDGE', taskId: body.taskId,
+          }).catch(() => undefined)
+          if (human) verifiedActor = { type: 'HUMAN', id: body.actorId }
         }
-      } else if (body.human === true) {
-        verifiedActor = { type: 'HUMAN', id: body.actorId }
+        if (!verifiedActor) {
+          throw new RuntimeError('CAPABILITY_INVALID', 'Capability не соответствует ни review этой задачи, ни human-каналу.', { reason: 'SCOPE', taskId: body.taskId })
+        }
       }
       return { payload: { task: await tasks.acknowledgeSignal(body.taskId, { ...body, verifiedActor }) } }
     },
@@ -123,10 +129,17 @@ export function registerQualityRoutes(route, { projects, workspaces, tasks, repo
 
   route('/gildra/v1/tasks/human-approval', {
     POST: async ({ body }) => {
-      if (body.human !== true) {
-        throw new RuntimeError('INVALID_INPUT', 'human-approval фиксируется только явным human-актором (human: true).')
-      }
-      return { payload: { task: await tasks.recordHumanApproval(body.taskId, body) } }
+      // §6: одноразовая HumanActionCapability, scoped на действие и задачу,
+      // привязанная к текущему HEAD. Issue-канала в /gildra/v1 нет — его
+      // вызывает интерактивный слой приложения.
+      const current = await tasks.getTask(body.taskId)
+      await capabilities.consume(body.capability, {
+        role: 'HUMAN_ADMIN',
+        scope: `human:${String(body.kind ?? '')}`,
+        taskId: body.taskId,
+        ...(current.analysis?.headSha ? { headSha: current.analysis.headSha } : {}),
+      })
+      return { payload: { task: await tasks.recordHumanApproval(body.taskId, { ...body, verifiedHuman: true }) } }
     },
   }),
 

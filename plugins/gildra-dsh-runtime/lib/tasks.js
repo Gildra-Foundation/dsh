@@ -501,14 +501,18 @@ export function createTaskManager({ store, roots, projects, team, repoIntel }) {
     return updated
   }
 
-  // Human-approval (§30, §33): фиксация человеческого решения (CODEOWNERS,
-  // protected-область). Внутри Unix-границы доверия «человек» — это явный
-  // human-актор вызова; крипто-подтверждения личности здесь нет и не
-  // обещается (см. docs/modularity.md).
-  async function recordHumanApproval(taskId, { kind, actorId, note }) {
+  // Human-approval (§6 плана authority): фиксируется ТОЛЬКО после расхода
+  // одноразовой HumanActionCapability, выданной интерактивным каналом
+  // приложения. Флаг {"human": true} доказательством не является и не
+  // принимается. verifiedHuman обязан прийти от слоя, который расходовал
+  // capability (API/host) — сама задача ей не управляет.
+  async function recordHumanApproval(taskId, { kind, actorId, note, verifiedHuman }) {
     const record = await getTask(taskId)
     const approvalKind = String(kind ?? '').slice(0, 60)
     if (approvalKind === '') throw new RuntimeError('INVALID_INPUT', 'Укажите kind human-approval (например CODEOWNERS).')
+    if (verifiedHuman !== true) {
+      throw new RuntimeError('CAPABILITY_REQUIRED', 'Human-approval фиксируется только по одноразовой HumanActionCapability из интерактивного канала — слово «я человек» не принимается.', { taskId, kind: approvalKind })
+    }
     record.humanApprovals = [
       ...(record.humanApprovals ?? []).filter(entry => entry.kind !== approvalKind),
       {
