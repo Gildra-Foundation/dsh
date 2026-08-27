@@ -61,6 +61,7 @@ jobs:
           node plugins/gildra-dsh-runtime/test/projects.test.mjs
           node plugins/gildra-dsh-runtime/test/repo-intel.test.mjs
           node plugins/gildra-dsh-runtime/test/tasks.test.mjs
+          node plugins/gildra-dsh-runtime/test/quality.test.mjs
           node plugins/gildra-dsh-runtime/test/multiprocess.test.mjs
           node plugins/gildra-dsh-runtime/test/stress.test.mjs
           node plugins/gildra-dsh-runtime/test/workspaces.test.mjs
@@ -152,6 +153,7 @@ jobs:
           node plugins/gildra-dsh-runtime/test/projects.test.mjs
           node plugins/gildra-dsh-runtime/test/repo-intel.test.mjs
           node plugins/gildra-dsh-runtime/test/tasks.test.mjs
+          node plugins/gildra-dsh-runtime/test/quality.test.mjs
           node plugins/gildra-dsh-runtime/test/multiprocess.test.mjs
           node plugins/gildra-dsh-runtime/test/stress.test.mjs
           node plugins/gildra-dsh-runtime/test/workspaces.test.mjs

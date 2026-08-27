@@ -22,6 +22,7 @@
 // «Известные ограничения».
 
 import { execFile, spawn } from 'node:child_process'
+import { open } from 'node:fs/promises'
 import { basename } from 'node:path'
 import { promisify } from 'node:util'
 
@@ -284,7 +285,7 @@ export function createProcessManager({ store, roots, env = process.env, backend 
     return rows
   }
 
-  async function spawnInSession({ sessionId, workspaceId, cwd, env: childEnv, role = 'task' }, command, args = []) {
+  async function spawnInSession({ sessionId, workspaceId, cwd, env: childEnv, role = 'task', stdio, onExit }, command, args = []) {
     // Лимит (§35) проверяется под локом сессии: два параллельных spawn иначе
     // прошли бы проверку одновременно и вместе перевалили бы за лимит.
     return store.withLock(sessionLock(sessionId), async () => {
@@ -300,19 +301,21 @@ export function createProcessManager({ store, roots, env = process.env, backend 
       const child = spawn(command, args, {
         cwd,
         env: childEnv,
-        stdio: 'ignore',
+        stdio: stdio ?? 'ignore',
         windowsHide: true,
         ...backend.spawnOptions(),
       })
       child.unref()
       // Обработчик вешаем сразу после spawn: короткоживущий процесс успел бы
       // выстрелить 'exit' до того, как мы допишем запись, и запись осталась бы
-      // сиротой.
+      // сиротой. onExit по той же причине подписывается здесь, а не в
+      // вызывающем коде: там он мог бы опоздать к моментальному выходу.
       let exited = false
-      child.once('exit', () => {
+      child.once('exit', (code, signal) => {
         exited = true
         children.delete(procId)
         void store.delete(PROCESSES, procId).catch(() => {})
+        if (typeof onExit === 'function') onExit(code, signal)
       })
       if (!Number.isInteger(child.pid)) {
         // Ошибка запуска придёт событием error; регистрировать нечего.
@@ -410,8 +413,49 @@ export function createProcessManager({ store, roots, env = process.env, backend 
     return { terminated, survived, skipped, results }
   }
 
+  // Управляемый запуск «до завершения» для verification-команд (§67 плана
+  // AI-качества): ТОТ ЖЕ путь регистрации/лимитов/terminate, что и у
+  // dev-серверов, — второго механизма запуска процессов не существует.
+  // stdout+stderr пишутся в лог-файл (state не раздувается), возвращается
+  // фактический exit code; по таймауту процесс завершается штатным terminate
+  // (TERM → KILL group), а не голым kill по PID.
+  async function runManaged({ sessionId, workspaceId, cwd, env: childEnv, role = 'verify', logPath, timeoutMs = 600_000 }, command, args = []) {
+    const logHandle = logPath ? await open(logPath, 'w', 0o600) : undefined
+    let settleExit
+    const exitPromise = new Promise(resolve => { settleExit = resolve })
+    let spawned
+    try {
+      spawned = await spawnInSession({
+        sessionId,
+        workspaceId,
+        cwd,
+        env: childEnv,
+        role,
+        stdio: logHandle ? ['ignore', logHandle.fd, logHandle.fd] : 'ignore',
+        onExit: (code, signal) => settleExit({ code, signal }),
+      }, command, args)
+    } catch (error) {
+      await logHandle?.close().catch(() => {})
+      throw error
+    }
+    let timedOut = false
+    const timer = setTimeout(() => {
+      timedOut = true
+      void (async () => {
+        const record = await store.read(PROCESSES, spawned.procId)
+        if (record) await terminate(record)
+        // Запись могла уже исчезнуть (гонка с exit) — тогда завершать нечего.
+      })().catch(() => {})
+    }, Math.max(1, timeoutMs))
+    const { code, signal } = await exitPromise
+    clearTimeout(timer)
+    await logHandle?.close().catch(() => {})
+    return { procId: spawned.procId, pid: spawned.pid, exitCode: code, signal, timedOut, logPath }
+  }
+
   return {
     spawnInSession,
+    runManaged,
     listForSession,
     killSessionProcesses,
     terminate,
