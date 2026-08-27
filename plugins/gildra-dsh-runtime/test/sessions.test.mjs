@@ -198,11 +198,15 @@ await assert.rejects(
 )
 // Отказ cleanup из-за dirty пометил сессию ORPHANED с причиной — восстановим
 // и завершим с подтверждением.
+// Неудачный cleanup ничего не разрушил: сессия сохраняет прежний статус,
+// свой lease и токен — восстанавливать нечего, достаточно повторить с
+// подтверждением.
 const bAfterFailedCleanup = await sessions.getSession(b.session.sessionId)
-assert.equal(bAfterFailedCleanup.status, 'ORPHANED')
+assert.equal(bAfterFailedCleanup.status, 'ACTIVE')
 assert.match(bAfterFailedCleanup.cleanupError ?? '', /Незакоммиченные/)
-const bRecovered = await sessions.recoverSession(b.session.sessionId)
-await sessions.cleanupSession(b.session.sessionId, { ownerToken: bRecovered.ownerToken, confirmDirty: true })
+assert.equal((await leases.stateOf(b.session.workspaceId)).state, 'ACTIVE',
+  'отклонённый cleanup не снимает собственный lease')
+await sessions.cleanupSession(b.session.sessionId, { ownerToken: b.ownerToken, confirmDirty: true })
 await new Promise(resolveTimer => setTimeout(resolveTimer, 100))
 assert.equal(alive(procB.pid), false, 'cleanup завершил процесс своей сессии')
 assert.equal((await sessions.getSession(b.session.sessionId)).status, 'COMPLETED')

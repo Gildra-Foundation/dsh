@@ -213,7 +213,8 @@ let ownerToken
   assert.ok(metrics.body.runtime.metrics.activeSessions >= 1)
 
   const scan = await call(routeOf('/gildra/v1/recovery/scan'), requestFor({ method: 'POST', body: {} }))
-  assert.deepEqual(Object.keys(scan.body.report).sort(), ['adoptableWorktrees', 'missingWorkspaces', 'orphaned'])
+  assert.deepEqual(Object.keys(scan.body.report).sort(),
+    ['adoptableWorktrees', 'missingWorkspaces', 'orphaned', 'staleLeases', 'unfinishedOperations'])
 
   const leaseState = await call(routeOf('/gildra/v1/leases/state'), requestFor({ url: `/gildra/v1/leases/state?workspaceId=${session.workspaceId}` }))
   assert.equal(leaseState.body.lease.state, 'ACTIVE')
