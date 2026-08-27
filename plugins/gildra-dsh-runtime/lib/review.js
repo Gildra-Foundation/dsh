@@ -17,6 +17,7 @@ import { CURRENT_SCHEMA_VERSION } from './migrations.js'
 import { qualityPolicyOf } from './quality.js'
 import { analyzeTaskDiff } from './diff-analyzer.js'
 import { analyzeModularity } from './modularity.js'
+import { requirementRevisions, revisionsMatch } from './provenance.js'
 import { git } from './gitx.js'
 
 const REVIEWS = 'reviews'
@@ -213,6 +214,9 @@ export function createReviewManager({ store, roots, projects, tasks, workspaces,
       writerAgent: task.writerAgent,
       writerSessionId: task.workspaceId ? (await workspaces.getRecord(task.workspaceId).catch(() => undefined))?.sessionId : undefined,
       capabilityHash: capabilityHash(reviewerCapability),
+      // Ревизии требований на момент запроса: одобрение «той» постановки не
+      // распространяется на изменённую (§14).
+      revisions: requirementRevisions({ task, project: await projects.get(task.projectId) }),
       mode,
       status: 'REQUESTED',
       headSha: analysis?.headSha,
@@ -252,10 +256,13 @@ export function createReviewManager({ store, roots, projects, tasks, workspaces,
       latestByMode.set(row.mode, row)
     }
     const currentHead = task.analysis?.headSha
+    const project = await projects.get(task.projectId)
+    const currentRevisions = requirementRevisions({ task, project })
+    const isCurrent = row => (!currentHead || row.headSha === currentHead) && revisionsMatch(row.revisions, currentRevisions)
     const standard = latestByMode.get('standard')
     const openBySeverity = {}
     for (const row of latestByMode.values()) {
-      if (currentHead && row.headSha !== currentHead) continue
+      if (!isCurrent(row)) continue
       for (const finding of row.findings ?? []) {
         if (finding.status !== 'OPEN') continue
         openBySeverity[finding.severity] = (openBySeverity[finding.severity] ?? 0) + 1
@@ -263,12 +270,12 @@ export function createReviewManager({ store, roots, projects, tasks, workspaces,
     }
     const summary = {
       reviewId: standard?.reviewId ?? rows.at(-1).reviewId,
-      verdict: standard && (!currentHead || standard.headSha === currentHead) ? standard.verdict : 'STALE',
+      verdict: standard && isCurrent(standard) ? standard.verdict : 'STALE',
       openBySeverity,
-      criteriaVerified: standard?.criteriaVerified === true && (!currentHead || standard.headSha === currentHead),
+      criteriaVerified: standard?.criteriaVerified === true && isCurrent(standard),
       headSha: standard?.headSha,
       modes: [...latestByMode.values()]
-        .filter(row => row.verdict === 'APPROVED' && (!currentHead || row.headSha === currentHead))
+        .filter(row => row.verdict === 'APPROVED' && isCurrent(row))
         .map(row => row.mode),
     }
     await tasks.saveTask({ ...(await tasks.getTask(taskId)), review: summary })

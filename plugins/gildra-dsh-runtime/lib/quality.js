@@ -25,6 +25,7 @@ import { CURRENT_SCHEMA_VERSION } from './migrations.js'
 import { assertCommandArgv } from './repo-intel.js'
 import { dirtyFiles, revParse } from './gitx.js'
 import { ACKNOWLEDGEABLE_SIGNALS } from './tasks.js'
+import { requirementRevisions, revisionsMatch } from './provenance.js'
 
 const VERIFICATIONS = 'verifications'
 const LOG_TAIL_BYTES = 2048
@@ -143,6 +144,9 @@ export function createQualityManager({ store, roots, projects, tasks, workspaces
       branch: workspace.branch,
       headSha,
       dirtyAtRun: dirty.length,
+      // Ревизии требований (§14): evidence доказывает соответствие ЭТОЙ
+      // постановке и ЭТОЙ политике; их смена делает прогон STALE.
+      revisions: requirementRevisions({ task, project }),
       status: 'RUNNING',
       checks,
       startedAt: new Date().toISOString(),
@@ -295,6 +299,12 @@ export function createQualityManager({ store, roots, projects, tasks, workspaces
       }
       if (currentHead && run.headSha !== currentHead) {
         blockers.push({ id: 'STALE_EVIDENCE', message: 'После последнего verification появились новые коммиты — прогоните проверки заново.' })
+      }
+      // §14: изменение критериев/скоупа/политики после прогона делает
+      // доказательство недействительным — оно отвечало на другой вопрос.
+      const currentRevisions = requirementRevisions({ task, project })
+      if (!revisionsMatch(run.revisions, currentRevisions)) {
+        blockers.push({ id: 'STALE_EVIDENCE_REVISION', message: 'Постановка задачи или политика изменились после verification — прогоните проверки заново.' })
       }
       for (const requiredId of policy.required) {
         if (requiredId === 'review') continue

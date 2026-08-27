@@ -158,6 +158,36 @@ const { task, workspace } = await makeTask()
     'новый коммит обязан протушить evidence')
 }
 
+// --- 4б. Смена требований после ревью протухает evidence и review (§14) ---
+{
+  // Задача сейчас READY (см. выше). Меняем критерии приёмки — «одобрение той
+  // постановки» не переносится на новую автоматически.
+  await tasks.updateTask(task.taskId, {
+    acceptanceCriteria: ['изменение работает', 'добавлен критерий после ревью'],
+  })
+  const verdict = await quality.readiness(task.taskId)
+  const ids = verdict.blockers.map(blocker => blocker.id)
+  assert.ok(ids.includes('STALE_EVIDENCE_REVISION'),
+    `смена критериев обязана протушить evidence: ${ids.join(',')}`)
+  // Возврат исходной постановки восстанавливает актуальность.
+  await tasks.updateTask(task.taskId, { acceptanceCriteria: ['изменение работает'] })
+  assert.ok(!(await quality.readiness(task.taskId)).blockers.some(blocker => blocker.id === 'STALE_EVIDENCE_REVISION'))
+
+  // Смена политики (новая команда) — тоже протухание.
+  await quality.setPolicy('demo', {
+    required: ['tests', 'review'],
+    checks: { tests: { argv: ['node', '-e', 'console.log("changed")'] } },
+  })
+  const afterPolicy = await quality.readiness(task.taskId)
+  assert.ok(afterPolicy.blockers.some(blocker => blocker.id === 'STALE_EVIDENCE_REVISION'),
+    'смена политики качества делает старый прогон недействительным')
+  // Восстанавливаем для следующих сценариев.
+  await quality.setPolicy('demo', {
+    required: ['tests', 'review'],
+    checks: { tests: { argv: ['node', '-e', 'console.log("ok")'] } },
+  })
+}
+
 // --- 5. Таймаут через штатный terminate -----------------------------------
 {
   const slow = await makeTask({ title: 'Timeout task' })
