@@ -73,9 +73,11 @@ const RUNTIME_FIXTURES = {
     ok: true,
     workspaces: [{ workspaceId: 'demo--alex--sess-dom1', dirtyFiles: 0, ahead: 1, lease: { state: 'ACTIVE' } }],
   },
-  '/gildra/v1/team': {
+  '/gildra/v1/team?projectId=demo': {
     ok: true,
     provider: 'github',
+    teamMode: 'strict',
+    teamSync: { status: 'HEALTHY', provider: 'github', lastRevision: 7, lastSuccessAt: '2026-08-27T12:00:00Z' },
     team: {
       activeTasks: 2,
       byOwner: {
@@ -104,6 +106,7 @@ const RUNTIME_FIXTURES = {
       facts: [
         { kind: 'architecture', id: 'dependency-cycles', status: 'FAILED' },
         { kind: 'architecture', id: 'architecture-boundaries', status: 'PASSED' },
+        { kind: 'authority', reviewerIndependent: true, humanApprovals: ['CODEOWNERS'], ciVerifiedBy: 'github-integration', overlapDecision: 'COORDINATE' },
       ],
     },
   },
@@ -235,6 +238,13 @@ assert.equal(document.querySelector('.sysmon').dataset.gildraCollapsed, 'true')
   assert.match(remoteRow.textContent, /другой Runtime/)
   assert.match(remoteRow.textContent, /auth\.service/)
   assert.match(document.body.textContent, /Команда · github/, 'backend провайдера виден команде')
+  // §27: состояние синхронизации и режим — фактами, без сырых токенов.
+  assert.match(document.body.textContent, /Синхронизация: ✓ healthy · strict · rev 7/)
+  // Authority-факты в подсказке задачи.
+  assert.match(taskRow.querySelector('.gildra-workspace-detail').title, /независимое ревью ✓/)
+  assert.match(taskRow.querySelector('.gildra-workspace-detail').title, /human: CODEOWNERS/)
+  assert.match(taskRow.querySelector('.gildra-workspace-detail').title, /CI: github-integration/)
+  assert.doesNotMatch(document.body.innerHTML, /capability|ownerToken/i, 'сырые capabilities не попадают в UI')
 
   const overlapRow = rows.find(candidate => candidate.dataset.state === 'overlap')
   assert.ok(overlapRow, 'пересечение claims должно быть видно команде')

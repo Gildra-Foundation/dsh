@@ -272,6 +272,14 @@ export function createReadiness({ store, roots, projects, tasks, workspaces, rep
       }
     }
 
+    // Authority-факты (§27): кто что подтвердил — без сырых capabilities.
+    facts.push({
+      kind: 'authority',
+      reviewerIndependent: Boolean(task.review && task.review.verdict === 'APPROVED'),
+      humanApprovals: (task.humanApprovals ?? []).map(entry => entry.kind),
+      ciVerifiedBy: task.delivery?.ci?.verifiedBy,
+      overlapDecision: task.overlapDecision?.decision,
+    })
     return { taskId, ready: blockers.length === 0, blockers, facts, status: task.status }
   }
 

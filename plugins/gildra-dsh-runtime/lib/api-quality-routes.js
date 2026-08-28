@@ -30,7 +30,17 @@ export function registerQualityRoutes(route, { projects, workspaces, tasks, repo
       const admin = await capabilities.consume(body.capability, { role: 'HUMAN_ADMIN', scope: 'policy-change', projectId: body.projectId })
       return { payload: { policy: await quality.setPolicy(body.projectId, body.policy, { verifiedAdmin: { actorId: admin.entityId ?? 'human' } }) } }
     },
-    GET: async ({ query }) => ({ payload: { policy: qualityPolicyOf(await projects.get(query.get('projectId') ?? '')) } }),
+    GET: async ({ query }) => {
+      const project = await projects.get(query.get('projectId') ?? '')
+      return {
+        payload: {
+          policy: qualityPolicyOf(project),
+          revision: project.qualityPolicyRevision,
+          approvedBy: project.qualityPolicyApprovedBy,
+          approvedAt: project.qualityPolicyApprovedAt,
+        },
+      }
+    },
   }),
 
   route('/gildra/v1/tasks/attach', {
@@ -184,12 +194,23 @@ export function registerQualityRoutes(route, { projects, workspaces, tasks, repo
   }),
 
   route('/gildra/v1/team', {
-    GET: async ({ query }) => ({
-      payload: {
-        team: await tasks.teamOverview(query.get('projectId') ?? undefined),
-        provider: team?.backend,
-      },
-    }),
+    GET: async ({ query }) => {
+      const projectId = query.get('projectId') ?? undefined
+      let teamSync
+      let teamMode
+      if (projectId) {
+        teamSync = await tasks.teamSyncState(projectId)
+        teamMode = (await projects.get(projectId).catch(() => undefined))?.qualityPolicy?.team?.mode
+      }
+      return {
+        payload: {
+          team: await tasks.teamOverview(projectId),
+          provider: team?.backend,
+          ...(teamSync ? { teamSync } : {}),
+          ...(teamMode ? { teamMode } : {}),
+        },
+      }
+    },
   }),
   ]
 }

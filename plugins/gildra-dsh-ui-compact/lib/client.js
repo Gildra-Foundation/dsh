@@ -3280,13 +3280,17 @@ window.__ModuleLoader__.load({
             }
             return
           }
-          const [projects, sessions, workspaces, merges, team] = await Promise.all([
-            runtimeCall('/projects'),
+          const projects = await runtimeCall('/projects')
+          const teamQuery = projects.projects?.[0]
+            ? `?projectId=${encodeURIComponent(projects.projects[0].projectId)}`
+            : ''
+          const [sessions, workspaces, merges, team] = await Promise.all([
             runtimeCall('/sessions?activeOnly=1'),
             runtimeCall('/workspaces'),
             runtimeCall('/merges/list?activeOnly=1').catch(() => ({ merges: [] })),
             // Старый Runtime без слоя качества — просто без Team-блока.
-            runtimeCall('/team').catch(() => ({ team: null, provider: undefined })),
+            // projectId даёт серверу вернуть и teamSync-состояние (§27).
+            runtimeCall(`/team${teamQuery}`).catch(() => ({ team: null, provider: undefined })),
           ])
           // Definition of Done по видимым задачам: факты, не «score» (§49).
           const teamTasks = team.team
@@ -3310,6 +3314,8 @@ window.__ModuleLoader__.load({
             merges: merges.merges ?? [],
             team: team.team,
             teamProvider: team.provider,
+            teamSync: team.teamSync,
+            teamMode: team.teamMode,
             taskQuality: Object.fromEntries(qualityPairs.filter(pair => pair[1])),
           }
         } catch {
@@ -3534,6 +3540,18 @@ window.__ModuleLoader__.load({
       if (!runtimeUiState.available || !team || (team.activeTasks ?? 0) === 0) return
       const group = environmentGroup(runtimeUiState.teamProvider ? `Команда · ${String(runtimeUiState.teamProvider)}` : 'Команда')
 
+      // §27: реальное состояние синхронизации — claims нельзя показывать
+      // «актуальными», если последняя публикация провалилась.
+      if (runtimeUiState.teamSync) {
+        const sync = runtimeUiState.teamSync
+        const line = document.createElement('p')
+        line.className = 'gildra-environment-empty'
+        const statusMark = sync.status === 'HEALTHY' ? '✓' : sync.status === 'DISABLED' ? '—' : '⚠'
+        line.textContent = `Синхронизация: ${statusMark} ${String(sync.status).toLowerCase()}${runtimeUiState.teamMode ? ` · ${String(runtimeUiState.teamMode)}` : ''}${sync.lastRevision ? ` · rev ${String(sync.lastRevision)}` : ''}${sync.lastSuccessAt ? ` · ${new Date(sync.lastSuccessAt).toLocaleTimeString()}` : ''}`
+        if (sync.lastError) line.title = `Последняя ошибка: ${String(sync.lastError)}`
+        group.list.appendChild(line)
+      }
+
       for (const [owner, tasks] of Object.entries(team.byOwner ?? {})) {
         for (const task of tasks) {
           const row = document.createElement('div')
@@ -3561,8 +3579,19 @@ window.__ModuleLoader__.load({
             const archBad = architecture.filter(fact => fact.status === 'FAILED').length
             const archWarn = architecture.filter(fact => fact.status === 'WARNING').length
             const archNote = archBad > 0 ? ' · ✗ архитектура' : archWarn > 0 ? ' · ⚠ архитектура' : architecture.length > 0 ? ' · ✓ архитектура' : ''
+            // Authority-факты (§27): независимое ревью, human-approvals,
+            // доверенный CI — без сырых capabilities.
+            const authority = (quality.facts ?? []).find(fact => fact.kind === 'authority')
+            const authorityBits = []
+            if (authority?.reviewerIndependent) authorityBits.push('независимое ревью ✓')
+            if ((authority?.humanApprovals ?? []).length > 0) authorityBits.push(`human: ${authority.humanApprovals.join('/')}`)
+            if (authority?.ciVerifiedBy) authorityBits.push(`CI: ${String(authority.ciVerifiedBy)}`)
+            if (authority?.overlapDecision) authorityBits.push(`overlap: ${String(authority.overlapDecision)}`)
             detail.textContent = quality.ready ? `${task.status} · ворота пройдены${archNote}` : `${task.status} · ⚠ ${unique.join(', ')}${archNote}`
-            detail.title = (quality.blockers ?? []).map(blocker => blocker.message).join('\n')
+            detail.title = [
+              ...(quality.blockers ?? []).map(blocker => blocker.message),
+              ...(authorityBits.length > 0 ? [`Authority: ${authorityBits.join(' · ')}`] : []),
+            ].join('\n')
           } else {
             detail.textContent = task.status
           }
