@@ -8,23 +8,23 @@ heartbeat, частично выполненные Git-операции, reconne
 
 ## Аудит перед hardening (независимая ревизия)
 
-| Area | Finding | Severity | Fix |
-| --- | --- | --- | --- |
-| Git env | `git()` слепо наследует весь `process.env`, включая `GIT_DIR`/`GIT_WORK_TREE`/`GIT_CONFIG*`, которые перенаправляют managed-команду в чужой репозиторий | **High** | `gitSafeEnv` + `-c core.hooksPath=…` |
-| Git hooks | worktree/merge исполняют hooks недоверенного репо | **High** | отключены флагами на всех managed-командах |
-| Lease ABA | «воскресший» writer после takeover мог финализировать destructive-операцию | **High** | fencing `generation` в durable-счётчике |
-| Crash consistency | многошаговые create/merge/cleanup без журнала: recovery гадает | **High** | durable operation journal + reconciliation |
-| API origin | принимался запрос без `Origin` (не-браузерный) к мутациям; нет строгого allowlist | **Med** | строгий same-origin allowlist loopback |
-| Token compare | сравнение ownerToken не constant-time; токен мог попасть в текст ошибки | **Med** | `timingSafeEqual` + вычистка из ошибок/audit |
-| Idempotency | повтор POST create → дубль сессии | **Med** | `Idempotency-Key` со временем жизни |
-| Merge base | старый base считался текущим молча | **Med** | `baseCommit` (immutable) + ahead/behind target |
-| Cleanup TOCTOU | между dry-run и delete состояние менялось | **Med** | re-check blockers под локом @generation |
-| Git timeout | локальные и сетевые команды с одним большим таймаутом; fetch мог зависнуть | **Med** | раздельные таймауты + retry/backoff у fetch |
-| Store durability | нет fsync файла/каталога; сбой после write до rename оставлял temp | **Med** | fsync file+dir, очистка temp |
-| Project adopt | принимался произвольный путь; не проверялся тип/симлинк/вложенность | **Med** | серверная проверка adopt + realpath |
-| Runtime lifecycle | mutation API принимался до reconciliation | **Med** | BOOTING→RECOVERING→READY gate |
-| Audit growth | JSONL рос без ротации; риск утечки env/токенов | **Low** | ротация + allowlist полей |
-| Limits | не было per-session лимитов процессов/портов | **Low** | structured `LIMIT_EXCEEDED` |
+| Area              | Finding                                                                                                                                                 | Severity | Fix                                            |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ---------------------------------------------- |
+| Git env           | `git()` слепо наследует весь `process.env`, включая `GIT_DIR`/`GIT_WORK_TREE`/`GIT_CONFIG*`, которые перенаправляют managed-команду в чужой репозиторий | **High** | `gitSafeEnv` + `-c core.hooksPath=…`           |
+| Git hooks         | worktree/merge исполняют hooks недоверенного репо                                                                                                       | **High** | отключены флагами на всех managed-командах     |
+| Lease ABA         | «воскресший» writer после takeover мог финализировать destructive-операцию                                                                              | **High** | fencing `generation` в durable-счётчике        |
+| Crash consistency | многошаговые create/merge/cleanup без журнала: recovery гадает                                                                                          | **High** | durable operation journal + reconciliation     |
+| API origin        | принимался запрос без `Origin` (не-браузерный) к мутациям; нет строгого allowlist                                                                       | **Med**  | строгий same-origin allowlist loopback         |
+| Token compare     | сравнение ownerToken не constant-time; токен мог попасть в текст ошибки                                                                                 | **Med**  | `timingSafeEqual` + вычистка из ошибок/audit   |
+| Idempotency       | повтор POST create → дубль сессии                                                                                                                       | **Med**  | `Idempotency-Key` со временем жизни            |
+| Merge base        | старый base считался текущим молча                                                                                                                      | **Med**  | `baseCommit` (immutable) + ahead/behind target |
+| Cleanup TOCTOU    | между dry-run и delete состояние менялось                                                                                                               | **Med**  | re-check blockers под локом @generation        |
+| Git timeout       | локальные и сетевые команды с одним большим таймаутом; fetch мог зависнуть                                                                              | **Med**  | раздельные таймауты + retry/backoff у fetch    |
+| Store durability  | нет fsync файла/каталога; сбой после write до rename оставлял temp                                                                                      | **Med**  | fsync file+dir, очистка temp                   |
+| Project adopt     | принимался произвольный путь; не проверялся тип/симлинк/вложенность                                                                                     | **Med**  | серверная проверка adopt + realpath            |
+| Runtime lifecycle | mutation API принимался до reconciliation                                                                                                               | **Med**  | BOOTING→RECOVERING→READY gate                  |
+| Audit growth      | JSONL рос без ротации; риск утечки env/токенов                                                                                                          | **Low**  | ротация + allowlist полей                      |
+| Limits            | не было per-session лимитов процессов/портов                                                                                                            | **Low**  | structured `LIMIT_EXCEEDED`                    |
 
 ### Дефекты, которые нашло не чтение кода, а тесты
 
@@ -32,14 +32,14 @@ heartbeat, частично выполненные Git-операции, reconne
 ОС-процессы над одним state-корнем и стресс-набор. Список оставлен отдельным,
 потому что он честнее говорит о цене «покрыто тестами», чем общий счёт.
 
-| Область | Дефект | Кто нашёл |
-| --- | --- | --- |
-| sessions.js | упавший `createSession` не снимал СВОЙ же lease — воркспейс оставался вечно заблокированным | crash-recovery |
-| workspaces.js | отклонённый cleanup снимал lease до проверки dirty/unmerged: неудачная попытка молча разблокировала воркспейс | crash-recovery (TOCTOU) |
-| workspaces.js | мутации canonical-репо шли под тремя разными локами (create) или без лока (merge, cleanup) | стресс на Windows-раннере CI |
-| processes.js | осиротевшие дети мёртвого лидера группы выпадали из реестра и не завершались | multiprocess |
-| ports.js | порт мёртвой сессии переиспользовался, даже если на нём кто-то слушал | multiprocess |
-| store.js | ветка мёртвого владельца в `withLock` обходила дедлайн и паузу: `timeoutMs` не соблюдался, цикл жёг ~105 % CPU | стресс |
+| Область       | Дефект                                                                                                         | Кто нашёл                    |
+| ------------- | -------------------------------------------------------------------------------------------------------------- | ---------------------------- |
+| sessions.js   | упавший `createSession` не снимал СВОЙ же lease — воркспейс оставался вечно заблокированным                    | crash-recovery               |
+| workspaces.js | отклонённый cleanup снимал lease до проверки dirty/unmerged: неудачная попытка молча разблокировала воркспейс  | crash-recovery (TOCTOU)      |
+| workspaces.js | мутации canonical-репо шли под тремя разными локами (create) или без лока (merge, cleanup)                     | стресс на Windows-раннере CI |
+| processes.js  | осиротевшие дети мёртвого лидера группы выпадали из реестра и не завершались                                   | multiprocess                 |
+| ports.js      | порт мёртвой сессии переиспользовался, даже если на нём кто-то слушал                                          | multiprocess                 |
+| store.js      | ветка мёртвого владельца в `withLock` обходила дедлайн и паузу: `timeoutMs` не соблюдался, цикл жёг ~105 % CPU | стресс                       |
 
 ## Модель безопасности (граница доверия)
 
@@ -55,11 +55,11 @@ loopback; мутации требуют same-origin и capability сессии.
 Runtime — **single-host, multi-process** координатор поверх файловой системы.
 Конкуренция бывает трёх видов, и для каждого — свой примитив:
 
-| Вид | Примитив | Где |
-| --- | --- | --- |
-| Взаимное исключение операции (fetch, аллокация порта, критическая секция) | `JsonStore.withLock` — атомарный `mkdir` + reaper-перехват мёртвого владельца | store.js |
-| Единственный писатель в worktree | Lease: атомарный `mkdir` + owner-token + **generation** (fencing) | leases.js |
-| Атомарность чтения-модификации-записи одной записи | temp-write + `rename` (+ fsync где поддерживается) | store.js |
+| Вид                                                                       | Примитив                                                                      | Где       |
+| ------------------------------------------------------------------------- | ----------------------------------------------------------------------------- | --------- |
+| Взаимное исключение операции (fetch, аллокация порта, критическая секция) | `JsonStore.withLock` — атомарный `mkdir` + reaper-перехват мёртвого владельца | store.js  |
+| Единственный писатель в worktree                                          | Lease: атомарный `mkdir` + owner-token + **generation** (fencing)             | leases.js |
+| Атомарность чтения-модификации-записи одной записи                        | temp-write + `rename` (+ fsync где поддерживается)                            | store.js  |
 
 Все mkdir-локи перехватывают только доказуемо мёртвого владельца и только под
 вторичным reaper-мьютексом с перепроверкой — чтобы два претендента не удалили
@@ -100,8 +100,14 @@ lease дольше жёсткого порога **и** нет живых manage
 `state/journal/<operationId>.json` с фазами:
 
 ```json
-{ "operationId": "...", "type": "CREATE_SESSION", "entityId": "...",
-  "phase": "WORKTREE_CREATED", "startedAt": "...", "updatedAt": "..." }
+{
+  "operationId": "...",
+  "type": "CREATE_SESSION",
+  "entityId": "...",
+  "phase": "WORKTREE_CREATED",
+  "startedAt": "...",
+  "updatedAt": "..."
+}
 ```
 
 Журнал позволяет recovery не гадать, а точно знать, какой шаг завершился. При
@@ -139,15 +145,15 @@ BOOTING → RECOVERING (reconcile state ↔ worktrees ↔ git ↔ processes) →
 
 ## Crash-recovery: точка сбоя → ожидаемое восстановление
 
-| Точка сбоя | Что на диске | Восстановление |
-| --- | --- | --- |
-| После создания ветки, до worktree | branch есть, worktree нет, state нет | journal(`BRANCH_CREATED`) → удалить осиротевшую ветку, операция FAILED |
-| После worktree, до записи state | worktree есть, state нет | journal → зарегистрировать (adopt) или откатить по выбору; reconciliation помечает `untrackedWorktrees` |
-| После state, до lease | state ACTIVE, lease нет | recovery: сессия ORPHANED → Recover перехватывает lease |
-| Merge: сбой в конфликте | merge-worktree с маркерами, target не двинут | journal(`CONFLICT`) → пользователь resolve/abort; target нетронут |
-| Merge: сбой после finalize-коммита, до удаления worktree | target двинут, merge-worktree остался | reconciliation чистит orphan merge-worktree; результат уже в target |
-| Cleanup: сбой между проверкой и удалением | частично удалён worktree | повторный cleanup идемпотентен; journal(`CLEANING`) доводит до конца |
-| Повреждён critical JSON (session/workspace) | `.corrupt-*` отложен | НЕ создавать пустой state поверх worktree; reconciliation scan предлагает Recover |
+| Точка сбоя                                               | Что на диске                                 | Восстановление                                                                                          |
+| -------------------------------------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| После создания ветки, до worktree                        | branch есть, worktree нет, state нет         | journal(`BRANCH_CREATED`) → удалить осиротевшую ветку, операция FAILED                                  |
+| После worktree, до записи state                          | worktree есть, state нет                     | journal → зарегистрировать (adopt) или откатить по выбору; reconciliation помечает `untrackedWorktrees` |
+| После state, до lease                                    | state ACTIVE, lease нет                      | recovery: сессия ORPHANED → Recover перехватывает lease                                                 |
+| Merge: сбой в конфликте                                  | merge-worktree с маркерами, target не двинут | journal(`CONFLICT`) → пользователь resolve/abort; target нетронут                                       |
+| Merge: сбой после finalize-коммита, до удаления worktree | target двинут, merge-worktree остался        | reconciliation чистит orphan merge-worktree; результат уже в target                                     |
+| Cleanup: сбой между проверкой и удалением                | частично удалён worktree                     | повторный cleanup идемпотентен; journal(`CLEANING`) доводит до конца                                    |
+| Повреждён critical JSON (session/workspace)              | `.corrupt-*` отложен                         | НЕ создавать пустой state поверх worktree; reconciliation scan предлагает Recover                       |
 
 ## Git-безопасность
 
@@ -183,12 +189,12 @@ auth — `GIT_AUTH_REQUIRED` (не ретраится). Минимальная �
 
 ## Контракт локов канонического репозитория
 
-| Операция | Лок | Почему |
-| --- | --- | --- |
-| worktree add/remove/prune, создание/удаление веток, CAS-сдвиг ссылки | **`repo-<projectId>` обязателен** | параллельные git-процессы правят одни файлы метаданных; на Windows это гарантированно ломается |
-| merge-коммит и разрешение конфликта в merge-worktree | без repo-лока | git держит собственные per-ref локи; целостность цели добивает проверка первого родителя (`MERGE_TARGET_MOVED`) — сдвинутая во время merge цель откатывает НАШ коммит, чужой сохраняется |
-| `fetch` | свой `fetch-<projectId>`, НЕ repo-лок | сетевая операция до 5 минут; общий лок остановил бы создание сессий. Git сам отказывается двигать ветку, извлечённую в worktree; гонка ref-локов с параллельным worktree add даёт транзиентный отказ — поэтому у fetch retry с backoff |
-| чтение (status/diff/rev-parse/ls-tree) | без лока | не мутирует метаданные |
+| Операция                                                             | Лок                                   | Почему                                                                                                                                                                                                                                 |
+| -------------------------------------------------------------------- | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| worktree add/remove/prune, создание/удаление веток, CAS-сдвиг ссылки | **`repo-<projectId>` обязателен**     | параллельные git-процессы правят одни файлы метаданных; на Windows это гарантированно ломается                                                                                                                                         |
+| merge-коммит и разрешение конфликта в merge-worktree                 | без repo-лока                         | git держит собственные per-ref локи; целостность цели добивает проверка первого родителя (`MERGE_TARGET_MOVED`) — сдвинутая во время merge цель откатывает НАШ коммит, чужой сохраняется                                               |
+| `fetch`                                                              | свой `fetch-<projectId>`, НЕ repo-лок | сетевая операция до 5 минут; общий лок остановил бы создание сессий. Git сам отказывается двигать ветку, извлечённую в worktree; гонка ref-локов с параллельным worktree add даёт транзиентный отказ — поэтому у fetch retry с backoff |
+| чтение (status/diff/rev-parse/ls-tree)                               | без лока                              | не мутирует метаданные                                                                                                                                                                                                                 |
 
 Инвариант закреплён в Runtime, а не в ревью: `withRepoLock` входит в
 AsyncLocalStorage-scope, и все пять мутирующих git-помощников падают
@@ -198,7 +204,7 @@ AsyncLocalStorage-scope, и все пять мутирующих git-помощ�
 Refspec fetch задан явно: `+refs/heads/*:refs/heads/*` БЕЗ `--prune`.
 Оба «удобных» варианта дефектны: `clone --bare` не пишет refspec (fetch
 обновлял только FETCH_HEAD — canonical main не двигался вовсе), а зеркальный
-refspec с prune удалял бы локальные session/*-ветки. Порядок захвата локов
+refspec с prune удалял бы локальные session/\*-ветки. Порядок захвата локов
 всегда `workspace-<id>` → `repo-<projectId>`, обратного нет — deadlock
 невозможен.
 
@@ -219,6 +225,13 @@ refspec с prune удалял бы локальные session/*-ветки. По
 До этих порогов JSON-файлы с fsync+rename, mkdir-локами и schemaVersion —
 осознанно достаточная модель: она прозрачна, диагностируема (файл можно
 прочитать глазами) и не добавляет зависимость.
+
+## Слой полномочий (кратко)
+
+Ревью, human-approvals, CI-evidence и смена политики защищены scoped-
+capability (в state — только хэши; одноразовые расходуются атомарно), а
+verification-прогоны резервируются durable-записью PREPARING под локом с
+recovery зависших. Полный контракт — `docs/quality-authority.md`.
 
 ## Известные ограничения (честно)
 

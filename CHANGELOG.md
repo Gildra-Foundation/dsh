@@ -4,6 +4,31 @@
 
 ## [Unreleased]
 
+### Quality Authority & Team Consistency Hardening
+
+- Формальные полномочия: AI_WRITER / AI_REVIEWER / HUMAN_ADMIN /
+  TRUSTED_INTEGRATION с единым lifecycle scoped-capability (одноразовость,
+  срок, привязки, в state только хэш). Reviewer-capability выдаётся ТОЛЬКО
+  claim'ом независимой read-сессии (writer из request её не видит), ревью
+  читает immutable snapshot; «human: true» и «source: github» не значат
+  ничего — CODEOWNERS/policy/команды требуют HumanActionCapability, CI —
+  интеграционной capability с commitSha == HEAD.
+- Provenance расширен: план, claims, overlap-решение, база, delivery-policy,
+  определения команд, профиль и CODEOWNERS входят в ревизии evidence/review;
+  overlap-решения привязаны к отпечатку командного контекста
+  (STALE_OVERLAP_DECISION).
+- Team-консистентность: режимы solo/best-effort/strict (strict блокирует
+  IMPLEMENTING без синхронизации), durable teamSync-состояние в UI,
+  git-провайдер сериализован per-clone (20 параллельных publish без
+  index.lock, фальсифицировано снятием mutex).
+- Verification: атомарная резервация PREPARING с recovery зависших (50
+  конкурентных запусков → ровно один, фальсифицировано), провал снапшота —
+  честный FAILED.
+- Modularity: NEW_LARGE_MODULE (композит метрик), RESPONSIBILITY_EXPANSION
+  (side-effect поверхности до/после), реальный public-api gate с четырьмя
+  путями закрытия. quality.js (620) и tasks.js (689) декомпозированы на
+  6+7 узких модулей с фасадами; циклов нет, публичный API сохранён.
+
 ### Modularity & Team Collaboration
 
 - Architecture Policy и машинный Module Map (слои, mayDependOn, публичные

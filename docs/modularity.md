@@ -106,23 +106,28 @@ Task не переходит в `IMPLEMENTING` без структурирова
 
 Не-LLM сигналы поверх diff и import-графа «до/после»:
 
-| Сигнал                                                  | Дефолтный gate |
-| ------------------------------------------------------- | -------------- |
-| `NEW_DEPENDENCY_CYCLE`                                  | **BLOCK**      |
-| `CROSS_LAYER_IMPORT`                                    | **BLOCK**      |
-| `DEEP_INTERNAL_IMPORT` (обход publicEntrypoint)         | REVIEW         |
-| `UNEXPLAINED_PUBLIC_API_CHANGE`                         | **BLOCK**      |
-| `OVERSIZED_MODULE_GROWTH` / `OVERSIZED_FUNCTION_GROWTH` | REVIEW         |
-| `NEW_GLOBAL_MUTABLE_STATE`                              | REVIEW         |
-| `DUPLICATED_DOMAIN_LOGIC`                               | REVIEW         |
-| `MIXED_RESPONSIBILITIES`                                | REVIEW         |
-| `UNEXPECTED_MODULE_CHANGE`                              | REVIEW         |
-| `ANALYSIS_INCOMPLETE` (обрезанный diff)                 | **BLOCK**      |
+| Сигнал                                                                     | Дефолтный gate |
+| -------------------------------------------------------------------------- | -------------- |
+| `NEW_DEPENDENCY_CYCLE`                                                     | **BLOCK**      |
+| `CROSS_LAYER_IMPORT`                                                       | **BLOCK**      |
+| `DEEP_INTERNAL_IMPORT` (обход publicEntrypoint)                            | REVIEW         |
+| `UNEXPLAINED_PUBLIC_API_CHANGE` (реализован: gate public-api)              | **BLOCK**      |
+| `NEW_LARGE_MODULE` (композит: строки+функции+exports/side-effects/fan-out) | REVIEW         |
+| `RESPONSIBILITY_EXPANSION` (новые side-effect поверхности файла)           | REVIEW         |
+| `OVERSIZED_MODULE_GROWTH` / `OVERSIZED_FUNCTION_GROWTH`                    | REVIEW         |
+| `NEW_GLOBAL_MUTABLE_STATE`                                                 | REVIEW         |
+| `DUPLICATED_DOMAIN_LOGIC`                                                  | REVIEW         |
+| `MIXED_RESPONSIBILITIES`                                                   | REVIEW         |
+| `UNEXPECTED_MODULE_CHANGE`                                                 | REVIEW         |
+| `ANALYSIS_INCOMPLETE` (обрезанный diff)                                    | **BLOCK**      |
 
 BLOCK — блокер readiness до устранения; REVIEW — требует acknowledgment
 reviewer'а/человека (fingerprint-привязка, см. ниже). Количество строк само по
 себе никогда не блокирует: сигналы контекстные (рост УЖЕ большого файла
 несвязанной логикой — HIGH; большой словарь — не сигнал).
+
+Полная модель полномочий (роли, capabilities, human-канал, доверенный CI,
+strict-синхронизация) — [`docs/quality-authority.md`](quality-authority.md).
 
 ## Identity, provenance и anti-forgery
 

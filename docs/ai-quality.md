@@ -22,16 +22,16 @@ Task → Repository Understanding → Impact/Scope → Isolated Workspace
 
 ## Модули
 
-| Модуль | Ответственность |
-| --- | --- |
-| `lib/globs.js` | Единый glob-матчинг (`**`, `*`, `?`) для scope, claims, protected areas, CODEOWNERS |
-| `lib/repo-intel.js` | Repository Profile: детекторы языков, package-менеджеров, команд, policy-файлов, CI, generated-файлов, ADR; парсер CODEOWNERS; уровни доверия команд |
-| `lib/quality.js` | Quality Policy проекта, verification-запуски через Process Manager, Verification Evidence, Definition of Done (readiness) |
-| `lib/diff-analyzer.js` | Структурный разбор diff: файлы/строки, зависимости, ослабление тестов, опасные паттерны, scope, generated |
-| `lib/review.js` | Структурное независимое ревью: findings, gate, writer ≠ reviewer, adversarial-триггер |
-| `lib/claims.js` | Work Claims и обнаружение пересечений (path + import-соседи) |
-| `lib/upstream.js` | Сдвиг цели относительно baseSha и его релевантность задаче |
-| `lib/context-builder.js` | Компактный Task Context для writer/reviewer |
+| Модуль                   | Ответственность                                                                                                                                      |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `lib/globs.js`           | Единый glob-матчинг (`**`, `*`, `?`) для scope, claims, protected areas, CODEOWNERS                                                                  |
+| `lib/repo-intel.js`      | Repository Profile: детекторы языков, package-менеджеров, команд, policy-файлов, CI, generated-файлов, ADR; парсер CODEOWNERS; уровни доверия команд |
+| `lib/quality.js`         | Quality Policy проекта, verification-запуски через Process Manager, Verification Evidence, Definition of Done (readiness)                            |
+| `lib/diff-analyzer.js`   | Структурный разбор diff: файлы/строки, зависимости, ослабление тестов, опасные паттерны, scope, generated                                            |
+| `lib/review.js`          | Структурное независимое ревью: findings, gate, writer ≠ reviewer, adversarial-триггер                                                                |
+| `lib/claims.js`          | Work Claims и обнаружение пересечений (path + import-соседи)                                                                                         |
+| `lib/upstream.js`        | Сдвиг цели относительно baseSha и его релевантность задаче                                                                                           |
+| `lib/context-builder.js` | Компактный Task Context для writer/reviewer                                                                                                          |
 
 Всё — `node:`-модули (инвариант локальных плагинов), состояние — существующий
 JSON-store, долгие команды — существующий Process Manager, длинные логи — в
@@ -46,10 +46,13 @@ JSON-store, долгие команды — существующий Process Man
 
 ```json
 {
-  "projectId": "…", "commit": "…",
+  "projectId": "…",
+  "commit": "…",
   "languages": ["javascript", "shell"],
   "packageManagers": ["npm"],
-  "commands": { "discovered": [{ "id": "test", "argv": ["npm", "test"], "source": "package.json" }] },
+  "commands": {
+    "discovered": [{ "id": "test", "argv": ["npm", "test"], "source": "package.json" }]
+  },
   "policyFiles": ["AGENTS.md", "CONTRIBUTING.md"],
   "architectureDocs": ["docs/architecture.md"],
   "adrDirs": ["docs/adr"],
@@ -61,11 +64,11 @@ JSON-store, долгие команды — существующий Process Man
 
 ### Доверие к командам (три уровня)
 
-| Уровень | Что это | Выполняется? |
-| --- | --- | --- |
-| `discovered` | Найдено детектором в файлах репозитория | **Нет.** Репозиторий недоверенный: команда из README/package.json — данные, не приказ |
-| `approved` | Пользователь явно одобрил discovered-команду через API | Да |
-| `trusted` | Команда из явной Quality Policy проекта (задана пользователем) | Да |
+| Уровень      | Что это                                                        | Выполняется?                                                                          |
+| ------------ | -------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `discovered` | Найдено детектором в файлах репозитория                        | **Нет.** Репозиторий недоверенный: команда из README/package.json — данные, не приказ |
+| `approved`   | Пользователь явно одобрил discovered-команду через API         | Да                                                                                    |
+| `trusted`    | Команда из явной Quality Policy проекта (задана пользователем) | Да                                                                                    |
 
 Команды хранятся и передаются ТОЛЬКО как argv-массивы — `shell: true` не
 используется нигде. Никакая строка из файлов репозитория не исполняется без
@@ -115,10 +118,20 @@ Definition of Done для перехода Task в `READY_FOR_HUMAN_REVIEW`:
 
 ```json
 {
-  "runId": "…", "taskId": "…", "headSha": "…", "dirtyAtRun": 0,
+  "runId": "…",
+  "taskId": "…",
+  "headSha": "…",
+  "dirtyAtRun": 0,
   "checks": [
-    { "id": "tests", "argv": ["npm", "test"], "status": "PASSED",
-      "exitCode": 0, "durationMs": 41000, "logPath": "state/logs/…", "logTail": "…" }
+    {
+      "id": "tests",
+      "argv": ["npm", "test"],
+      "status": "PASSED",
+      "exitCode": 0,
+      "durationMs": 41000,
+      "logPath": "state/logs/…",
+      "logTail": "…"
+    }
   ]
 }
 ```
@@ -140,8 +153,14 @@ Writer никогда не финальный reviewer: `reviewerAgent !== write
 Findings машинно-структурированы:
 
 ```json
-{ "severity": "HIGH", "category": "CORRECTNESS", "file": "src/foo.js",
-  "line": 120, "message": "…", "evidence": "…" }
+{
+  "severity": "HIGH",
+  "category": "CORRECTNESS",
+  "file": "src/foo.js",
+  "line": 120,
+  "message": "…",
+  "evidence": "…"
+}
 ```
 
 Severity: `BLOCKER | HIGH | MEDIUM | LOW | NIT`. Categories: `CORRECTNESS |
@@ -229,6 +248,9 @@ FAILED(failureKind: IMPLEMENTATION | VERIFICATION | REVIEW | CI | MERGE_CONFLICT
 Без state explosion: детали (какой именно check упал, чем заблокирован)
 живут в evidence/`blockReason`/`failureKind`, а не в новых статусах.
 `READY` больше не существует как назначаемый статус.
+
+Полномочия конвейера (кто и чем доказывает право на действие) описаны в
+[`docs/quality-authority.md`](quality-authority.md).
 
 ## Границы безопасности (наследуются)
 

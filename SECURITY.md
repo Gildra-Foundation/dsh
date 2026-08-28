@@ -92,6 +92,13 @@
   commitSha == HEAD задачи, а human-approval обязателен для CODEOWNERS и
   protected областей. Командная координация публикует только allowlist-поля —
   токены, пути и env не покидают машину по построению.
+- **Полномочия конвейера — capabilities, а не слова.** Reviewer подтверждается
+  claim'ом своей read-сессии; «human: true» и «source: github» не значат
+  ничего — CODEOWNERS/policy/команды требуют одноразовой HumanActionCapability
+  из интерактивного канала, CI-evidence — capability доверенной интеграции.
+  Секреты capabilities не попадают в state (только хэши), audit, логи и UI.
+  Контракт и честные границы (Unix-пользователь остаётся security principal) —
+  в [`docs/quality-authority.md`](docs/quality-authority.md).
 - **Полная модель надёжности и её ограничения** — в
   [`docs/runtime-reliability.md`](docs/runtime-reliability.md); контракты
   модульности и команды — в [`docs/modularity.md`](docs/modularity.md).

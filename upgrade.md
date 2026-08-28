@@ -357,3 +357,15 @@ optimistic-CAS и трёхуровневым overlap до write-фазы; реф
 подтверждённых hotspot'ов самого Gildra (включая найденный анализатором
 реальный цикл); реальные прогоны агентов зафиксированы в
 docs/ai-quality-eval.md. Детали — docs/modularity.md.
+
+## Итерация: Quality Authority & Team Consistency Hardening (2026-08-28)
+
+Полномочия стали техническими: reviewer-capability только через claim
+read-сессией + immutable review snapshot; HumanActionCapability вместо
+«human: true»; CI-evidence только от доверенной интеграции; policy/команды —
+HUMAN_ADMIN. Полный provenance (план/claims/решения/профиль), fingerprint
+overlap-решений, strict-синхронизация команды с honest teamSync-состоянием,
+атомарная verification-резервация, сериализация git-провайдера. Реальный
+public-api gate, NEW_LARGE_MODULE и RESPONSIBILITY_EXPANSION. quality.js и
+tasks.js декомпозированы фасадами. Контракт — docs/quality-authority.md;
+статус проверок — CI.
