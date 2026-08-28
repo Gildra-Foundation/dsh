@@ -8,6 +8,7 @@
 
 import { RuntimeError } from './errors.js'
 import { dirtyFiles } from './gitx.js'
+import { qualityPolicyOf } from './quality-policy.js'
 
 export function registerQualityRoutes(route, { projects, workspaces, tasks, repoIntel, quality, reviews, upstream, contextBuilder, team, capabilities }) {
   return [
@@ -29,7 +30,7 @@ export function registerQualityRoutes(route, { projects, workspaces, tasks, repo
       const admin = await capabilities.consume(body.capability, { role: 'HUMAN_ADMIN', scope: 'policy-change', projectId: body.projectId })
       return { payload: { policy: await quality.setPolicy(body.projectId, body.policy, { verifiedAdmin: { actorId: admin.entityId ?? 'human' } }) } }
     },
-    GET: async ({ query }) => ({ payload: { policy: quality.qualityPolicyOf(await projects.get(query.get('projectId') ?? '')) } }),
+    GET: async ({ query }) => ({ payload: { policy: qualityPolicyOf(await projects.get(query.get('projectId') ?? '')) } }),
   }),
 
   route('/gildra/v1/tasks/attach', {
